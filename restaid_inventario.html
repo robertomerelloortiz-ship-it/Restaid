@@ -1,0 +1,2298 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RESTAID · Inventario</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=IBM+Plex+Mono:wght@400;500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root{--navy:#1A2B3C;--navy2:#2E4259;--amber:#E8914A;--amber2:#F0A86A;--green:#3D8B5E;--green2:#5AAF7E;--red:#C03020;--bg:#F4F1EC;--bg2:#EDEAE3;--card:#FFFFFF;--bdr:#D8D4CC;--tx1:#1A2B3C;--tx2:#4A5568;--tx3:#8A95A3;--ff-head:'DM Serif Display',serif;--ff-body:'Outfit',sans-serif;--ff-mono:'IBM Plex Mono',monospace;--r:8px;--r2:12px;--sh:0 2px 12px rgba(26,43,60,.08);--sh2:0 4px 24px rgba(26,43,60,.13)}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;font-family:var(--ff-body);background:var(--bg);color:var(--tx1);font-size:14px;line-height:1.5}
+button{font-family:var(--ff-body);cursor:pointer;border:none;outline:none}
+input,select,textarea{font-family:var(--ff-body);font-size:13px}
+a{color:var(--amber);text-decoration:none}
+#app{display:flex;height:100vh;overflow:hidden}
+#main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+#topbar{background:var(--navy);padding:0;display:flex;flex-direction:column;flex-shrink:0}
+.tb-row1{display:flex;align-items:center;gap:12px;padding:0 20px;height:44px;border-bottom:1px solid rgba(255,255,255,.08)}
+.tb-logo{font-family:var(--ff-head);font-size:16px;color:var(--amber);letter-spacing:.01em}
+.tb-module{font-size:11px;color:rgba(255,255,255,.35);text-transform:uppercase;letter-spacing:.08em}
+.tb-actions{display:flex;gap:6px;margin-left:auto}
+#tabbar{display:flex;align-items:flex-end;padding:0 12px;height:38px;gap:2px;overflow-x:auto;scrollbar-width:none}
+#tabbar::-webkit-scrollbar{display:none}
+@media(max-width:768px){
+  .mobile-hide{display:none!important}
+  .tb-row1{padding:0 12px;height:auto;min-height:0;justify-content:flex-end}
+  .tb-actions{margin-left:0!important;padding:6px 0;width:100%;justify-content:flex-end}
+  #tabbar{padding:0 8px;height:42px}
+  .tab{font-size:13px;padding:0 11px}
+  #content{padding:14px}
+  .tbl-wrap,table{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  /* KPIs en 2 columnas */
+  [class*="kpi-row"],.kpi-grid,[style*="grid-template-columns:repeat(auto-fit"]{grid-template-columns:repeat(2,1fr)!important}
+  .grid-4,.grid-3{grid-template-columns:repeat(2,1fr)!important}
+  .grid-2{grid-template-columns:1fr!important}
+  /* Modales a pantalla casi completa */
+  .modal-box,[class*="modal"] .box{max-width:94vw!important;width:94vw!important;max-height:88vh!important}
+}
+.tab{display:flex;align-items:center;padding:0 14px;height:32px;border-radius:8px 8px 0 0;font-size:12.5px;font-weight:500;color:rgba(255,255,255,.45);cursor:pointer;transition:all .15s;white-space:nowrap;flex-shrink:0;user-select:none;border:1px solid transparent;border-bottom:none}
+.tab:hover{color:rgba(255,255,255,.75);background:rgba(255,255,255,.06)}
+.tab.active{background:var(--bg);color:var(--navy);border-color:rgba(255,255,255,.1);font-weight:600}
+.tab-sep{width:1px;background:rgba(255,255,255,.1);height:18px;margin:0 4px;align-self:center}
+#content{flex:1;overflow-y:auto;padding:24px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:var(--r);font-size:12.5px;font-weight:500;transition:all .15s;cursor:pointer;border:none}
+.btn-amber{background:var(--amber);color:#fff}.btn-amber:hover{background:var(--amber2)}
+.btn-ghost{background:transparent;border:1px solid var(--bdr);color:var(--tx2)}.btn-ghost:hover{border-color:var(--navy2);color:var(--tx1)}
+.btn-green{background:var(--green);color:#fff}.btn-green:hover{background:var(--green2)}
+.btn-red{background:var(--red);color:#fff}
+.btn-sm{padding:5px 10px;font-size:11.5px}
+.btn-xs{padding:3px 8px;font-size:11px}
+.btn-icon{padding:6px;background:transparent;border:1px solid var(--bdr);border-radius:var(--r);color:var(--tx3);cursor:pointer}.btn-icon:hover{color:var(--tx1);border-color:var(--navy2)}
+.page{display:none}.page.active{display:block}
+.card{background:var(--card);border-radius:var(--r2);box-shadow:var(--sh);padding:20px}
+.card-title{font-family:var(--ff-head);font-size:16px;margin-bottom:14px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.kpi{background:var(--card);border-radius:var(--r2);box-shadow:var(--sh);padding:18px 20px;border-left:3px solid transparent}
+.kpi.amber{border-left-color:var(--amber)}.kpi.green{border-left-color:var(--green)}.kpi.red{border-left-color:var(--red)}.kpi.navy{border-left-color:var(--navy2)}
+.kpi-lbl{font-size:11px;font-weight:500;letter-spacing:.5px;text-transform:uppercase;color:var(--tx3);margin-bottom:6px}
+.kpi-val{font-family:var(--ff-head);font-size:26px;line-height:1}
+.kpi-sub{font-size:11px;color:var(--tx3);margin-top:4px}
+.tbl-wrap{overflow-x:auto;border-radius:var(--r);border:1px solid var(--bdr)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead{background:var(--navy);color:#fff}
+th{padding:10px 12px;text-align:left;font-weight:500;font-size:11.5px;white-space:nowrap}
+th.sort{cursor:pointer;user-select:none}.th.sort:hover{background:var(--navy2)}
+th.sort::after{content:' ↕';opacity:.4;font-size:10px}
+th.asc::after{content:' ↑';opacity:1}th.desc::after{content:' ↓';opacity:1}
+td{padding:9px 12px;border-bottom:1px solid var(--bdr);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(26,43,60,.025)}
+.td-num{font-family:var(--ff-mono);font-size:12.5px;text-align:right}
+.td-actions{display:flex;gap:4px;justify-content:flex-end}
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;white-space:nowrap}
+.badge-green{background:#E8F5EE;color:var(--green)}.badge-red{background:#FDECEA;color:var(--red)}
+.badge-amber{background:#FFF3E0;color:#B86A00}.badge-navy{background:#EBF0F5;color:var(--navy2)}
+.badge-gray{background:var(--bg2);color:var(--tx3)}
+.form-row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+.form-group{display:flex;flex-direction:column;gap:4px;flex:1;min-width:120px}
+.form-group label{font-size:11.5px;font-weight:500;color:var(--tx2)}
+.form-group input,.form-group select,.form-group textarea{border:1px solid var(--bdr);border-radius:var(--r);padding:8px 10px;font-size:13px;color:var(--tx1);background:var(--card);transition:border .15s}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{outline:none;border-color:var(--amber)}
+.form-group textarea{resize:vertical;min-height:70px}
+.sec-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px}
+.sec-head h2{font-family:var(--ff-head);font-size:20px}
+.sec-head .actions{display:flex;gap:8px;align-items:center}
+.search-wrap{position:relative;display:inline-flex;align-items:center}
+.search-wrap svg{position:absolute;left:9px;width:14px;height:14px;color:var(--tx3);pointer-events:none}
+.search-wrap input{padding:7px 10px 7px 30px;border:1px solid var(--bdr);border-radius:var(--r);font-size:12.5px;background:var(--card);min-width:200px}
+.search-wrap input:focus{outline:none;border-color:var(--amber)}
+.modal-overlay{position:fixed;inset:0;background:rgba(26,43,60,.5);z-index:100;display:flex;align-items:center;justify-content:center;padding:16px}
+.modal{background:var(--card);border-radius:var(--r2);box-shadow:var(--sh2);padding:28px;width:100%;max-width:560px;max-height:90vh;overflow-y:auto}
+.modal h3{font-family:var(--ff-head);font-size:20px;margin-bottom:18px}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid var(--bdr)}
+.modal-lg{max-width:760px}
+.alert{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border-radius:var(--r);font-size:12.5px;margin-bottom:12px}
+.alert-red{background:#FDECEA;border:1px solid #F5C6C2;color:var(--red)}
+.alert-amber{background:#FFF3E0;border:1px solid #F5DEB3;color:#8A5500}
+.alert-green{background:#E8F5EE;border:1px solid #B8DECA;color:var(--green)}
+.chat-wrap{display:flex;flex-direction:column;height:calc(100vh - 200px);min-height:400px}
+.chat-msgs{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;background:var(--bg);border-radius:var(--r);border:1px solid var(--bdr)}
+.chat-msg{max-width:80%;padding:10px 14px;border-radius:10px;font-size:13px;line-height:1.6}
+.chat-msg.user{align-self:flex-end;background:var(--navy);color:#fff;border-bottom-right-radius:3px}
+.chat-msg.ai{align-self:flex-start;background:var(--card);border:1px solid var(--bdr);border-bottom-left-radius:3px}
+.chat-input-row{display:flex;gap:8px;margin-top:12px}
+.chat-input-row input{flex:1;border:1px solid var(--bdr);border-radius:var(--r);padding:10px 12px;font-size:13px}
+.chat-input-row input:focus{outline:none;border-color:var(--amber)}
+.chat-suggestions{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chat-sug{background:var(--card);border:1px solid var(--bdr);border-radius:20px;padding:5px 12px;font-size:11.5px;color:var(--tx2);cursor:pointer;transition:all .15s}
+.chat-sug:hover{border-color:var(--amber);color:var(--amber)}
+.prov-card{background:var(--card);border-radius:var(--r2);box-shadow:var(--sh);padding:18px;border-top:3px solid var(--navy2)}
+.prov-name{font-family:var(--ff-head);font-size:17px;margin-bottom:6px}
+.prov-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:12px}
+.prov-grid span{color:var(--tx3)}
+.prov-actions{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
+.mov-tipo{display:inline-flex;align-items:center;font-size:11.5px;font-weight:500;padding:2px 8px;border-radius:4px}
+.mov-entrada{background:#E8F5EE;color:var(--green)}.mov-salida{background:#EBF0F5;color:var(--navy2)}.mov-merma{background:#FDECEA;color:var(--red)}
+.bcg-estrella{background:#FFF8E1;color:#856404;border:1px solid #FFE082}
+.bcg-vaca{background:#E8F5EE;color:var(--green);border:1px solid #A5D6B5}
+.bcg-puzzle{background:#EBF0F5;color:var(--navy2);border:1px solid #B0C4D8}
+.bcg-perro{background:#F5F5F5;color:var(--tx3);border:1px solid var(--bdr)}
+.up-zone{border:2px dashed var(--bdr);border-radius:var(--r2);padding:24px;text-align:center;cursor:pointer;transition:all .2s;background:var(--bg)}
+.up-zone:hover,.up-zone.drag{border-color:var(--amber);background:#FFF8F0}
+.up-zone input[type=file]{display:none}
+.spin{display:inline-block;width:13px;height:13px;border:2px solid rgba(26,43,60,.2);border-top-color:var(--navy);border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px}
+.spin-w{border-color:rgba(255,255,255,.3);border-top-color:#fff}
+@keyframes sp{to{transform:rotate(360deg)}}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:.875rem 1.5rem;border-radius:10px;font-size:13px;font-weight:500;box-shadow:0 8px 30px rgba(0,0,0,.25);z-index:300;pointer-events:none}
+::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--bdr);border-radius:10px}
+.empty-state{text-align:center;padding:48px 24px;color:var(--tx3)}
+.empty-state .icon{font-size:40px;margin-bottom:12px}
+.empty-state h3{font-size:16px;font-weight:500;color:var(--tx2);margin-bottom:6px}
+.price-up{color:var(--red);font-weight:600}.price-down{color:var(--green);font-weight:600}.price-flat{color:var(--tx3)}
+
+.tb-copilot-btn{display:flex;align-items:center;gap:7px;padding:6px 14px;background:var(--navy,#1e293b);color:#fff;border:none;border-radius:20px;font-size:12.5px;font-weight:600;cursor:pointer;letter-spacing:.01em;transition:background .15s}
+.tb-copilot-btn:hover{background:#334155}
+.tb-copilot-btn .pulse-dot{width:7px;height:7px;border-radius:50%;background:#E8914A;animation:pulse-ring 2s ease-in-out infinite}
+@keyframes pulse-ring{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(1.3)}}
+</style></head>
+<body><div id="app">
+
+<div id="main">
+  <div id="topbar">
+    <div class="tb-row1">
+      <div class="tb-logo mobile-hide">RESTAID</div>
+      <div class="tb-module mobile-hide">Inventario</div><div class="mobile-hide" style="font-size:11px;color:rgba(255,255,255,.35);margin-left:8px" id="tbSub"></div>
+      <div class="tb-actions">
+        <button class="tb-copilot-btn mobile-hide" onclick="window.parent.postMessage({type:'restaid_open_copilot'},'*')"><div class="pulse-dot"></div>Copiloto</button>
+        <button class="btn btn-amber btn-sm" onclick="openAlbM()">↑ Subir albarán</button>
+      </div>
+    </div>
+    <div id="tabbar">
+      <div class="tab active" data-page="resumen">Resumen</div>
+      <div class="tab" data-page="ingredientes">Ingredientes</div>
+      <div class="tab" data-page="movimientos">Movimientos</div>
+      <div class="tab" data-page="pedidos">Pedidos</div>
+      <div class="tab" data-page="proveedores">Proveedores</div>
+      <div class="tab-sep"></div>
+      <div class="tab" data-page="fugas">Fugas</div>
+      <div class="tab-sep"></div>
+      <div class="tab" data-page="asistente">✦ Asistente</div>
+    </div>
+  </div>
+  <div id="content">
+    <div id="pg-asistente" class="page"></div>
+    <div id="pg-resumen" class="page active"></div>
+    <div id="pg-ingredientes" class="page"></div>
+    <div id="pg-movimientos" class="page"></div>
+    <div id="pg-caducidades" class="page"></div>
+    <div id="pg-recuento" class="page"></div>
+    <div id="pg-pedidos" class="page"></div>
+    <div id="pg-proveedores" class="page"></div>
+    <div id="pg-fugas" class="page"></div>
+  </div>
+</div></div>
+
+<!-- MODALES -->
+<div id="modal-ing" class="modal-overlay" style="display:none"><div class="modal">
+  <h3 id="m-ing-title">Nuevo ingrediente</h3>
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <div class="form-row">
+      <div class="form-group" style="flex:2"><label>Nombre *</label><input id="ing-nombre" placeholder="Ej: Aceite de oliva"></div>
+      <div class="form-group"><label>Categoría *</label><select id="ing-cat">
+        <option value="">— Seleccionar —</option>
+        <option>Aceites y grasas</option><option>Carnes</option><option>Pescados y mariscos</option>
+        <option>Verduras y hortalizas</option><option>Frutas</option><option>Lácteos</option>
+        <option>Huevos</option><option>Cereales y harinas</option><option>Legumbres</option>
+        <option>Especias y condimentos</option><option>Bebidas alcohólicas</option>
+        <option>Bebidas no alcohólicas</option><option>Conservas</option><option>Congelados</option><option>Otros</option>
+      </select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Unidad *</label><select id="ing-unidad">
+        <option value="">—</option><option value="kg">kg</option><option value="g">g</option>
+        <option value="l">l</option><option value="ml">ml</option><option value="ud">ud</option>
+        <option value="docena">docena</option><option value="caja">caja</option><option value="bote">bote</option>
+      </select></div>
+      <div class="form-group"><label>Precio/unidad (€) *</label><input id="ing-precio" type="number" step="0.01" min="0"></div>
+      <div class="form-group"><label>IVA compra (%)</label><select id="ing-iva"><option value="">—</option><option value="4">4% (superreducido)</option><option value="10" selected>10% (alimentos)</option><option value="21">21% (general)</option></select></div>
+      <div class="form-group"><label>Proveedor</label><select id="ing-prov"><option value="">— Ninguno —</option></select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Stock actual</label><input id="ing-stock" type="number" step="0.01" min="0" placeholder="0"></div>
+      <div class="form-group"><label>Stock mínimo</label><input id="ing-smin" type="number" step="0.01" min="0" placeholder="0"></div>
+      <div class="form-group"><label>Notas</label><input id="ing-notas" placeholder="Opcional"></div>
+    </div>
+    <div style="margin-top:6px;padding:12px 14px;background:rgba(232,145,74,.06);border:1px solid rgba(232,145,74,.2);border-radius:8px">
+      <div style="font-size:11px;font-weight:600;color:var(--amber);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Formato de compra (opcional)</div>
+      <div style="font-size:11.5px;color:var(--tx3);margin-bottom:10px">Si lo compras en un formato distinto a la unidad de uso (ej: barril de 50L, lata de 750g), indícalo aquí. El stock y el escandallo seguirán en la unidad de uso.</div>
+      <div class="form-row" style="margin:0">
+        <div class="form-group"><label>Se compra en</label><input id="ing-fc-unidad" placeholder="barril, lata, caja…" style="font-size:13px" oninput="ingFcHint()"></div>
+        <div class="form-group"><label>Contenido (factor)</label><input id="ing-fc-factor" type="number" step="0.001" min="0" placeholder="50" title="Cuántas unidades base contiene cada unidad de compra" oninput="ingFcHint()"></div>
+        <div class="form-group"><label>&nbsp;</label><div id="ing-fc-hint" style="font-size:11.5px;color:var(--tx2);padding-top:9px">—</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-actions">
+    <button class="btn btn-ghost" onclick="closeM('modal-ing')">Cancelar</button>
+    <button class="btn btn-amber" onclick="saveIng()">Guardar</button>
+  </div>
+</div></div>
+
+<div id="modal-mov" class="modal-overlay" style="display:none"><div class="modal">
+  <h3 id="m-mov-title">Registrar movimiento</h3>
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <div class="form-row">
+      <div class="form-group" style="flex:2"><label>Ingrediente *</label><select id="mov-ing"><option value="">—</option></select></div>
+      <div class="form-group"><label>Tipo *</label><select id="mov-tipo" onchange="toggleCadField()">
+        <option value="entrada">Entrada (compra)</option>
+        <option value="salida">Salida (uso)</option>
+        <option value="merma">Merma / pérdida</option>
+      </select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Cantidad *</label><input id="mov-cant" type="number" step="0.01" min="0"></div>
+      <div class="form-group"><label>Fecha</label><input id="mov-fecha" type="date"></div>
+      <div class="form-group"><label>Coste total (€)</label><input id="mov-coste" type="number" step="0.01" min="0" placeholder="Opcional"></div>
+    </div>
+    <div class="form-row" id="mov-cad-row">
+      <div class="form-group"><label>Caducidad <span style="color:var(--tx3);font-weight:400">(opcional)</span></label><input id="mov-cad" type="date"></div>
+      <div class="form-group" style="flex:2"><label>Motivo / referencia</label><input id="mov-motivo" placeholder="Ej: Albarán #1234"></div>
+    </div>
+  </div>
+  <div class="modal-actions">
+    <button class="btn btn-ghost" onclick="closeM('modal-mov')">Cancelar</button>
+    <button class="btn btn-amber" onclick="saveMov()">Registrar</button>
+  </div>
+</div></div>
+
+<div id="modal-prov" class="modal-overlay" style="display:none"><div class="modal">
+  <h3 id="m-prov-title">Nuevo proveedor</h3>
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <div class="form-row">
+      <div class="form-group" style="flex:2"><label>Nombre *</label><input id="prov-nombre" placeholder="Ej: Mercafresh SL"></div>
+      <div class="form-group"><label>CIF / NIF</label><input id="prov-cif" placeholder="B12345678"></div>
+      <div class="form-group"><label>Categoría</label><input id="prov-cat" placeholder="Ej: Frutas y verduras"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Teléfono</label><input id="prov-tel" placeholder="600 000 000"></div>
+      <div class="form-group"><label>Email</label><input id="prov-email" type="email" placeholder="pedidos@..."></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Días de entrega</label><input id="prov-dias" placeholder="Ej: Lunes, miércoles"></div>
+      <div class="form-group"><label>Condiciones de pago</label><input id="prov-pago" placeholder="Ej: 30 días"></div>
+    </div>
+    <div class="form-group"><label>Notas</label><textarea id="prov-notas" placeholder="Observaciones..."></textarea></div>
+  </div>
+  <div class="modal-actions">
+    <button class="btn btn-ghost" onclick="closeM('modal-prov')">Cancelar</button>
+    <button class="btn btn-amber" onclick="saveProv()">Guardar</button>
+  </div>
+</div></div>
+
+<div id="modal-albaran" class="modal-overlay" style="display:none"><div class="modal modal-lg">
+  <h3>Subir albarán</h3>
+  <p style="font-size:12.5px;color:var(--tx3);margin-bottom:16px">La IA extrae automáticamente productos, cantidades y precios del albarán.</p>
+  <div class="up-zone" id="alb-zone" onclick="document.getElementById('fi-alb').click()">
+    <div style="font-size:28px">📄</div>
+    <strong style="font-size:14px;display:block;margin-top:8px">Arrastra aquí los albaranes</strong>
+    <p>PDF o imágenes · puedes subir varios a la vez</p>
+    <input type="file" id="fi-alb" accept=".pdf,.jpg,.jpeg,.png" multiple onchange="handleAlbaran(this)">
+  </div>
+  <div id="alb-prov-row" style="display:none;margin-top:12px">
+    <div class="form-row">
+      <div class="form-group"><label>Proveedor</label><select id="alb-prov"><option value="">— Seleccionar —</option></select></div>
+      <div class="form-group"><label>Fecha</label><input id="alb-fecha" type="date"></div>
+    </div>
+  </div>
+  <div id="alb-result" style="margin-top:16px"></div>
+  <div class="modal-actions">
+    <button class="btn btn-ghost" onclick="closeM('modal-albaran')">Cerrar</button>
+    <button class="btn btn-green" id="btn-alb-aplicar" style="display:none" onclick="aplicarAlbaran()">Aplicar cambios</button>
+  </div>
+</div></div>
+
+
+  <div class="modal-actions">
+    <button class="btn btn-ghost" onclick="closeM('modal-plato')">Cancelar</button>
+    <button class="btn btn-ghost btn-sm" onclick="aiReceta()"><span class="spin" id="sp-rec" style="display:none"></span> ✨ Sugerir con IA</button>
+    <button class="btn btn-amber" onclick="savePlato()">Guardar</button>
+  </div>
+</div></div>
+
+<div id="modal-confirm" class="modal-overlay" style="display:none"><div class="modal" style="max-width:420px">
+  <h3 id="conf-title">Confirmar</h3>
+  <div id="conf-msg" style="color:var(--tx2);font-size:13.5px;margin-bottom:4px"></div>
+  <div class="modal-actions">
+    <button class="btn btn-ghost" id="conf-cancel" onclick="closeM('modal-confirm')">Cancelar</button>
+    <button class="btn btn-red" id="conf-ok">Confirmar</button>
+  </div>
+</div></div>
+
+<div id="modal-ped-edit" class="modal-overlay" style="display:none"><div class="modal modal-lg">
+  <h3 id="m-ped-title">Editar pedido</h3>
+  <div id="ped-edit-meta" style="font-size:12.5px;color:var(--tx3);margin-bottom:12px"></div>
+  <div style="border-top:1px solid var(--bdr);padding-top:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <strong style="font-size:13px">Líneas del pedido</strong>
+      <button class="btn btn-ghost btn-xs" onclick="addPedLinea()">+ Añadir línea</button>
+    </div>
+    <div id="ped-edit-rows"></div>
+    <div id="ped-edit-total" style="text-align:right;font-size:12.5px;color:var(--tx2);margin-top:8px"></div>
+  </div>
+  <div id="ped-edit-hist" style="margin-top:14px"></div>
+  <div class="modal-actions">
+    <button class="btn btn-ghost" onclick="closeM('modal-ped-edit')">Cancelar</button>
+    <button class="btn btn-amber" onclick="savePedEdit()">Guardar cambios</button>
+  </div>
+</div></div>
+<script>
+// MODEL: uno de los 4 puntos a editar al cambiar de versión de IA (ventas, rrhh, inventario, shell deben coincidir).
+const API='https://api.anthropic.com/v1/messages',MODEL='claude-haiku-4-5',ALB_MODEL='claude-sonnet-4-6',KEY='restaid_inv_v1';
+let E=load(),editId=null,albParsed=null,chatH=[],chatBusy=false,movEditId=null;
+let ingSearch='',ingCatF='',ingSort='nombre',ingDir=1;
+let movTipoF='',movSearch='',movD='',movH='';
+let provDetId=null,recRows=[];
+let precioRango=30; // rango del comparativo de precios en Resumen: 7 / 30 / 365 días
+let pedEditId=null,pedEditLineas=[];
+
+function empty(){return{ingredientes:[],movimientos:[],proveedores:[],pedidos:[],platos:[],albaranes:[],lotes:[],recuentos:[],consumosAplicados:[]};}
+function load(){try{const s=localStorage.getItem(KEY);if(s)return{...empty(),...JSON.parse(s)};}catch(e){}return empty();}
+let LOCAL_DIRTY=false;
+function save(){LOCAL_DIRTY=true;E._ts=Date.now();try{localStorage.setItem(KEY,JSON.stringify(E));}catch(e){toast('Error al guardar','r');}try{window.parent.postMessage({type:'restaid_pub',key:KEY,value:JSON.stringify(E)},'*');}catch(e){}sbSetInv();if(typeof pushEscandallo==='function')pushEscandallo();if(typeof pushInvPub==='function')pushInvPub();}
+
+/* ── IA: cabeceras con clave API compartida (la misma del Copiloto del shell) ── */
+const AI_KEY_STORE='restaid_copilot_apikey';
+// Recibir API key del shell por postMessage (necesario en file://)
+window.addEventListener('message', function(e) {
+  if (e.data && e.data.type === 'restaid_apikey' && e.data.key) {
+    try { localStorage.setItem(AI_KEY_STORE, e.data.key); } catch(err) {}
+    console.log('[INV] API key recibida por postMessage');
+  }
+  if (e.data && e.data.type === 'restaid_request_pub') {
+    try { if (typeof E !== 'undefined' && E) window.parent.postMessage({type:'restaid_pub',key:KEY,value:JSON.stringify(E)},'*'); } catch(err) {}
+  }
+});
+function aiHeaders(){
+  const h={'Content-Type':'application/json'};
+  let k='';try{k=localStorage.getItem(AI_KEY_STORE)||'';}catch(e){}
+  if(k){h['x-api-key']=k;h['anthropic-version']='2023-06-01';h['anthropic-dangerous-direct-browser-access']='true';}
+  return h;
+}
+// Convierte una respuesta de error de la API en un mensaje claro en español.
+// Llamar tras cada fetch a la IA: if(!r.ok)await aiCheck(r);
+async function aiCheck(r){
+  if(r.ok)return;
+  let detalle='';try{const e=await r.json();detalle=e&&e.error&&e.error.message?': '+e.error.message:'';}catch(_){}
+  const msg={401:'clave de API no válida o ausente',429:'límite de uso alcanzado, espera un momento',529:'el servicio de IA está saturado, reinténtalo en unos segundos',400:'petición rechazada por la IA',500:'error interno del servicio de IA'}[r.status]||('error '+r.status);
+  throw new Error(msg+detalle);
+}
+
+/* ── Saneado de datos: garantiza estructura válida venga de donde venga ── */
+function sanitizeE(){
+  let changed=false;
+  const base=empty();
+  Object.keys(base).forEach(k=>{if(!Array.isArray(E[k])){E[k]=Array.isArray(base[k])?[]:base[k];changed=true;}});
+  E.ingredientes=E.ingredientes.filter(i=>i&&i.id);
+  // Migración: sembrar un primer punto de historial de precios para ingredientes
+  // que aún no lo tienen, usando su fecha de creación (o hoy) como origen.
+  E.ingredientes.forEach(i=>{
+    if(!Array.isArray(i.historialPrecios)){i.historialPrecios=[];changed=true;}
+    if(i.historialPrecios.length===0&&(+i.precio>0)){
+      i.historialPrecios.push({fecha:i.creadoEn||hoy(),precio:Math.round((+i.precio)*1e4)/1e4,proveedorId:i.proveedorId||null,fuente:'inicial'});
+      changed=true;
+    }
+  });
+  return changed;
+}
+
+/* ── Supabase (mismo proyecto que RRHH/Ventas) ──────────────
+   Tabla: inventario (restaurante text, datos jsonb)
+   Lectura al arrancar; escritura con debounce. Protección anti-carreras:
+   LOCAL_DIRTY + timestamp _ts (last-write-wins). */
+const SB_URL='https://gtdsqvebuhdndfaiqoyj.supabase.co';
+const SB_KEY='sb_publishable_cu53L_4O6Rz-RlGurDI3Kg_CJHqaa8U';
+const SB_RESTAURANTE='default';
+const SB_TABLE='inventario';
+
+async function sbGetInv(){
+  try{
+    const r=await fetch(`${SB_URL}/rest/v1/${SB_TABLE}?restaurante=eq.${SB_RESTAURANTE}&select=datos`,{
+      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}
+    });
+    if(!r.ok)return null;
+    const d=await r.json();
+    return d&&d[0]?d[0].datos:null;
+  }catch(e){return null;}
+}
+
+let SB_TIMER=null;
+function sbSetInv(){
+  clearTimeout(SB_TIMER);
+  SB_TIMER=setTimeout(sbWriteNow,1500);
+}
+async function sbWriteNow(){
+  try{
+    const rPatch=await fetch(`${SB_URL}/rest/v1/${SB_TABLE}?restaurante=eq.${SB_RESTAURANTE}`,{
+      method:'PATCH',
+      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=representation'},
+      body:JSON.stringify({datos:E})
+    });
+    const patchTxt=await rPatch.text().catch(()=>'');
+    let patched=[];try{patched=JSON.parse(patchTxt);}catch(e){}
+    if(Array.isArray(patched)&&patched.length===0){
+      const rPost=await fetch(`${SB_URL}/rest/v1/${SB_TABLE}`,{
+        method:'POST',
+        headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+        body:JSON.stringify({restaurante:SB_RESTAURANTE,datos:E})
+      });
+      if(!rPost.ok){const t=await rPost.text().catch(()=>'');console.warn('SB inv insert error',rPost.status,t.slice(0,150));}
+    }
+  }catch(e){console.warn('SB inv write error',e);}
+}
+
+async function loadFromDB(){
+  // Si el usuario ya guardó algo en esta sesión, o lo local es más reciente, lo local manda
+  const remote=await sbGetInv();
+  if(!remote||typeof remote!=='object')return;
+  if(LOCAL_DIRTY){console.log('[RESTAID inv] Remoto ignorado: hay cambios locales de esta sesión');return;}
+  const remoteTs=Number(remote._ts)||0,localTs=Number(E._ts)||0;
+  if(remoteTs<localTs){console.log('[RESTAID inv] Remoto ignorado: lo local es más reciente');return;}
+  E={...empty(),...remote};
+  if(sanitizeE()){console.log('[RESTAID inv] Datos remotos reparados, subiendo versión corregida');sbSetInv();}
+  try{localStorage.setItem(KEY,JSON.stringify(E));}catch(e){}
+  upTopbar();
+  const act=document.querySelector('.tab[data-page].active');
+  renderPg(act&&act.dataset.page?act.dataset.page:'resumen');
+  console.log('[RESTAID inv] Datos cargados desde Supabase');
+}
+
+/* ── Refresco en vivo (cambios desde el Copiloto del shell u otra pestaña) ── */
+function refreshFromStorage(){
+  if(LOCAL_DIRTY){
+    // Mezcla conservadora: solo recargamos si lo de fuera es más reciente
+    let ext=null;try{ext=JSON.parse(localStorage.getItem(KEY)||'null');}catch(e){}
+    if(!ext||(Number(ext._ts)||0)<=(Number(E._ts)||0))return;
+  }
+  E=load();sanitizeE();upTopbar();
+  const act=document.querySelector('.tab[data-page].active');
+  renderPg(act&&act.dataset.page?act.dataset.page:'resumen');
+  // Tras recargar datos externos, republicar food cost real al bus para que
+  // el prime cost del shell no quede con el valor anterior.
+  if(typeof pushInvPub==='function')pushInvPub();
+}
+window.addEventListener('message',e=>{if(e&&e.data&&e.data.type==='restaid_refresh')refreshFromStorage();});
+window.addEventListener('storage',e=>{if(e.key===KEY)refreshFromStorage();});
+// La carta vive en Ventas (escandallo). Si cambia, refrescamos Ingeniería de menú
+// para que el aviso de "platos sin receta" y los vínculos estén al día.
+
+const $=id=>document.getElementById(id);
+const fc=(n,d=2)=>(Number(n)||0).toLocaleString('es-ES',{minimumFractionDigits:d,maximumFractionDigits:d});
+const fcp=n=>fc(n)+' €';
+let _uidc=0;const uid=()=>Date.now().toString(36)+(_uidc++).toString(36)+Math.random().toString(36).slice(2,6);
+const hoy=()=>new Date().toISOString().slice(0,10);
+// Formatea una fecha ISO (YYYY-MM-DD) a formato español DD/MM/YYYY
+const fday=iso=>{if(!iso||typeof iso!=='string')return iso||'—';const m=iso.match(/^(\d{4})-(\d{2})-(\d{2})/);return m?`${m[3]}/${m[2]}/${m[1]}`:iso;};
+// Normaliza cualquier formato de fecha a ISO YYYY-MM-DD (para inputs type=date)
+const toISO=raw=>{
+  if(!raw||typeof raw!=='string')return '';
+  raw=raw.trim();
+  let m=raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); // ya ISO
+  if(m)return `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
+  m=raw.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/); // DD/MM/YYYY
+  if(m)return `${m[3]}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;
+  m=raw.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2})$/); // DD/MM/YY
+  if(m){const yy=+m[3];const yyyy=yy<50?2000+yy:1900+yy;return `${yyyy}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;}
+  return '';
+};
+const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+function toast(msg,t='g'){
+  const el=document.createElement('div');el.className='toast';
+  el.style.background=t==='r'?'var(--red)':t==='a'?'var(--amber)':'var(--navy)';
+  el.textContent=msg;document.body.appendChild(el);setTimeout(()=>el.remove(),3000);
+}
+function closeM(id){$(id).style.display='none';editId=null;}
+function confirm_(title,msg,ok,okTxt='Eliminar'){
+  $('conf-title').textContent=title;$('conf-msg').innerHTML=msg;
+  $('conf-ok').textContent=okTxt;$('conf-ok').onclick=()=>{closeM('modal-confirm');ok();};
+  $('conf-cancel').textContent='Cancelar';$('conf-ok').style.display='';
+  $('modal-confirm').style.display='flex';
+}
+function ingPx(id){const i=E.ingredientes.find(x=>x.id===id);return i?+(i.precio||0):0;}
+
+/* ── Historial de precios ─────────────────────────────────────────────
+   Cada ingrediente lleva i.historialPrecios=[{fecha,precio,proveedorId,fuente}].
+   Se registra un punto SOLO cuando el precio cambia de verdad, para poder
+   comparar variaciones en semana/mes/año y su impacto en compras y food cost. */
+function recordPrecio(i,nuevo,fecha,fuente,proveedorId){
+  if(!i)return;
+  nuevo=+nuevo;if(!(nuevo>0)||!isFinite(nuevo))return;
+  if(!Array.isArray(i.historialPrecios))i.historialPrecios=[];
+  const ult=i.historialPrecios[i.historialPrecios.length-1];
+  // Sin cambio real respecto al último punto registrado → no duplicar
+  if(ult&&Math.abs((+ult.precio||0)-nuevo)<1e-6)return;
+  i.historialPrecios.push({fecha:fecha||hoy(),precio:Math.round(nuevo*1e4)/1e4,proveedorId:proveedorId!=null?proveedorId:(i.proveedorId||null),fuente:fuente||'manual'});
+  // Limitar a 200 puntos por ingrediente (suficiente histórico, evita inflar el JSON)
+  if(i.historialPrecios.length>200)i.historialPrecios=i.historialPrecios.slice(-200);
+}
+// Precio vigente en una fecha dada (último punto con fecha ≤ ref). Si no hay
+// histórico anterior, cae al primer punto conocido; si no hay ninguno, al precio actual.
+function precioEnFecha(i,refIso){
+  const h=Array.isArray(i.historialPrecios)?i.historialPrecios:[];
+  if(!h.length)return +(i.precio||0);
+  const ord=[...h].sort((a,b)=>String(a.fecha).localeCompare(String(b.fecha)));
+  let val=null;
+  for(const p of ord){if(String(p.fecha)<=refIso)val=+p.precio;else break;}
+  // Antes del primer registro: usamos el primer precio conocido como mejor estimación
+  return val!=null?val:+ord[0].precio;
+}
+function isoHaceDias(n){const d=new Date();d.setDate(d.getDate()-n);return d.toISOString().slice(0,10);}
+
+// Nav
+// Toggle módulo desplegable
+function toggleMod(id){
+  const mod=$('mod-'+id),sub=$('sub-'+id);
+  if(!sub)return;
+  const open=sub.classList.toggle('open');
+  mod.classList.toggle('open',open);
+}
+
+// Navegación por pestañas
+document.querySelectorAll('.tab[data-page]').forEach(tab=>{
+  tab.addEventListener('click',()=>{
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+    tab.classList.add('active');
+    const pg=tab.dataset.page;$('pg-'+pg).classList.add('active');renderPg(pg);
+  });
+});
+function renderPg(p){switch(p){case'resumen':rResumen();break;case'ingredientes':rIngs();break;case'movimientos':rMovs();break;case'caducidades':rCaducidades();break;case'recuento':rRecuento();break;case'pedidos':rPeds();break;case'proveedores':rProvs();break;case'fugas':rFugas();break;case'asistente':rAsistente();break;}}
+
+// ═══════════ RESUMEN ═══════════
+function calcRes(){
+  const ings=E.ingredientes;
+  const val=ings.reduce((s,i)=>s+(i.stock||0)*(i.precio||0),0);
+  const alertas=ings.filter(i=>(i.stock||0)<(i.stockMin||0));
+  const sinStock=ings.filter(i=>(i.stock||0)===0);
+  const h30=new Date();h30.setDate(h30.getDate()-30);
+  const m30=E.movimientos.filter(m=>new Date(m.fecha)>=h30);
+  const e30=m30.filter(m=>m.tipo==='entrada').reduce((s,m)=>s+(m.coste||0),0);
+  const mr30=m30.filter(m=>m.tipo==='merma').reduce((s,m)=>s+(m.coste||(m.cantidad||0)*ingPx(m.ingId)),0);
+  const pMerma=e30>0?mr30/e30*100:0;
+  const pPend=E.pedidos.filter(p=>p.estado==='pendiente').length;
+  // Caducidades
+  const lotes=(E.lotes||[]).filter(l=>l.caducidad);
+  const caducados=lotes.filter(l=>diasHasta(l.caducidad)<0);
+  const porCaducar=lotes.filter(l=>{const d=diasHasta(l.caducidad);return d>=0&&d<=3;});
+  return{val,alertas,sinStock,mr30,pMerma,pPend,total:ings.length,caducados,porCaducar};
+}
+
+/* ── Comparativo de precios en el tiempo ──────────────────────────────
+   Para cada ingrediente compara el precio actual con el vigente hace
+   `dias` días y estima el impacto:
+   · Impacto en compras (€): Δprecio × volumen comprado (entradas) en el período.
+   · Impacto en food cost (€): Δprecio × consumo por recetas en el período
+     (cantidad de receta × uds/semana del plato, escalado a los días del rango).
+   Devuelve filas por ingrediente, totales y resumen por proveedor. */
+function calcVariacionPrecios(dias){
+  dias=Number(dias)||30;
+  const refIso=isoHaceDias(dias);
+  const factorSem=dias/7;
+  // Consumo por recetas (uds/semana) por ingrediente
+  const consumoRec={};
+  (E.platos||[]).filter(pl=>pl.receta&&pl.receta.length).forEach(pl=>{
+    const uds=Number(pl.uds)||0;if(!uds)return;
+    pl.receta.forEach(r=>{if(r.ingId&&r.cantidad)consumoRec[r.ingId]=(consumoRec[r.ingId]||0)+r.cantidad*uds;});
+  });
+  // Volumen comprado (entradas) por ingrediente en el período
+  const compraVol={};
+  E.movimientos.filter(m=>m.tipo==='entrada'&&m.fecha>=refIso).forEach(m=>{compraVol[m.ingId]=(compraVol[m.ingId]||0)+(Number(m.cantidad)||0);});
+  // Facturación del período (para expresar el impacto en puntos)
+  const facturacionPeriodo=(E.platos||[]).reduce((s,pl)=>s+(Number(pl.pvp)||0)*(Number(pl.uds)||0),0)*factorSem;
+
+  const rows=E.ingredientes.map(i=>{
+    const actual=+(i.precio||0);
+    const antes=precioEnFecha(i,refIso);
+    const delta=actual-antes;
+    const pct=antes>0?delta/antes*100:null;
+    const volCompra=compraVol[i.id]||0;
+    const consumoPeriodo=(consumoRec[i.id]||0)*factorSem;
+    const impactoCompra=delta*volCompra;
+    const impactoFoodCost=delta*consumoPeriodo;
+    return{id:i.id,nombre:i.nombre,unidad:i.unidad||'',proveedorId:i.proveedorId||null,
+      actual,antes,delta,pct,volCompra,consumoPeriodo,impactoCompra,impactoFoodCost,
+      cambio:Math.abs(delta)>1e-6};
+  });
+  const conCambio=rows.filter(r=>r.cambio);
+  const totalImpactoCompra=conCambio.reduce((s,r)=>s+r.impactoCompra,0);
+  const totalImpactoFC=conCambio.reduce((s,r)=>s+r.impactoFoodCost,0);
+  // Resumen por proveedor
+  const provMap={};
+  conCambio.forEach(r=>{
+    const k=r.proveedorId||'__sin__';
+    if(!provMap[k])provMap[k]={proveedorId:r.proveedorId||null,nombre:E.proveedores.find(p=>p.id===r.proveedorId)?.nombre||'Sin proveedor',n:0,suben:0,bajan:0,sumaPct:0,impactoCompra:0,impactoFoodCost:0};
+    const o=provMap[k];o.n++;if(r.delta>0)o.suben++;else if(r.delta<0)o.bajan++;
+    if(r.pct!=null)o.sumaPct+=r.pct;o.impactoCompra+=r.impactoCompra;o.impactoFoodCost+=r.impactoFoodCost;
+  });
+  const proveedores=Object.values(provMap).map(o=>({...o,pctMedio:o.n?o.sumaPct/o.n:0})).sort((a,b)=>Math.abs(b.impactoCompra)-Math.abs(a.impactoCompra));
+  return{dias,refIso,rows,conCambio,totalImpactoCompra,totalImpactoFC,facturacionPeriodo,proveedores,
+    fcImpactoPts:facturacionPeriodo>0?totalImpactoFC/facturacionPeriodo*100:null};
+}
+
+/* ── Render del comparativo de precios (tarjeta en Resumen) ── */
+function setPrecioRango(d){precioRango=Number(d)||30;const box=$('comp-precios-box');if(box)box.innerHTML=comparativoPreciosHTML();renderCompPreciosChart();}
+function comparativoPreciosHTML(){
+  const V=calcVariacionPrecios(precioRango);
+  const lbl={7:'última semana',30:'último mes',365:'último año'}[precioRango]||(precioRango+' días');
+  const tabs=[7,30,365].map(d=>`<button class="btn btn-xs ${precioRango===d?'btn-amber':'btn-ghost'}" onclick="setPrecioRango(${d})">${({7:'Semana',30:'Mes',365:'Año'})[d]}</button>`).join('');
+  const movers=V.conCambio.slice().sort((a,b)=>Math.abs(b.pct||0)-Math.abs(a.pct||0));
+  if(!V.conCambio.length){
+    return `<div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">📈 Comparativo de precios <span style="display:flex;gap:4px">${tabs}</span></div>
+      <p style="font-size:12.5px;color:var(--tx3);margin:0">Sin variaciones de precio registradas en ${lbl}. Los precios se registran al editar un ingrediente o aplicar un albarán; con el tiempo aquí verás la evolución y su impacto.</p>`;
+  }
+  const filas=movers.map(r=>{
+    const cls=r.delta>0?'price-up':r.delta<0?'price-down':'';
+    const sign=r.delta>0?'+':'';
+    return `<tr>
+      <td><strong>${esc(r.nombre)}</strong></td>
+      <td>${E.proveedores.find(p=>p.id===r.proveedorId)?.nombre?`<span class="badge badge-gray">${esc(E.proveedores.find(p=>p.id===r.proveedorId).nombre)}</span>`:'<span style="color:var(--tx3)">—</span>'}</td>
+      <td class="td-num">${fcp(r.antes)}</td>
+      <td class="td-num">${fcp(r.actual)}</td>
+      <td class="td-num ${cls}">${sign}${fcp(r.delta)}${r.pct!=null?` <span style="font-size:11px">(${sign}${fc(r.pct,1)}%)</span>`:''}</td>
+      <td class="td-num ${r.impactoCompra>0?'price-up':r.impactoCompra<0?'price-down':''}">${r.volCompra>0?(r.impactoCompra>0?'+':'')+fcp(r.impactoCompra):'—'}</td>
+      <td class="td-num ${r.impactoFoodCost>0?'price-up':r.impactoFoodCost<0?'price-down':''}">${r.consumoPeriodo>0?(r.impactoFoodCost>0?'+':'')+fcp(r.impactoFoodCost):'—'}</td>
+    </tr>`;}).join('');
+  const provFilas=V.proveedores.map(p=>`<tr>
+    <td><strong>${esc(p.nombre)}</strong></td>
+    <td class="td-num">${p.n}</td>
+    <td class="td-num"><span class="price-up">${p.suben}↑</span> / <span class="price-down">${p.bajan}↓</span></td>
+    <td class="td-num ${p.pctMedio>0?'price-up':p.pctMedio<0?'price-down':''}">${p.pctMedio>0?'+':''}${fc(p.pctMedio,1)}%</td>
+    <td class="td-num ${p.impactoCompra>0?'price-up':p.impactoCompra<0?'price-down':''}">${p.impactoCompra>0?'+':''}${fcp(p.impactoCompra)}</td>
+  </tr>`).join('');
+  return `<div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">📈 Comparativo de precios <span style="display:flex;gap:4px">${tabs}</span></div>
+    <div class="grid-3" style="margin-bottom:14px">
+      <div class="kpi ${V.totalImpactoCompra>0?'red':'green'}"><div class="kpi-lbl">Impacto en compras (${lbl})</div><div class="kpi-val" style="font-size:20px">${V.totalImpactoCompra>0?'+':''}${fcp(V.totalImpactoCompra)}</div><div class="kpi-sub">Δprecio × volumen comprado</div></div>
+      <div class="kpi ${V.totalImpactoFC>0?'red':'green'}"><div class="kpi-lbl">Impacto en food cost (${lbl})</div><div class="kpi-val" style="font-size:20px">${V.totalImpactoFC>0?'+':''}${fcp(V.totalImpactoFC)}</div><div class="kpi-sub">Δprecio × consumo de recetas</div></div>
+      <div class="kpi navy"><div class="kpi-lbl">Sobre facturación</div><div class="kpi-val" style="font-size:20px">${V.fcImpactoPts!=null?(V.fcImpactoPts>0?'+':'')+fc(V.fcImpactoPts,2)+' pts':'—'}</div><div class="kpi-sub">${V.facturacionPeriodo>0?'de '+fcp(V.facturacionPeriodo)+' facturados':'sin ventas estimadas'}</div></div>
+    </div>
+    <div style="position:relative;height:200px;margin-bottom:14px"><canvas id="ch-comp-precios"></canvas></div>
+    <div class="tbl-wrap" style="margin-bottom:14px"><table><thead><tr><th>Ingrediente</th><th>Proveedor</th><th class="td-num">Antes</th><th class="td-num">Ahora</th><th class="td-num">Variación</th><th class="td-num" title="Δprecio × volumen comprado en el período">Impacto compras</th><th class="td-num" title="Δprecio × consumo por recetas en el período">Impacto food cost</th></tr></thead><tbody>${filas}</tbody></table></div>
+    ${V.proveedores.length?`<div style="font-size:12.5px;font-weight:600;color:var(--tx2);margin-bottom:6px">Por proveedor</div>
+    <div class="tbl-wrap"><table><thead><tr><th>Proveedor</th><th class="td-num">Ingredientes</th><th class="td-num">Suben/Bajan</th><th class="td-num">Var. media</th><th class="td-num">Impacto compras</th></tr></thead><tbody>${provFilas}</tbody></table></div>`:''}
+    <p style="font-size:11px;color:var(--tx3);margin-top:8px">El impacto en compras usa las entradas reales del período. El de food cost estima el sobrecoste de tus recetas con las uds/semana de cada plato escaladas al rango. "Antes" = precio vigente hace ${lbl}.</p>`;
+}
+function renderCompPreciosChart(){
+  requestAnimationFrame(()=>{
+    const ctx=$('ch-comp-precios');if(!ctx||typeof Chart==='undefined')return;
+    const V=calcVariacionPrecios(precioRango);
+    const movers=V.conCambio.filter(r=>r.pct!=null).sort((a,b)=>Math.abs(b.pct)-Math.abs(a.pct)).slice(0,10);
+    if(!movers.length){if(ctx.parentElement)ctx.parentElement.innerHTML='<div class="empty-state" style="padding:20px"><p>Sin variaciones para graficar</p></div>';return;}
+    if(ctx._chart)try{ctx._chart.destroy();}catch(e){}
+    ctx._chart=new Chart(ctx,{type:'bar',data:{labels:movers.map(r=>r.nombre),datasets:[{label:'Variación %',data:movers.map(r=>Math.round(r.pct*10)/10),backgroundColor:movers.map(r=>r.delta>0?'#C0302099':'#3D8B5E99'),borderColor:movers.map(r=>r.delta>0?'#C03020':'#3D8B5E'),borderWidth:1}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${c.raw>0?'+':''}${c.raw}%  (${c.raw>0?'+':''}${fcp(movers[c.dataIndex].delta)})`}}},scales:{x:{title:{display:true,text:'Variación de precio (%)',font:{size:11}}},y:{ticks:{font:{size:10}}}}}});
+  });
+}
+
+function rResumen(){
+  const r=calcRes();const pg=$('pg-resumen');
+  const alH=r.alertas.length===0
+    ?'<div class="alert alert-green">✓ Todos los ingredientes están por encima del stock mínimo.</div>'
+    :r.alertas.slice(0,6).map(i=>`<div class="alert alert-red" style="align-items:center">
+      <span>⚠</span><div style="flex:1"><strong>${esc(i.nombre)}</strong> — Stock: <strong>${fc(i.stock||0,2)} ${esc(i.unidad)}</strong> · Mín: ${fc(i.stockMin||0,2)}</div>
+      <button class="btn btn-xs btn-amber" onclick="pedRapido('${i.id}')">→ Pedir</button>
+    </div>`).join('')+(r.alertas.length>6?`<p style="font-size:12px;color:var(--tx3);text-align:center">y ${r.alertas.length-6} más…</p>`:'');
+
+  const ums=[...E.movimientos].sort((a,b)=>b.fecha.localeCompare(a.fecha)).slice(0,7);
+  const uH=ums.length===0?'<div class="empty-state" style="padding:20px"><p>Sin movimientos</p></div>'
+    :`<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Ingrediente</th><th>Tipo</th><th>Cantidad</th><th>Ref.</th></tr></thead><tbody>
+    ${ums.map(m=>{const i=E.ingredientes.find(x=>x.id===m.ingId);return`<tr>
+      <td style="color:var(--tx3);font-size:12px">${fday(m.fecha)}</td>
+      <td><strong>${esc(i?.nombre||'—')}</strong></td>
+      <td><span class="mov-tipo mov-${m.tipo}">${m.tipo==='entrada'?'↓ Entrada':m.tipo==='salida'?'↑ Salida':'⚠ Merma'}</span></td>
+      <td class="td-num">${fc(m.cantidad,2)} ${esc(i?.unidad||'')}</td>
+      <td style="color:var(--tx3);font-size:12px">${esc(m.motivo||'—')}</td>
+    </tr>`;}).join('')}</tbody></table></div>`;
+
+  pg.innerHTML=`<div class="sec-head"><h2>Resumen de inventario</h2><span style="color:var(--tx3);font-size:12px">${hoy()}</span></div>
+    <div class="grid-4" style="margin-bottom:20px">
+      <div class="kpi amber"><div class="kpi-lbl">Valor total stock</div><div class="kpi-val">${fcp(r.val)}</div><div class="kpi-sub">${r.total} ingredientes</div></div>
+      <div class="kpi ${r.alertas.length>0?'red':'green'}"><div class="kpi-lbl">Alertas stock bajo</div><div class="kpi-val">${r.alertas.length}</div><div class="kpi-sub">${r.sinStock.length} sin stock</div></div>
+      <div class="kpi ${r.pMerma>5?'red':r.pMerma>2?'amber':'green'}"><div class="kpi-lbl">Merma (30 días)</div><div class="kpi-val">${fc(r.pMerma,1)} %</div><div class="kpi-sub">${fcp(r.mr30)} coste</div></div>
+      <div class="kpi ${r.pPend>0?'amber':'navy'}"><div class="kpi-lbl">Pedidos pendientes</div><div class="kpi-val">${r.pPend}</div><div class="kpi-sub">por enviar</div></div>
+      <div class="kpi navy"><div class="kpi-lbl">IVA soportado (30d)</div><div class="kpi-val">${(()=>{const d30=new Date();d30.setDate(d30.getDate()-30);const d30s=d30.toISOString().slice(0,10);const iva=E.movimientos.filter(m=>m.tipo==='entrada'&&m.fecha>=d30s).reduce((s,m)=>{const c=m.coste||0;const p=m.iva!=null?m.iva:(E.ingredientes.find(x=>x.id===m.ingId)?.ivaPct||null);return s+(p!=null?c*(p/100):0);},0);return iva>0?fcp(iva):'—';})()}</div><div class="kpi-sub" style="font-size:10px">deducible</div></div>
+    </div>
+    ${(r.caducados.length>0||r.porCaducar.length>0)?`<div class="alert ${r.caducados.length>0?'alert-red':'alert-amber'}" style="margin-bottom:20px;align-items:center">
+      <span>${r.caducados.length>0?'🔴':'🟠'}</span>
+      <div style="flex:1">${r.caducados.length>0?`<strong>${r.caducados.length} lote(s) caducado(s)</strong> pendientes de dar de baja. `:''}${r.porCaducar.length>0?`<strong>${r.porCaducar.length} lote(s)</strong> caducan en ≤3 días.`:''}</div>
+      <button class="btn btn-xs btn-ghost" onclick="document.querySelector('[data-page=caducidades]').click()">Ver caducidades →</button>
+    </div>`:''}
+    ${r.alertas.length>0?`<div class="card" style="margin-bottom:20px"><div class="card-title">⚠ Ingredientes bajo mínimo</div>${alH}</div>`:''}
+    <div class="grid-2">
+      <div class="card"><div class="card-title">Últimos movimientos</div>${uH}</div>
+      <div class="card"><div class="card-title">Stock por categoría</div><div style="position:relative;height:220px"><canvas id="ch-cat"></canvas></div></div>
+    </div>
+    <div class="card" id="comp-precios-card" style="margin-top:20px"><div id="comp-precios-box">${comparativoPreciosHTML()}</div></div>`;
+
+  requestAnimationFrame(()=>{
+    const cats={};E.ingredientes.forEach(i=>{const c=i.categoria||'Sin categoría';cats[c]=(cats[c]||0)+(i.stock||0)*(i.precio||0);});
+    const lbs=Object.keys(cats).filter(k=>cats[k]>0);
+    const ctx=$('ch-cat');
+    if(ctx&&lbs.length>0){new Chart(ctx,{type:'doughnut',data:{labels:lbs,datasets:[{data:lbs.map(k=>cats[k]),backgroundColor:['#1A2B3C','#E8914A','#3D8B5E','#5A8A6A','#8A5A2A','#2A6A8A','#6A2A8A','#C03020'].slice(0,lbs.length),borderWidth:2,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{font:{size:11},padding:8}}}}});}
+    else if(ctx)ctx.parentElement.innerHTML='<div class="empty-state" style="padding:20px"><p>Sin datos aún</p></div>';
+  });
+  renderCompPreciosChart();
+}
+
+// ═══════════ INGREDIENTES ═══════════
+function rIngs(){
+  const pg=$('pg-ingredientes');
+  const cats=[...new Set(E.ingredientes.map(i=>i.categoria||'Sin categoría').sort())];
+  const catOpts=['<option value="">Todas</option>',...cats.map(c=>`<option value="${esc(c)}"${ingCatF===c?' selected':''}>${esc(c)}</option>`)].join('');
+  let ings=E.ingredientes.filter(i=>{
+    const q=ingSearch.toLowerCase();
+    return(!q||i.nombre.toLowerCase().includes(q)||(i.categoria||'').toLowerCase().includes(q))&&(!ingCatF||i.categoria===ingCatF);
+  }).sort((a,b)=>{let va=a[ingSort]||0,vb=b[ingSort]||0;if(typeof va==='string')va=va.toLowerCase();if(typeof vb==='string')vb=vb.toLowerCase();return ingDir*(va>vb?1:va<vb?-1:0);});
+
+  const filas=ings.length===0
+    ?`<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--tx3)">${E.ingredientes.length===0?'Sin ingredientes. Añade el primero →':'Sin resultados.'}</td></tr>`
+    :ings.map(i=>{
+      const pv=E.proveedores.find(p=>p.id===i.proveedorId);
+      const al=(i.stock||0)<(i.stockMin||0);
+      const np=E.platos.filter(pl=>pl.receta&&pl.receta.some(r=>r.ingId===i.id)).length;
+      return`<tr>
+        <td><strong>${esc(i.nombre)}</strong>${i.notas?`<br><span style="font-size:11px;color:var(--tx3)">${esc(i.notas)}</span>`:''}</td>
+        <td><span class="badge badge-navy">${esc(i.categoria||'—')}</span></td>
+        <td style="font-family:var(--ff-mono);font-size:12px;text-align:center">${esc(i.unidad||'—')}${i.formatoCompra?`<div style="font-size:9.5px;color:var(--amber);font-family:inherit">⇄ ${esc(i.formatoCompra.unidad)}</div>`:''}</td>
+        <td class="td-num">${fcp(i.precio||0)}${i.formatoCompra&&i.formatoCompra.factor?`<div style="font-size:9.5px;color:var(--tx3)">${fcp((i.precio||0)*i.formatoCompra.factor)}/${esc(i.formatoCompra.unidad)}</div>`:''}</td>
+        <td style="text-align:center;font-size:12px;color:var(--tx2)">${i.ivaPct!=null?i.ivaPct+'%':'<span style="color:var(--tx3)">—</span>'}</td>
+        <td style="text-align:center">${al?`<span class="badge badge-red">⚠ ${fc(i.stock||0,2)}`:`<span style="font-family:var(--ff-mono);font-size:12.5px">${fc(i.stock||0,2)}`}</span> <span style="font-size:11px;color:var(--tx3)">${esc(i.unidad||'')}</span></td>
+        <td class="td-num" style="color:var(--tx3)">${fc(i.stockMin||0,2)}</td>
+        <td>${pv?`<span class="badge badge-gray">${esc(pv.nombre)}</span>`:'<span style="color:var(--tx3)">—</span>'}</td>
+        <td style="text-align:center">${np>0?`<span class="badge badge-amber">${np}</span>`:'<span style="color:var(--tx3)">0</span>'}</td>
+        <td class="td-actions">
+          <button class="btn-icon" title="Movimiento" onclick="openMovM('${i.id}')">↕</button>
+          <button class="btn-icon" title="Editar" onclick="openIngModal('${i.id}')">✎</button>
+          <button class="btn-icon" style="color:var(--red)" onclick="delIng('${i.id}')">✕</button>
+        </td>
+      </tr>`;
+    }).join('');
+
+  const thS=(col,lbl)=>`<th class="sort ${ingSort===col?(ingDir===1?'asc':'desc'):''}" onclick="sortI('${col}')" style="cursor:pointer">${lbl}${ingSort===col?(ingDir===1?' ↑':' ↓'):' ↕'}</th>`;
+  pg.innerHTML=`<div class="sec-head"><h2>Ingredientes</h2><div class="actions">
+    <div class="search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    <input placeholder="Buscar…" value="${esc(ingSearch)}" oninput="ingSearch=this.value;rIngs()"></div>
+    <select style="border:1px solid var(--bdr);border-radius:var(--r);padding:7px 10px;font-size:12.5px" onchange="ingCatF=this.value;rIngs()">${catOpts}</select>
+    <button class="btn btn-amber btn-sm" onclick="openIngModal()">+ Ingrediente</button>
+  </div></div>
+  <div class="tbl-wrap"><table><thead><tr>
+    ${thS('nombre','Ingrediente')}${thS('categoria','Categoría')}<th>Unidad</th>${thS('precio','Precio/ud')}<th title="IVA en compras">IVA%</th>${thS('stock','Stock actual')}
+    <th>Stock mín.</th><th>Proveedor</th><th title="Nº platos donde aparece">Platos</th><th>Acciones</th>
+  </tr></thead><tbody>${filas}</tbody></table></div>
+  <div style="margin-top:10px;font-size:11.5px;color:var(--tx3)">${ings.length} de ${E.ingredientes.length} ingredientes</div>`;
+}
+
+function sortI(col){if(ingSort===col)ingDir*=-1;else{ingSort=col;ingDir=1;}rIngs();}
+
+function openIngModal(id){
+  editId=id||null;$('m-ing-title').textContent=id?'Editar ingrediente':'Nuevo ingrediente';
+  const i=id?E.ingredientes.find(x=>x.id===id):null;
+  $('ing-prov').innerHTML='<option value="">— Ninguno —</option>'+E.proveedores.map(p=>`<option value="${p.id}"${i&&i.proveedorId===p.id?' selected':''}>${esc(p.nombre)}</option>`).join('');
+  if(i){$('ing-nombre').value=i.nombre||'';$('ing-cat').value=i.categoria||'';$('ing-unidad').value=i.unidad||'';$('ing-precio').value=i.precio||'';$('ing-iva').value=i.ivaPct!=null?i.ivaPct:'10';$('ing-stock').value=i.stock||'';$('ing-smin').value=i.stockMin||'';$('ing-notas').value=i.notas||'';
+    $('ing-fc-unidad').value=i.formatoCompra?i.formatoCompra.unidad||'':'';$('ing-fc-factor').value=i.formatoCompra?i.formatoCompra.factor||'':'';}
+  else{['ing-nombre','ing-precio','ing-stock','ing-smin','ing-notas','ing-fc-unidad','ing-fc-factor'].forEach(x=>$(x).value='');$('ing-cat').value='';$('ing-unidad').value='';$('ing-iva').value='10';}
+  ingFcHint();
+  $('modal-ing').style.display='flex';
+}
+
+// Hint dinámico del formato de compra
+function ingFcHint(){
+  const u=$('ing-fc-unidad')?.value.trim(),f=parseFloat($('ing-fc-factor')?.value),ub=$('ing-unidad')?.value,px=parseFloat($('ing-precio')?.value);
+  const el=$('ing-fc-hint');if(!el)return;
+  if(u&&f>0&&ub){
+    let s=`1 ${u} = ${f} ${ub}`;
+    if(px>0)s+=` · ${fc(px*f,2)}€/${u}`;
+    el.innerHTML=s;el.style.color='var(--amber)';
+  }else{el.textContent='—';el.style.color='var(--tx3)';}
+}
+
+function saveIng(){
+  const nm=$('ing-nombre').value.trim(),cat=$('ing-cat').value,un=$('ing-unidad').value;
+  if(!nm){toast('El nombre es obligatorio','r');return;}
+  if(!cat){toast('Selecciona categoría','r');return;}
+  if(!un){toast('Selecciona unidad','r');return;}
+  const _ivaPctVal=$('ing-iva').value;
+  const _fcU=$('ing-fc-unidad').value.trim(),_fcF=parseFloat($('ing-fc-factor').value);
+  const o={id:editId||uid(),nombre:nm,categoria:cat,unidad:un,precio:parseFloat($('ing-precio').value)||0,
+    ivaPct:_ivaPctVal!==''?parseFloat(_ivaPctVal):null,
+    stock:parseFloat($('ing-stock').value)||0,stockMin:parseFloat($('ing-smin').value)||0,
+    proveedorId:$('ing-prov').value||null,notas:$('ing-notas').value.trim(),
+    formatoCompra:(_fcU&&_fcF>0)?{unidad:_fcU,factor:_fcF}:null};
+  if(editId){const idx=E.ingredientes.findIndex(x=>x.id===editId);o.creadoEn=E.ingredientes[idx].creadoEn;o.historialPrecios=E.ingredientes[idx].historialPrecios||[];recordPrecio(o,o.precio,hoy(),'manual',o.proveedorId);E.ingredientes[idx]=o;toast('Actualizado');}
+  else{o.creadoEn=hoy();recordPrecio(o,o.precio,hoy(),'inicial',o.proveedorId);E.ingredientes.push(o);if(o.stock>0)E.movimientos.push({id:uid(),ingId:o.id,tipo:'entrada',cantidad:o.stock,fecha:hoy(),coste:o.stock*o.precio,motivo:'Stock inicial'});toast('Añadido');}
+  save();closeM('modal-ing');rIngs();upTopbar();
+}
+
+function delIng(id){
+  const i=E.ingredientes.find(x=>x.id===id);
+  confirm_('Eliminar ingrediente',`¿Eliminar "<strong>${esc(i.nombre)}</strong>"? Se eliminarán sus movimientos.`,()=>{
+    E.ingredientes=E.ingredientes.filter(x=>x.id!==id);E.movimientos=E.movimientos.filter(m=>m.ingId!==id);
+    save();rIngs();upTopbar();toast('Eliminado');
+  });
+}
+
+// ═══════════ MOVIMIENTOS ═══════════
+function rMovs(){
+  const pg=$('pg-movimientos');
+  let movs=[...E.movimientos].sort((a,b)=>b.fecha.localeCompare(a.fecha));
+  if(movTipoF)movs=movs.filter(m=>m.tipo===movTipoF);
+  if(movSearch)movs=movs.filter(m=>{const i=E.ingredientes.find(x=>x.id===m.ingId);return(i?.nombre||'').toLowerCase().includes(movSearch.toLowerCase())||(m.motivo||'').toLowerCase().includes(movSearch.toLowerCase());});
+  if(movD)movs=movs.filter(m=>m.fecha>=movD);
+  if(movH)movs=movs.filter(m=>m.fecha<=movH);
+  const tE=movs.filter(m=>m.tipo==='entrada').reduce((s,m)=>s+(m.coste||0),0);
+  const tS=movs.filter(m=>m.tipo==='salida').reduce((s,m)=>s+(m.coste||(m.cantidad||0)*ingPx(m.ingId)),0);
+  const tM=movs.filter(m=>m.tipo==='merma').reduce((s,m)=>s+(m.coste||(m.cantidad||0)*ingPx(m.ingId)),0);
+  // IVA soportado: calculado desde el IVA% del movimiento o del ingrediente
+  const tIVA=movs.filter(m=>m.tipo==='entrada').reduce((s,m)=>{
+    const coste=m.coste||0; if(!coste)return s;
+    const ivaPct=m.iva!=null?m.iva:(E.ingredientes.find(x=>x.id===m.ingId)?.ivaPct||null);
+    return s+(ivaPct!=null?coste*(ivaPct/100):0);
+  },0);
+  const filas=movs.length===0
+    ?'<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--tx3)">Sin movimientos en el período.</td></tr>'
+    :movs.map(m=>{const i=E.ingredientes.find(x=>x.id===m.ingId);const cd=m.coste||(m.cantidad||0)*ingPx(m.ingId);return`<tr>
+      <td style="color:var(--tx3);font-size:12px;white-space:nowrap">${fday(m.fecha)}</td>
+      <td><strong>${esc(i?.nombre||'—')}</strong></td>
+      <td><span class="mov-tipo mov-${m.tipo}">${m.tipo==='entrada'?'↓ Entrada':m.tipo==='salida'?'↑ Salida':'⚠ Merma'}</span></td>
+      <td class="td-num">${fc(m.cantidad,2)} ${esc(i?.unidad||'')}${m.cantidadCompra&&m.unidadCompra&&m.unidadCompra!==m.unidad?`<div style="font-size:10px;color:var(--tx3)">(${fc(m.cantidadCompra,m.cantidadCompra%1?2:0)} ${esc(m.unidadCompra)})</div>`:''}</td>
+      <td class="td-num">${cd>0?fcp(cd):'—'}</td>
+      <td style="color:var(--tx3);font-size:12px">${esc(m.motivo||'—')}</td>
+      <td class="td-actions"><button class="btn-icon" title="Editar" onclick="editMov('${m.id}')">✎</button><button class="btn-icon" style="color:var(--red)" title="Eliminar" onclick="delMov('${m.id}')">✕</button></td>
+    </tr>`;}).join('');
+  pg.innerHTML=`<div class="sec-head"><h2>Movimientos de stock</h2><div class="actions">
+    <button class="btn btn-ghost btn-sm" onclick="openMovM()">+ Manual</button>
+    <button class="btn btn-amber btn-sm" onclick="openAlbM()">↑ Subir albarán</button>
+  </div></div>
+  <div class="card" style="margin-bottom:16px">
+    <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+      <div class="search-wrap" style="flex:1;min-width:160px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input placeholder="Buscar ingrediente o referencia…" value="${esc(movSearch)}" oninput="movSearch=this.value;rMovs()" style="width:100%">
+      </div>
+      <div class="form-group" style="flex:0;min-width:110px">
+        <label>Tipo</label>
+        <select onchange="movTipoF=this.value;rMovs()">
+          <option value=""${!movTipoF?' selected':''}>Todos</option>
+          <option value="entrada"${movTipoF==='entrada'?' selected':''}>Entradas</option>
+          <option value="salida"${movTipoF==='salida'?' selected':''}>Salidas</option>
+          <option value="merma"${movTipoF==='merma'?' selected':''}>Mermas</option>
+        </select>
+      </div>
+      <div class="form-group" style="flex:0;min-width:130px">
+        <label>Desde</label>
+        <input type="date" value="${movD}" onchange="movD=this.value;rMovs()">
+      </div>
+      <div class="form-group" style="flex:0;min-width:130px">
+        <label>Hasta</label>
+        <input type="date" value="${movH}" onchange="movH=this.value;rMovs()">
+      </div>
+      <button class="btn btn-ghost btn-sm" style="margin-bottom:1px" onclick="movTipoF='';movSearch='';movD='';movH='';rMovs()">✕ Limpiar</button>
+    </div>
+  </div>
+  <div class="grid-3" style="margin-bottom:16px">
+    <div class="kpi green"><div class="kpi-lbl">Entradas (neto)</div><div class="kpi-val" style="font-size:20px">${fcp(tE)}</div></div>
+    <div class="kpi navy"><div class="kpi-lbl">Salidas</div><div class="kpi-val" style="font-size:20px">${fcp(tS)}</div></div>
+    <div class="kpi ${tM>0?'red':'green'}"><div class="kpi-lbl">Mermas</div><div class="kpi-val" style="font-size:20px">${fcp(tM)}</div></div>
+    <div class="kpi amber"><div class="kpi-lbl">IVA soportado</div><div class="kpi-val" style="font-size:20px">${tIVA>0?fcp(tIVA):'—'}</div><div class="kpi-sub" style="font-size:10px">${tIVA>0?'deducible en declaración':tE>0?'sin IVA registrado':''}</div></div>
+  </div>
+  <div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Ingrediente</th><th>Tipo</th><th>Cantidad</th><th>Coste</th><th>Referencia</th><th></th></tr></thead><tbody>${filas}</tbody></table></div>
+  <div style="margin-top:10px;font-size:11.5px;color:var(--tx3)">${movs.length} movimientos</div>`;
+}
+
+function openMovM(ingId){
+  movEditId=null;
+  const t=$('m-mov-title');if(t)t.textContent='Registrar movimiento';
+  $('mov-ing').innerHTML='<option value="">— Seleccionar —</option>'+E.ingredientes.map(i=>`<option value="${i.id}"${ingId===i.id?' selected':''}>${esc(i.nombre)} (${fc(i.stock||0,2)} ${esc(i.unidad)})</option>`).join('');
+  $('mov-fecha').value=hoy();$('mov-cant').value='';$('mov-coste').value='';$('mov-motivo').value='';$('mov-cad').value='';
+  $('mov-tipo').value='entrada';toggleCadField();
+  $('modal-mov').style.display='flex';
+}
+// El campo de caducidad solo tiene sentido para entradas
+function toggleCadField(){
+  const tipo=$('mov-tipo').value;
+  $('mov-cad').parentElement.style.display = tipo==='entrada' ? 'flex' : 'none';
+}
+
+function saveMov(){
+  const iid=$('mov-ing').value,tipo=$('mov-tipo').value,cant=parseFloat($('mov-cant').value)||0,f=$('mov-fecha').value;
+  if(!iid){toast('Selecciona ingrediente','r');return;}if(cant<=0){toast('Cantidad > 0','r');return;}if(!f){toast('Indica fecha','r');return;}
+  const c=parseFloat($('mov-coste').value)||0;
+  const cad=$('mov-cad').value||null;
+
+  if(movEditId){
+    // EDICIÓN: revertir el movimiento anterior del stock y aplicar el nuevo
+    const old=E.movimientos.find(x=>x.id===movEditId);
+    if(old){
+      const oi=E.ingredientes.find(x=>x.id===old.ingId);
+      if(oi){ // revertir efecto antiguo
+        if(old.tipo==='entrada')oi.stock=Math.max(0,(oi.stock||0)-(old.cantidad||0));
+        else oi.stock=(oi.stock||0)+(old.cantidad||0);
+      }
+      // aplicar efecto nuevo
+      const ni=E.ingredientes.find(x=>x.id===iid);
+      if(ni){if(tipo==='entrada')ni.stock=(ni.stock||0)+cant;else ni.stock=Math.max(0,(ni.stock||0)-cant);}
+      // actualizar el movimiento
+      Object.assign(old,{ingId:iid,tipo,cantidad:cant,fecha:f,coste:c||cant*ingPx(iid),motivo:$('mov-motivo').value.trim(),caducidad:tipo==='entrada'?cad:null});
+    }
+    save();closeM('modal-mov');rMovs();upTopbar();toast('Movimiento actualizado');
+    movEditId=null;
+    return;
+  }
+
+  // ALTA nueva
+  E.movimientos.push({id:uid(),ingId:iid,tipo,cantidad:cant,fecha:f,coste:c||cant*ingPx(iid),motivo:$('mov-motivo').value.trim(),caducidad:tipo==='entrada'?cad:null});
+  const i=E.ingredientes.find(x=>x.id===iid);
+  if(i){if(tipo==='entrada')i.stock=(i.stock||0)+cant;else i.stock=Math.max(0,(i.stock||0)-cant);}
+  if(tipo==='entrada'&&cad){E.lotes=E.lotes||[];E.lotes.push({id:uid(),ingId:iid,cantidad:cant,caducidad:cad,fecha:f});}
+  save();closeM('modal-mov');rMovs();upTopbar();toast('Movimiento registrado');
+}
+
+function delMov(id){
+  const m=E.movimientos.find(x=>x.id===id);
+  if(!m)return;
+  const i=E.ingredientes.find(x=>x.id===m.ingId);
+  const msg=i?`Se revertirá su efecto en el stock de <strong>${esc(i.nombre)}</strong> (${m.tipo==='entrada'?'restar':'sumar'} ${fc(m.cantidad,2)} ${esc(i.unidad||'')}).`:'El movimiento se eliminará.';
+  confirm_('Eliminar movimiento',msg,()=>{
+    // Revertir el efecto en el stock
+    if(i){
+      if(m.tipo==='entrada')i.stock=Math.max(0,(i.stock||0)-(m.cantidad||0));
+      else i.stock=(i.stock||0)+(m.cantidad||0);
+    }
+    E.movimientos=E.movimientos.filter(x=>x.id!==id);
+    // Limpiar lote asociado si lo hubiera
+    if(m.caducidad&&E.lotes)E.lotes=E.lotes.filter(l=>!(l.ingId===m.ingId&&l.fecha===m.fecha&&l.cantidad===m.cantidad));
+    save();rMovs();upTopbar();toast('Movimiento eliminado y stock actualizado');
+  });
+}
+
+// Editar un movimiento existente
+function editMov(id){
+  const m=E.movimientos.find(x=>x.id===id);if(!m)return;
+  movEditId=id;
+  $('mov-ing').innerHTML='<option value="">— Seleccionar —</option>'+E.ingredientes.map(i=>`<option value="${i.id}"${m.ingId===i.id?' selected':''}>${esc(i.nombre)} (${fc(i.stock||0,2)} ${esc(i.unidad)})</option>`).join('');
+  $('mov-tipo').value=m.tipo;$('mov-cant').value=m.cantidad||'';$('mov-fecha').value=m.fecha||hoy();
+  $('mov-coste').value=m.coste||'';$('mov-motivo').value=m.motivo||'';$('mov-cad').value=m.caducidad||'';
+  toggleCadField();
+  const t=$('m-mov-title');if(t)t.textContent='Editar movimiento';
+  $('modal-mov').style.display='flex';
+}
+
+// ═══════════ PEDIDOS ═══════════
+function rPeds(){
+  const pg=$('pg-pedidos');
+  const al=E.ingredientes.filter(i=>(i.stock||0)<(i.stockMin||0));
+  const peds=[...E.pedidos].sort((a,b)=>b.fecha.localeCompare(a.fecha));
+  const fp=al.map(i=>`<tr>
+    <td><input type="checkbox" class="pc" data-id="${i.id}" checked></td>
+    <td><strong>${esc(i.nombre)}</strong></td>
+    <td style="color:var(--tx3)">${esc(i.categoria||'—')}</td>
+    <td class="td-num" style="color:var(--red)">${fc(i.stock||0,2)} ${esc(i.unidad)}</td>
+    <td class="td-num">${fc(i.stockMin||0,2)}</td>
+    <td><input type="number" style="width:80px;border:1px solid var(--bdr);border-radius:4px;padding:4px 6px;text-align:right;font-family:var(--ff-mono);font-size:12px" id="pq-${i.id}" value="${Math.max(0,(i.stockMin||0)*2-(i.stock||0)).toFixed(2)}"></td>
+    <td>${E.proveedores.find(p=>p.id===i.proveedorId)?.nombre||'<span style="color:var(--tx3)">—</span>'}</td>
+  </tr>`).join('');
+  const hH=peds.length===0?'<div class="empty-state" style="padding:20px"><p>Sin pedidos</p></div>'
+    :`<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Ref.</th><th>Proveedor/es</th><th>Líneas</th><th>Estado</th><th></th></tr></thead><tbody>
+    ${peds.map(p=>`<tr>
+      <td style="font-size:12px;color:var(--tx3)">${fday(p.fecha)}</td>
+      <td><strong>${esc(p.ref||'—')}</strong></td>
+      <td style="font-size:12px">${esc(p.proveedores||'Varios')}</td>
+      <td class="td-num">${(p.lineas||[]).length}</td>
+      <td><span class="badge badge-${p.estado==='recibido'?'green':p.estado==='enviado'?'navy':'amber'}">${p.estado}</span></td>
+      <td class="td-actions">
+        <button class="btn btn-xs btn-ghost" onclick="verPed('${p.id}')">Ver</button>
+        ${p.estado==='pendiente'?`<button class="btn btn-xs btn-ghost" onclick="editPed('${p.id}')">✎ Editar</button>`:''}
+        ${p.estado!=='recibido'?`<button class="btn btn-xs btn-green" onclick="avPed('${p.id}')">→ ${p.estado==='pendiente'?'Enviado':'Recibido'}</button>`:''}
+        <button class="btn btn-xs" style="color:var(--red)" onclick="delPed('${p.id}')">✕</button>
+      </td>
+    </tr>`).join('')}</tbody></table></div>`;
+  pg.innerHTML=`<div class="sec-head"><h2>Pedidos</h2>
+    <button class="btn btn-ghost btn-sm" id="btn-ai-ped" onclick="aiPed()">✨ Optimizar con IA</button>
+  </div>
+  ${(()=>{const N=calcNecesidades();
+    if(!N)return `<div class="card" style="margin-bottom:20px"><div class="card-title">📅 Pedido de la semana por previsión</div><p style="font-size:12.5px;color:var(--tx3);margin:0">Analiza un período en el módulo <strong>Ventas</strong> y aquí te propondré el pedido semanal: consumo previsto por tus recetas, menos el stock que ya tienes.</p></div>`;
+    if(N.vacio)return `<div class="card" style="margin-bottom:20px"><div class="card-title">📅 Pedido de la semana por previsión</div><p style="font-size:12.5px;color:var(--tx3);margin:0">Hay ventas publicadas pero ningún plato con receta casa por nombre. Revisa Ingeniería de menú.</p></div>`;
+    if(!N.rows.length)return `<div class="card" style="margin-bottom:20px"><div class="card-title">📅 Pedido de la semana por previsión</div><p style="font-size:12.5px;color:var(--green);margin:0">✓ El stock actual cubre el consumo previsto de la semana. Nada que pedir por previsión.</p></div>`;
+    let lastProv=null;
+    const filas=N.rows.map(r=>{
+      const sep=r.proveedor!==lastProv?`<tr><td colspan="6" style="background:var(--bg);font-weight:600;font-size:11.5px;color:var(--tx2);padding:6px 12px">${esc(r.proveedor)}</td></tr>`:'';
+      lastProv=r.proveedor;
+      return sep+`<tr>
+        <td><strong>${esc(r.nombre)}</strong></td>
+        <td class="td-num">${fc(r.consumo,2)} ${esc(r.unidad)}</td>
+        <td class="td-num">${fc(r.stock,2)} ${esc(r.unidad)}</td>
+        <td class="td-num" style="color:var(--tx3)">${fc(r.stockMin,2)}</td>
+        <td class="td-num"><input type="number" id="fq-${r.id}" value="${r.necesidad}" min="0" step="0.1" style="width:84px;padding:5px 7px;border:1px solid var(--border);border-radius:6px;text-align:right"> ${esc(r.unidad)}</td>
+        <td class="td-num">${fcp(r.coste)}</td>
+      </tr>`;}).join('');
+    return `<div class="card" style="margin-bottom:20px">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:baseline">📅 Pedido de la semana por previsión
+        <span style="font-size:11.5px;color:var(--tx3);font-weight:400">consumo real de Ventas escalado a 7 días (base: ${N.nDias} días) · ~${fcp(N.costeTotal)}</span></div>
+      <div class="tbl-wrap" style="margin-bottom:12px"><table><thead><tr><th>Ingrediente</th><th class="td-num">Consumo previsto/sem</th><th class="td-num">Stock</th><th class="td-num">Mín</th><th class="td-num">Pedir</th><th class="td-num">Coste est.</th></tr></thead><tbody>${filas}</tbody></table></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn btn-amber" onclick="genPedPrevision()">Generar pedido por previsión</button></div>
+    </div>`;})()}
+  ${al.length>0?`<div class="card" style="margin-bottom:20px"><div class="card-title">Ingredientes a pedir (bajo mínimo)</div>
+    <div class="tbl-wrap" style="margin-bottom:12px"><table><thead><tr><th style="width:32px"></th><th>Ingrediente</th><th>Categoría</th><th>Stock actual</th><th>Mínimo</th><th>Cantidad a pedir</th><th>Proveedor</th></tr></thead><tbody>${fp}</tbody></table></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn btn-amber" onclick="genPed()">Generar pedido</button></div>
+  </div>`:''}
+  <div class="card"><div class="card-title">Historial de pedidos</div>${hH}</div>
+  <div id="ai-ped-box" style="margin-top:16px"></div>`;
+}
+
+/* ── VI3: Pedido sugerido por previsión ──────────────────────────────
+   Consumo del período analizado en Ventas, escalado a una semana,
+   menos el stock actual, más el stock de seguridad (mínimo).
+   Necesidad = consumo semanal + stockMin − stock, si es positiva. */
+function calcNecesidades(){
+  const con=consumoPub();if(!con||!con.uds)return null;
+  const nDias=Number(con.nDias)||((con.d0&&con.d1)?Math.max(1,Math.round((new Date(con.d1)-new Date(con.d0))/864e5)+1):null);
+  if(!nDias)return null;
+  const factor=7/nDias;
+  const dishNames=Object.keys(con.uds);
+  const semanal={};
+  (E.platos||[]).filter(pl=>pl.receta&&pl.receta.length).forEach(pl=>{
+    const matches=dishNames.filter(d=>matchPlatoEsc(pl.nombre,[d])===d);
+    const uds=matches.reduce((sm,d)=>sm+con.uds[d],0)*factor;
+    if(!uds)return;
+    pl.receta.forEach(r=>{if(r.ingId&&r.cantidad)semanal[r.ingId]=(semanal[r.ingId]||0)+r.cantidad*uds;});
+  });
+  if(!Object.keys(semanal).length)return{vacio:true};
+  const rows=Object.keys(semanal).map(id=>{
+    const i=E.ingredientes.find(x=>x.id===id);if(!i)return null;
+    const consumo=semanal[id];
+    const necesidad=Math.max(0,consumo+(i.stockMin||0)-(i.stock||0));
+    return{id,nombre:i.nombre,unidad:i.unidad||'',stock:i.stock||0,stockMin:i.stockMin||0,consumo,
+      necesidad:Math.ceil(necesidad*100)/100,coste:necesidad*(i.precio||0),
+      proveedor:E.proveedores.find(p=>p.id===i.proveedorId)?.nombre||'Sin proveedor'};
+  }).filter(r=>r&&r.necesidad>0).sort((a,b)=>a.proveedor.localeCompare(b.proveedor)||b.coste-a.coste);
+  return{rows,nDias,costeTotal:rows.reduce((sm,r)=>sm+r.coste,0)};
+}
+function genPedPrevision(){
+  const N=calcNecesidades();if(!N||!N.rows)return;
+  const lin=N.rows.map(r=>({ingId:r.id,nombre:r.nombre,cantidad:parseFloat($('fq-'+r.id)?.value)||0,unidad:r.unidad,proveedorNombre:r.proveedor})).filter(l=>l.cantidad>0);
+  if(!lin.length){toast('Sin líneas válidas','r');return;}
+  const pr=[...new Set(lin.map(l=>l.proveedorNombre))].join(', ');
+  const p={id:uid(),fecha:hoy(),estado:'pendiente',ref:'PED-'+Date.now().toString().slice(-6),proveedores:pr,lineas:lin,origen:'prevision'};
+  E.pedidos.unshift(p);save();rPeds();toast('Pedido por previsión generado: '+p.ref);
+}
+
+function genPed(){
+  const al=E.ingredientes.filter(i=>(i.stock||0)<(i.stockMin||0));
+  const ids=new Set([...document.querySelectorAll('.pc:checked')].map(c=>c.dataset.id));
+  const lin=al.filter(i=>ids.has(i.id)).map(i=>({ingId:i.id,nombre:i.nombre,cantidad:parseFloat($('pq-'+i.id)?.value)||0,unidad:i.unidad,proveedorNombre:E.proveedores.find(p=>p.id===i.proveedorId)?.nombre||'Sin proveedor'})).filter(l=>l.cantidad>0);
+  if(!lin.length){toast('Sin líneas válidas','r');return;}
+  const pr=[...new Set(lin.map(l=>l.proveedorNombre))].join(', ');
+  const p={id:uid(),fecha:hoy(),estado:'pendiente',ref:'PED-'+Date.now().toString().slice(-6),proveedores:pr,lineas:lin};
+  E.pedidos.unshift(p);save();rPeds();toast('Pedido generado: '+p.ref);
+}
+
+function avPed(id){
+  const p=E.pedidos.find(x=>x.id===id);if(!p)return;
+  if(p.estado==='pendiente')p.estado='enviado';
+  else if(p.estado==='enviado'){
+    p.estado='recibido';
+    (p.lineas||[]).forEach(l=>{const i=E.ingredientes.find(x=>x.id===l.ingId);if(i&&l.cantidad>0){i.stock=(i.stock||0)+l.cantidad;E.movimientos.push({id:uid(),ingId:i.id,tipo:'entrada',cantidad:l.cantidad,fecha:hoy(),coste:l.cantidad*(i.precio||0),motivo:'Pedido '+p.ref});}});
+    toast('Recibido. Stock actualizado.');
+  }
+  save();rPeds();
+}
+
+function delPed(id){
+  const p=E.pedidos.find(x=>x.id===id);if(!p)return;
+  const recibido=p.estado==='recibido';
+  const msg=recibido
+    ? `El pedido <strong>${esc(p.ref||'')}</strong> ya fue recibido. Al eliminarlo se revertirá el stock que sumó y sus movimientos.`
+    : `¿Eliminar el pedido <strong>${esc(p.ref||'')}</strong>?`;
+  confirm_('Eliminar pedido',msg,()=>{
+    if(recibido){
+      // revertir stock y borrar los movimientos generados por este pedido
+      (p.lineas||[]).forEach(l=>{const i=E.ingredientes.find(x=>x.id===l.ingId);if(i&&l.cantidad>0)i.stock=Math.max(0,(i.stock||0)-l.cantidad);});
+      E.movimientos=E.movimientos.filter(m=>m.motivo!=='Pedido '+p.ref);
+    }
+    E.pedidos=E.pedidos.filter(x=>x.id!==id);
+    save();rPeds();upTopbar();toast('Pedido eliminado');
+  });
+}
+
+function verPed(id){
+  const p=E.pedidos.find(x=>x.id===id);if(!p)return;
+  const lH=(p.lineas||[]).map(l=>`<tr><td>${esc(l.nombre)}</td><td class="td-num">${fc(l.cantidad,2)} ${esc(l.unidad)}</td><td>${esc(l.proveedorNombre||'—')}</td></tr>`).join('');
+  $('conf-title').textContent='Pedido '+(p.ref||'');
+  $('conf-msg').innerHTML=`<div style="margin-bottom:8px"><span class="badge badge-${p.estado==='recibido'?'green':p.estado==='enviado'?'navy':'amber'}">${p.estado}</span> · ${fday(p.fecha)}</div>
+    <div class="tbl-wrap"><table><thead><tr><th>Ingrediente</th><th>Cantidad</th><th>Proveedor</th></tr></thead><tbody>${lH}</tbody></table></div>`;
+  $('conf-ok').style.display='none';$('conf-cancel').textContent='Cerrar';
+  $('modal-confirm').style.display='flex';
+}
+
+/* ── Edición de pedidos pendientes ────────────────────────────────────
+   Solo se pueden editar pedidos en estado 'pendiente'. Cada guardado
+   registra una entrada en p.historialCambios para mantener trazabilidad. */
+function editPed(id){
+  const p=E.pedidos.find(x=>x.id===id);if(!p)return;
+  if(p.estado!=='pendiente'){toast('Solo se editan pedidos pendientes','a');return;}
+  pedEditId=id;
+  pedEditLineas=(p.lineas||[]).map(l=>({ingId:l.ingId||'',nombre:l.nombre||'',cantidad:Number(l.cantidad)||0,unidad:l.unidad||'',proveedorNombre:l.proveedorNombre||''}));
+  $('m-ped-title').textContent='Editar pedido '+(p.ref||'');
+  $('ped-edit-meta').innerHTML=`<span class="badge badge-amber">${p.estado}</span> · ${fday(p.fecha)}${p.origen?' · origen: '+esc(p.origen):''}`;
+  // Historial de cambios previo
+  const hc=Array.isArray(p.historialCambios)?p.historialCambios:[];
+  $('ped-edit-hist').innerHTML=hc.length?`<div style="font-size:11.5px;color:var(--tx3);border-top:1px solid var(--bdr);padding-top:10px"><strong style="color:var(--tx2)">Historial de cambios</strong><br>${hc.slice(-6).map(h=>`${fday(h.fecha)}: ${esc(h.desc)}`).join('<br>')}</div>`:'';
+  renderPedEditRows();
+  $('modal-ped-edit').style.display='flex';
+}
+function renderPedEditRows(){
+  const cont=$('ped-edit-rows');
+  if(!pedEditLineas.length){cont.innerHTML='<div style="color:var(--tx3);font-size:12.5px;padding:8px 0">Sin líneas. Pulsa "+ Añadir línea".</div>';$('ped-edit-total').textContent='';return;}
+  cont.innerHTML=pedEditLineas.map((l,i)=>{
+    const ing=E.ingredientes.find(x=>x.id===l.ingId);
+    const coste=(l.cantidad||0)*(ing?.precio||0);
+    return`<div style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid var(--bdr)">
+      <select style="flex:2;border:1px solid var(--bdr);border-radius:4px;padding:5px 6px;font-size:12px" onchange="setPedLineaIng(${i},this.value)">
+        <option value="">— Ingrediente —</option>
+        ${E.ingredientes.map(x=>`<option value="${x.id}"${l.ingId===x.id?' selected':''}>${esc(x.nombre)} (${esc(x.unidad)})</option>`).join('')}
+      </select>
+      <input type="number" step="0.01" min="0" value="${l.cantidad||''}" placeholder="Cant." style="width:80px;border:1px solid var(--bdr);border-radius:4px;padding:5px 6px;font-size:12px" oninput="pedEditLineas[${i}].cantidad=parseFloat(this.value)||0;renderPedEditRows()">
+      <span style="font-size:11px;color:var(--tx3);min-width:44px">${esc(ing?.unidad||l.unidad||'')}</span>
+      <span style="font-family:var(--ff-mono);font-size:11.5px;color:var(--tx2);min-width:60px;text-align:right">${fcp(coste)}</span>
+      <button class="btn-icon" style="color:var(--red)" onclick="pedEditLineas.splice(${i},1);renderPedEditRows()">✕</button>
+    </div>`;
+  }).join('');
+  const tot=pedEditLineas.reduce((s,l)=>{const ing=E.ingredientes.find(x=>x.id===l.ingId);return s+(l.cantidad||0)*(ing?.precio||0);},0);
+  $('ped-edit-total').innerHTML=`${pedEditLineas.length} línea(s) · Coste estimado: <strong>${fcp(tot)}</strong>`;
+}
+function setPedLineaIng(i,ingId){
+  const ing=E.ingredientes.find(x=>x.id===ingId);
+  pedEditLineas[i].ingId=ingId;
+  if(ing){pedEditLineas[i].nombre=ing.nombre;pedEditLineas[i].unidad=ing.unidad||'';pedEditLineas[i].proveedorNombre=E.proveedores.find(p=>p.id===ing.proveedorId)?.nombre||'Sin proveedor';}
+  renderPedEditRows();
+}
+function addPedLinea(){pedEditLineas.push({ingId:'',nombre:'',cantidad:0,unidad:'',proveedorNombre:''});renderPedEditRows();}
+function savePedEdit(){
+  const p=E.pedidos.find(x=>x.id===pedEditId);if(!p)return;
+  if(p.estado!=='pendiente'){toast('Solo se editan pedidos pendientes','a');closeM('modal-ped-edit');return;}
+  const nuevas=pedEditLineas.filter(l=>l.ingId&&l.cantidad>0).map(l=>{
+    const ing=E.ingredientes.find(x=>x.id===l.ingId);
+    return{ingId:l.ingId,nombre:ing?.nombre||l.nombre,cantidad:Number(l.cantidad)||0,unidad:ing?.unidad||l.unidad||'',proveedorNombre:ing?(E.proveedores.find(pp=>pp.id===ing.proveedorId)?.nombre||'Sin proveedor'):(l.proveedorNombre||'Sin proveedor')};
+  });
+  if(!nuevas.length){toast('El pedido debe tener al menos una línea válida','r');return;}
+  // Resumen de cambios para el historial
+  const antes=(p.lineas||[]);
+  const desc=`${antes.length}→${nuevas.length} líneas, ${fcp(nuevas.reduce((s,l)=>{const ing=E.ingredientes.find(x=>x.id===l.ingId);return s+l.cantidad*(ing?.precio||0);},0))} est.`;
+  p.lineas=nuevas;
+  p.proveedores=[...new Set(nuevas.map(l=>l.proveedorNombre))].join(', ');
+  p.historialCambios=Array.isArray(p.historialCambios)?p.historialCambios:[];
+  p.historialCambios.push({fecha:hoy(),desc});
+  save();closeM('modal-ped-edit');rPeds();toast('Pedido actualizado: '+(p.ref||''));
+}
+
+function pedRapido(ingId){
+  const i=E.ingredientes.find(x=>x.id===ingId);if(!i)return;
+  const qty=Math.max((i.stockMin||0)*2-(i.stock||0),0);
+  const p={id:uid(),fecha:hoy(),estado:'pendiente',ref:'PED-'+Date.now().toString().slice(-6),proveedores:E.proveedores.find(p=>p.id===i.proveedorId)?.nombre||'Sin proveedor',lineas:[{ingId:i.id,nombre:i.nombre,cantidad:qty,unidad:i.unidad,proveedorNombre:E.proveedores.find(p=>p.id===i.proveedorId)?.nombre||'Sin proveedor'}]};
+  E.pedidos.unshift(p);save();toast('Pedido rápido: '+p.ref);
+}
+
+// ═══════════ PROVEEDORES ═══════════
+function rProvs(){
+  const pg=$('pg-proveedores');
+  if(provDetId){rProvDet(provDetId);return;}
+  const pv=E.proveedores;
+  const cards=pv.length===0?'<div class="empty-state"><div class="icon">🏢</div><h3>Sin proveedores</h3><p>Añade tu primer proveedor</p></div>'
+    :pv.map(p=>{
+      const ni=E.ingredientes.filter(i=>i.proveedorId===p.id).length;
+      const na=E.albaranes.filter(a=>a.proveedorId===p.id).length;
+      return`<div class="prov-card">
+        <div class="prov-name">${esc(p.nombre)}</div>
+        <div class="prov-grid">
+          <span>Categoría:</span><strong>${esc(p.categoria||'—')}</strong>
+          <span>Teléfono:</span><strong>${esc(p.tel||'—')}</strong>
+          <span>CIF:</span><strong>${p.cif||'—'}</strong>
+          <span>Email:</span><strong>${p.email?`<a href="mailto:${esc(p.email)}">${esc(p.email)}</a>`:'—'}</strong>
+          <span>Entrega:</span><strong>${esc(p.dias||'—')}</strong>
+          <span>Ingredientes:</span><strong>${ni}</strong><span>Albaranes:</span><strong>${na}</strong>
+        </div>
+        <div class="prov-actions">
+          <button class="btn btn-ghost btn-sm" onclick="provDetId='${p.id}';rProvs()">Ver detalle →</button>
+          <button class="btn btn-ghost btn-sm" onclick="openAlbM('${p.id}')">↑ Albarán</button>
+          <button class="btn btn-ghost btn-sm" onclick="openProvM('${p.id}')">✎ Editar</button>
+          <button class="btn btn-xs" style="background:var(--bg2);color:var(--red)" onclick="delProv('${p.id}')">✕</button>
+        </div>
+      </div>`;
+    }).join('');
+  pg.innerHTML=`<div class="sec-head"><h2>Proveedores</h2><button class="btn btn-amber btn-sm" onclick="openProvM()">+ Proveedor</button></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px">${cards}</div>`;
+}
+
+function rProvDet(id){
+  const p=E.proveedores.find(x=>x.id===id);if(!p){provDetId=null;rProvs();return;}
+  const pg=$('pg-proveedores');
+  const ings=E.ingredientes.filter(i=>i.proveedorId===id);
+  const albs=[...E.albaranes].filter(a=>a.proveedorId===id).sort((a,b)=>b.fecha.localeCompare(a.fecha));
+  // Historial precios
+  const ph={};
+  albs.forEach(alb=>(alb.lineas||[]).forEach(l=>{if(!ph[l.nombre])ph[l.nombre]=[];ph[l.nombre].push({fecha:alb.fecha,precio:l.precio});}));
+  const vH=Object.keys(ph).length===0?'<div style="color:var(--tx3);font-size:12px;padding:8px 0">Sin historial de albaranes aún.</div>'
+    :`<div class="tbl-wrap"><table><thead><tr><th>Producto</th><th>Precio actual</th><th>Precio anterior</th><th>Variación</th><th>Desde</th></tr></thead><tbody>
+    ${Object.keys(ph).map(nm=>{
+      const h=ph[nm].sort((a,b)=>b.fecha.localeCompare(a.fecha));
+      const ac=h[0].precio,an=h[1]?.precio;
+      let vv='<span style="color:var(--tx3)">—</span>';
+      if(an!=null&&an>0){const pct=(ac-an)/an*100;vv=`<span class="${pct>0?'price-up':pct<0?'price-down':'price-flat'}">${pct>0?'▲':'▼'} ${fc(Math.abs(pct),1)}%</span>`;}
+      return`<tr><td>${esc(nm)}</td><td class="td-num">${fcp(ac||0)}</td><td class="td-num" style="color:var(--tx3)">${an!=null?fcp(an):'—'}</td><td>${vv}</td><td style="color:var(--tx3);font-size:12px">${fday(h[h.length-1].fecha)}</td></tr>`;
+    }).join('')}</tbody></table></div>`;
+
+  pg.innerHTML=`<div class="sec-head">
+    <h2><button class="btn btn-ghost btn-sm" onclick="provDetId=null;rProvs()">← Volver</button> &nbsp;${esc(p.nombre)}</h2>
+    <div class="actions"><button class="btn btn-ghost btn-sm" onclick="openAlbM('${id}')">↑ Subir albarán</button><button class="btn btn-ghost btn-sm" onclick="openProvM('${id}')">✎ Editar</button></div>
+  </div>
+  <div class="grid-2" style="margin-bottom:20px">
+    <div class="card"><div class="card-title">Datos de contacto</div>
+      <div class="prov-grid" style="gap:8px 16px;font-size:13px">
+        <span style="color:var(--tx3)">CIF / NIF</span><strong>${esc(p.cif||'—')}</strong>
+        <span style="color:var(--tx3)">Teléfono</span><strong>${esc(p.tel||'—')}</strong>
+        <span style="color:var(--tx3)">Email</span><strong>${p.email?`<a href="mailto:${esc(p.email)}">${esc(p.email)}</a>`:'—'}</strong>
+        <span style="color:var(--tx3)">Días entrega</span><strong>${esc(p.dias||'—')}</strong>
+        <span style="color:var(--tx3)">Pago</span><strong>${esc(p.pago||'—')}</strong>
+        ${p.notas?`<span style="color:var(--tx3)">Notas</span><span>${esc(p.notas)}</span>`:''}
+      </div>
+    </div>
+    <div class="card"><div class="card-title">Resumen de compras</div>
+      ${(()=>{
+        // Calcular desde los albaranes reales (fuente de verdad)
+        const totalReal=albs.reduce((s,a)=>s+(a.totales&&a.totales.total?a.totales.total:(a.lineas||[]).reduce((ss,l)=>ss+(l.precio||0)*(l.cantidad||0),0)),0);
+        const ultimo=albs.length?albs[0].fecha:null;
+        const primero=albs.length?albs[albs.length-1].fecha:null;
+        const ticketMedio=albs.length?totalReal/albs.length:0;
+        return `<div class="prov-grid" style="gap:10px 16px;font-size:13px">
+          <span style="color:var(--tx3)">Total comprado</span><strong style="font-size:16px">${fcp(totalReal)}</strong>
+          <span style="color:var(--tx3)">Nº albaranes</span><strong>${albs.length}</strong>
+          <span style="color:var(--tx3)">Pedido medio</span><strong>${fcp(ticketMedio)}</strong>
+          <span style="color:var(--tx3)">Último pedido</span><strong>${ultimo?fday(ultimo):'—'}</strong>
+          <span style="color:var(--tx3)">Primer pedido</span><strong>${primero?fday(primero):'—'}</strong>
+        </div>
+        <div style="margin-top:14px;border-top:1px solid var(--bdr);padding-top:12px">
+          <div style="font-size:11px;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Ingredientes (${ings.length})</div>
+          ${ings.length===0?'<div style="color:var(--tx3);font-size:12px">Ninguno asignado.</div>':`<div style="display:flex;flex-wrap:wrap;gap:6px">${ings.map(i=>`<span class="badge badge-navy">${esc(i.nombre)}</span>`).join('')}</div>`}
+        </div>`;
+      })()}
+    </div>
+  </div>
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-title">Evolución de precios por albarán</div>${vH}
+    ${Object.keys(ph).length>0?'<div style="margin-top:16px;height:200px"><canvas id="ch-prec"></canvas></div>':''}
+  </div>
+  <div class="card"><div class="card-title">Albaranes (${albs.length})</div>
+    ${albs.length===0?'<div style="color:var(--tx3);font-size:12px;padding:8px 0">Sin albaranes.</div>'
+    :`<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Ref.</th><th>Líneas</th><th>Total</th></tr></thead><tbody>
+    ${albs.map(a=>`<tr><td style="font-size:12px;color:var(--tx3)">${fday(a.fecha)}</td><td><strong>${esc(a.ref||'—')}</strong></td><td class="td-num">${(a.lineas||[]).length}</td><td class="td-num">${fcp((a.lineas||[]).reduce((s,l)=>s+(l.precio||0)*(l.cantidad||0),0))}</td></tr>`).join('')}</tbody></table></div>`}
+  </div>`;
+
+  if(Object.keys(ph).length>0){
+    requestAnimationFrame(()=>{
+      const ctx=$('ch-prec');if(!ctx)return;
+      const top=Object.keys(ph).sort((a,b)=>ph[b].length-ph[a].length).slice(0,4);
+      const cols=['#E8914A','#1A2B3C','#3D8B5E','#5A8A6A'];
+      const ds=top.map((nm,i)=>{const h=ph[nm].sort((a,b)=>a.fecha.localeCompare(b.fecha));return{label:nm,data:h.map(x=>({x:x.fecha,y:x.precio})),borderColor:cols[i],backgroundColor:cols[i]+'33',tension:.3,pointRadius:4,fill:false};});
+      new Chart(ctx,{type:'line',data:{datasets:ds},options:{responsive:true,maintainAspectRatio:false,scales:{x:{type:'category',ticks:{font:{size:10}}},y:{ticks:{callback:v=>v+'€',font:{size:10}}}},plugins:{legend:{labels:{font:{size:11}}}}}});
+    });
+  }
+}
+
+function openProvM(id){
+  editId=id||null;$('m-prov-title').textContent=id?'Editar proveedor':'Nuevo proveedor';
+  const p=id?E.proveedores.find(x=>x.id===id):null;
+  if(p){$('prov-nombre').value=p.nombre||'';$('prov-cif').value=p.cif||'';$('prov-cat').value=p.categoria||'';$('prov-tel').value=p.tel||'';$('prov-email').value=p.email||'';$('prov-dias').value=p.dias||'';$('prov-pago').value=p.pago||'';$('prov-notas').value=p.notas||'';}
+  else{['prov-nombre','prov-cif','prov-cat','prov-tel','prov-email','prov-dias','prov-pago','prov-notas'].forEach(x=>$(x).value='');}
+  $('modal-prov').style.display='flex';
+}
+
+function saveProv(){
+  const nm=$('prov-nombre').value.trim();if(!nm){toast('Nombre obligatorio','r');return;}
+  const o={id:editId||uid(),nombre:nm,cif:$('prov-cif').value.trim(),categoria:$('prov-cat').value.trim(),tel:$('prov-tel').value.trim(),email:$('prov-email').value.trim(),dias:$('prov-dias').value.trim(),pago:$('prov-pago').value.trim(),notas:$('prov-notas').value.trim()};
+  if(editId){const idx=E.proveedores.findIndex(x=>x.id===editId);E.proveedores[idx]=o;toast('Actualizado');}
+  else{E.proveedores.push(o);toast('Proveedor añadido');}
+  save();closeM('modal-prov');rProvs();upTopbar();
+}
+
+function delProv(id){
+  const p=E.proveedores.find(x=>x.id===id);
+  confirm_('Eliminar proveedor',`¿Eliminar "<strong>${esc(p.nombre)}</strong>"?`,()=>{
+    E.proveedores=E.proveedores.filter(x=>x.id!==id);E.ingredientes.forEach(i=>{if(i.proveedorId===id)i.proveedorId=null;});
+    save();rProvs();upTopbar();
+  });
+}
+
+// ═══════════ ALBARANES IA ═══════════
+function openAlbM(provId){
+  albParsed=null;LOTE=[];$('alb-result').innerHTML='';
+  const btn=$('btn-alb-aplicar');btn.style.display='none';btn.textContent='Aplicar cambios';btn.setAttribute('onclick','aplicarAlbaran()');
+  $('alb-prov').innerHTML='<option value="">— Seleccionar —</option>'+E.proveedores.map(p=>`<option value="${p.id}"${provId===p.id?' selected':''}>${esc(p.nombre)}</option>`).join('');
+  $('alb-fecha').value=hoy();$('alb-prov-row').style.display='none';
+  const fi=$('fi-alb');if(fi)fi.value='';
+  $('modal-albaran').style.display='flex';
+}
+
+// Prompt del escáner (compartido por modo simple y modo lote)
+function _albSysPrompt(){ return `Eres un experto en digitalizar albaranes y facturas de proveedores de hosteleria espanola, y ademas RAZONAS sobre los productos como lo haria un jefe de cocina experto. No solo transcribes: interpretas formatos, conviertes unidades y deduces categorias. Devuelve UNICAMENTE un JSON valido, sin texto adicional ni bloques markdown.
+
+ESTRUCTURA DEL JSON A DEVOLVER:
+{"documento":{"tipo":"albaran|factura|ticket","numero":"string o null","fecha":"YYYY-MM-DD o null","forma_pago":"string o null"},"proveedor":{"nombre":"string o null","cif":"string o null","telefono":"string o null","categoria_sugerida":"string"},"cliente":{"nombre":"string o null","nif":"string o null"},"lineas":[{"descripcion":"NOMBRE COMERCIAL LIMPIO","cantidad_compra":0.000,"unidad_compra":"lata|barril|caja|botella|saco|ud|kg|l","formato":"texto del formato detectado o null","cantidad_base":0.000,"unidad_base":"kg|l|ud","factor":0.000,"precio_unitario":0.00,"iva_pct":10,"importe":0.00,"lote":"string o null","categoria":"string","razonamiento":"breve explicacion de la conversion"}],"totales":{"base_10":0.00,"iva_10":0.00,"base_21":0.00,"iva_21":0.00,"total":0.00},"alertas":[]}
+
+REGLAS CRITICAS:
+
+1. NUMERO DE DOCUMENTO: Es el numero oficial impreso en la cabecera junto a "NUMERO", "Nº", "FACTURA" o "ALBARAN" (formato tipo "23A/76010199").
+   NUNCA uses el numero interno que aparece dentro de la descripcion de un articulo (ej: "Albaran 26015650").
+
+2. FECHA: La del campo FECHA en la cabecera. Formato YYYY-MM-DD. NUNCA la de dentro de la descripcion de articulos.
+
+3. DESCRIPCION — SOLO el nombre comercial limpio. La celda suele tener varias lineas: ignora la referencia interna y el lote, usa el nombre del producto. El lote va en su campo.
+
+4. INTERPRETACION DE FORMATO Y CONVERSION (lo mas importante):
+   Los albaranes indican cantidades en UNIDAD DE COMPRA (latas, barriles, cajas...), pero para el escandallo necesitamos la UNIDAD BASE usable (kg, l, ud). Debes razonar y rellenar AMBAS.
+   - "cantidad_compra" + "unidad_compra": lo que literalmente pone el albaran (ej: 5 latas, 1 barril).
+   - Detecta el FORMATO en el nombre del producto: numeros como "750", "50L", "1L", "5kg", "x12", "70cl" indican el contenido por unidad.
+   - "factor": contenido de cada unidad de compra en unidad base. Ej: lata de 750g → factor 0.75 (kg). Barril 50L → factor 50 (l).
+   - "cantidad_base" = cantidad_compra × factor. "unidad_base" = kg o l o ud.
+   - "razonamiento": explica brevemente (ej: "5 latas x 750g = 3.75 kg").
+   EJEMPLOS:
+   - "ATUN CALVO ACT.GRL RO. 750" cantidad 5 → cantidad_compra:5, unidad_compra:"lata", formato:"750 g/lata", factor:0.75, cantidad_base:3.75, unidad_base:"kg"
+   - "CRUZCAMPO Especial Barril 50L Grundy LS" cantidad 1 → cantidad_compra:1, unidad_compra:"barril", formato:"50 L/barril", factor:50, cantidad_base:50, unidad_base:"l"
+   - "MOJAMA DE ATUN" cantidad 1.358 unidad kg → factor:1, cantidad_base:1.358, unidad_base:"kg"
+   Si NO hay formato detectable y la unidad ya es base (kg, l, ud), factor:1 y cantidad_base=cantidad_compra.
+   Copia las cantidades EXACTAS con decimales (punto decimal en JSON, nunca redondees).
+
+5. CATEGORIA del producto: deduce la categoria (Pescado, Carne, Verdura, Fruta, Pan, Bebida, Lacteo, Aceite, Conserva, Limpieza, Otros).
+
+6. CATEGORIA SUGERIDA DEL PROVEEDOR: deduce a que se dedica por los productos. Ej: teleras → "Panaderia"; mojama y pulpo → "Pescaderia". Rellena "categoria_sugerida".
+
+7. ALERTAS: anota manuscritos (DEVO, firmas), tachaduras, sellos, devoluciones, y avisa si tienes BAJA CONFIANZA en alguna conversion.`; }
+
+// Extrae el JSON de UN archivo (foto/PDF). Reutilizable por modo simple y lote.
+async function extraerAlbaranDeFile(file){
+  const b64=await f2b64(file);
+  const isPDF=file.type==='application/pdf';
+  const body={model:ALB_MODEL,max_tokens:2500,system:_albSysPrompt(),messages:[{role:'user',content:[
+    isPDF?{type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}}:{type:'image',source:{type:'base64',media_type:file.type,data:b64}},
+    {type:'text',text:'Digitaliza este albaran o factura. RAZONA sobre el formato de cada producto y convierte a unidad base. Devuelve SOLO el JSON, sin texto adicional.'}
+  ]}]};
+  const r=await fetch(API,{method:'POST',headers:aiHeaders(),body:JSON.stringify(body)});
+  if(!r.ok)await aiCheck(r);
+  const d=await r.json();
+  return JSON.parse((d.content?.find(c=>c.type==='text')?.text||'').replace(/```json|```/g,'').trim());
+}
+
+async function handleAlbaran(input){
+  const files=Array.from(input.files||[]);
+  input.value=''; // resetear para poder reusar el mismo archivo
+  if(!files.length)return;
+  if(files.length===1){
+    // ── MODO SIMPLE (un solo albarán) ──
+    $('alb-prov-row').style.display='flex';
+    $('alb-result').innerHTML='<div style="padding:20px;text-align:center;color:var(--tx3)"><span class="spin"></span> Analizando con IA…</div>';
+    try{
+      albParsed=await extraerAlbaranDeFile(files[0]);
+      renderAlbPreview();
+    }catch(e){$('alb-result').innerHTML=`<div class="alert alert-red">Error: ${esc(e.message)}</div>`;}
+  } else {
+    // ── MODO LOTE (varias fotos) ──
+    procesarLote(files);
+  }
+}
+
+function f2b64(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.onerror=()=>rej(new Error('Error lectura'));r.readAsDataURL(file);});}
+
+// ═══════════ PROCESAMIENTO POR LOTES ═══════════
+let LOTE=[]; // [{file, nombre, estado:'pendiente|ok|error', data, grupo}]
+
+async function procesarLote(files){
+  LOTE=files.map((f,i)=>({file:f,nombre:f.name||('Foto '+(i+1)),estado:'procesando',data:null,grupo:i}));
+  $('alb-prov-row').style.display='none';
+  renderLoteProgreso();
+  // Procesar en paralelo (con un límite suave para no saturar)
+  await Promise.all(LOTE.map(async(item)=>{
+    try{
+      item.data=await extraerAlbaranDeFile(item.file);
+      item.estado='ok';
+    }catch(e){
+      item.estado='error';item.error=e.message;
+    }
+    renderLoteProgreso();
+  }));
+  renderLoteResumen();
+}
+
+function renderLoteProgreso(){
+  const ok=LOTE.filter(x=>x.estado==='ok').length;
+  const err=LOTE.filter(x=>x.estado==='error').length;
+  const proc=LOTE.filter(x=>x.estado==='procesando').length;
+  $('alb-result').innerHTML=`
+    <div style="padding:16px;text-align:center">
+      <div style="font-size:14px;margin-bottom:12px">${proc>0?`<span class="spin"></span> Analizando ${LOTE.length} albaranes…`:'Análisis completado'}</div>
+      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+        ${LOTE.map(x=>`<span class="badge badge-${x.estado==='ok'?'green':x.estado==='error'?'red':'amber'}" style="font-size:11px">${x.estado==='ok'?'✓':x.estado==='error'?'✕':'⋯'} ${esc(x.nombre.slice(0,18))}</span>`).join('')}
+      </div>
+      <div style="font-size:12px;color:var(--tx3);margin-top:10px">${ok} listos${err?' · '+err+' con error':''}${proc?' · '+proc+' en curso':''}</div>
+    </div>`;
+}
+
+function renderLoteResumen(){
+  const validos=LOTE.filter(x=>x.estado==='ok');
+  // Agrupar por 'grupo' (por defecto cada uno es su propio grupo)
+  const grupos={};
+  validos.forEach(x=>{(grupos[x.grupo]=grupos[x.grupo]||[]).push(x);});
+  const provOpts=p=>'<option value="">— Crear/auto —</option>'+E.proveedores.map(pv=>`<option value="${pv.id}">${esc(pv.nombre)}</option>`).join('');
+
+  const cards=Object.keys(grupos).map(gid=>{
+    const items=grupos[gid];
+    // Combinar las líneas de todas las fotos del grupo (mismo albarán multipágina)
+    const lineas=items.flatMap(x=>(x.data.lineas||[]));
+    const doc=items[0].data.documento||{};
+    const prov=items[0].data.proveedor||{};
+    const provNom=typeof prov==='object'?prov.nombre:prov;
+    const total=items.reduce((s,x)=>s+((x.data.totales&&x.data.totales.total)||0),0);
+    const fechaISO=toISO(doc.fecha)||hoy();
+    const alertas=items.flatMap(x=>x.data.alertas||[]);
+    return `<div class="card" style="margin-bottom:10px;padding:14px" data-grupo="${gid}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px">
+        <div style="flex:1">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <strong style="font-size:14px">${esc(provNom||'Proveedor desconocido')}</strong>
+            ${prov.categoria_sugerida?`<span class="badge badge-navy" style="font-size:10px">${esc(prov.categoria_sugerida)}</span>`:''}
+            ${items.length>1?`<span class="badge badge-amber" style="font-size:10px">${items.length} fotos agrupadas</span>`:''}
+          </div>
+          <div style="font-size:12px;color:var(--tx3);margin-top:3px">${esc(doc.numero||'sin ref')} · ${fday(fechaISO)} · ${lineas.length} líneas · ${fcp(total)}</div>
+        </div>
+      </div>
+      ${alertas.length?`<div class="alert alert-amber" style="font-size:11px;margin-bottom:8px;padding:6px 10px">⚠ ${alertas.map(a=>esc(a)).join(' · ')}</div>`:''}
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px">
+        <span style="color:var(--tx3)">Proveedor:</span>
+        <select id="lote-prov-${gid}" style="border:1px solid var(--bdr);border-radius:5px;padding:4px 8px;font-size:12px">${provOpts()}</select>
+        <button class="btn btn-xs btn-ghost" onclick="loteVerLineas('${gid}')">Ver productos</button>
+        <label style="margin-left:auto;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="lote-chk-${gid}" checked> Aplicar</label>
+      </div>
+      <div id="lote-lineas-${gid}" style="display:none;margin-top:10px"></div>
+    </div>`;
+  }).join('');
+
+  const errs=LOTE.filter(x=>x.estado==='error');
+  $('alb-result').innerHTML=`
+    <div class="alert alert-green" style="margin-bottom:12px">✓ ${validos.length} albaranes analizados. Revisa, ajusta el proveedor y aplica los que quieras.</div>
+    ${errs.length?`<div class="alert alert-red" style="margin-bottom:12px">${errs.length} no se pudieron leer: ${errs.map(x=>esc(x.nombre)).join(', ')}. Vuelve a fotografiarlos.</div>`:''}
+    <div style="font-size:11.5px;color:var(--tx3);margin-bottom:10px">💡 Si dos fotos son del mismo albarán (varias páginas), agrúpalas con el botón de abajo.</div>
+    ${cards}
+    ${validos.length>1?`<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:4px" onclick="loteAgruparModo()">⚯ Agrupar fotos del mismo albarán</button>`:''}`;
+
+  $('btn-alb-aplicar').style.display='inline-flex';
+  $('btn-alb-aplicar').textContent='Aplicar seleccionados';
+  $('btn-alb-aplicar').setAttribute('onclick','aplicarLote()');
+}
+
+function loteVerLineas(gid){
+  const cont=$('lote-lineas-'+gid);
+  if(cont.style.display==='block'){cont.style.display='none';return;}
+  const items=LOTE.filter(x=>x.estado==='ok'&&String(x.grupo)===String(gid));
+  const lineas=items.flatMap(x=>x.data.lineas||[]);
+  cont.innerHTML=`<div class="tbl-wrap"><table><thead><tr><th>Producto</th><th>Compra</th><th>Base</th><th>€/ud</th></tr></thead><tbody>
+    ${lineas.map(l=>{
+      const cc=l.cantidad_compra!=null?l.cantidad_compra:l.cantidad;
+      const cb=l.cantidad_base!=null?l.cantidad_base:cc;
+      const conv=(l.factor&&l.factor!==1)?`<div style="font-size:9.5px;color:var(--amber)">⇄ ${fc(cb,cb%1?2:0)} ${esc(l.unidad_base||'')}</div>`:'';
+      return `<tr><td>${esc(l.descripcion||l.nombre||'')}${l.categoria?`<div style="font-size:9.5px;color:var(--tx3)">${esc(l.categoria)}</div>`:''}</td>
+        <td class="td-num">${fc(cc,cc%1?2:0)} ${esc(l.unidad_compra||l.unidad||'')}</td>
+        <td class="td-num">${fc(cb,cb%1?2:0)} ${esc(l.unidad_base||l.unidad||'')}${conv}</td>
+        <td class="td-num">${l.precio_unitario!=null?fcp(l.precio_unitario):'—'}</td></tr>`;
+    }).join('')}
+  </tbody></table></div>`;
+  cont.style.display='block';
+}
+
+// Modo agrupar: permite fusionar dos grupos (mismo albarán multipágina)
+let loteAgrupando=false;
+function loteAgruparModo(){
+  loteAgrupando=!loteAgrupando;
+  if(loteAgrupando){
+    toast('Selecciona 2+ albaranes para fusionar en uno','a');
+    // Añadir checkboxes de selección a cada card
+    document.querySelectorAll('[data-grupo]').forEach(card=>{
+      if(card.querySelector('.lote-merge-chk'))return;
+      const gid=card.getAttribute('data-grupo');
+      const chk=document.createElement('label');
+      chk.style.cssText='display:flex;align-items:center;gap:5px;font-size:12px;color:var(--amber);margin-top:8px;cursor:pointer';
+      chk.innerHTML=`<input type="checkbox" class="lote-merge-chk" data-g="${gid}"> Fusionar este`;
+      card.appendChild(chk);
+    });
+    // Botón de confirmar fusión
+    const r=$('alb-result');
+    if(!$('lote-merge-btn')){
+      const b=document.createElement('button');
+      b.id='lote-merge-btn';b.className='btn btn-amber btn-sm';b.style.cssText='width:100%;margin-top:8px';
+      b.textContent='✓ Fusionar seleccionados';b.onclick=loteFusionar;
+      r.appendChild(b);
+    }
+  }
+}
+function loteFusionar(){
+  const sel=[...document.querySelectorAll('.lote-merge-chk:checked')].map(c=>c.getAttribute('data-g'));
+  if(sel.length<2){toast('Selecciona al menos 2','r');return;}
+  // Asignar todos al grupo más bajo
+  const destino=sel.sort()[0];
+  LOTE.forEach(x=>{if(sel.includes(String(x.grupo)))x.grupo=parseInt(destino);});
+  loteAgrupando=false;
+  renderLoteResumen();
+  toast('Fotos agrupadas en un albarán');
+}
+
+// Aplicar todos los albaranes seleccionados del lote
+function aplicarLote(){
+  const validos=LOTE.filter(x=>x.estado==='ok');
+  const grupos={};
+  validos.forEach(x=>{(grupos[x.grupo]=grupos[x.grupo]||[]).push(x);});
+  let aplicados=0;
+  Object.keys(grupos).forEach(gid=>{
+    const chk=$('lote-chk-'+gid);
+    if(chk&&!chk.checked)return; // no seleccionado
+    const items=grupos[gid];
+    // Construir un albParsed combinado del grupo
+    const lineas=items.flatMap(x=>x.data.lineas||[]);
+    const doc=items[0].data.documento||{};
+    const prov=items[0].data.proveedor||{};
+    const provSel=$('lote-prov-'+gid)?.value||'';
+    const combinado={documento:doc,proveedor:prov,lineas,totales:items[0].data.totales};
+    aplicarAlbaranSilencioso(combinado, provSel, toISO(doc.fecha)||hoy());
+    aplicados++;
+  });
+  save();closeM('modal-albaran');rMovs&&rMovs();upTopbar();
+  toast(`${aplicados} albaranes aplicados al stock`);
+  LOTE=[];
+}
+
+// Versión de aplicarAlbaran sin UI (para el lote). Reutiliza la lógica de conversión.
+function aplicarAlbaranSilencioso(p, provIdSel, fecha){
+  let provId=provIdSel;
+  const prov=p.proveedor||{};
+  const _pNom=typeof prov==='object'?prov.nombre:prov;
+  const _pCif=typeof prov==='object'?prov.cif:null;
+  const _pTel=typeof prov==='object'?prov.telefono:null;
+  const _pCat=typeof prov==='object'?prov.categoria_sugerida:null;
+  if(!provId&&_pNom){
+    let pv=E.proveedores.find(x=>x.nombre.toLowerCase().includes(_pNom.toLowerCase().slice(0,8)));
+    if(!pv&&_pCif)pv=E.proveedores.find(x=>x.cif&&x.cif===_pCif);
+    if(!pv){pv={id:uid(),nombre:_pNom,cif:_pCif||'',tel:_pTel||'',email:'',categoria:_pCat||'',dias:'',pago:'',notas:'Creado desde albarán (lote)'};E.proveedores.push(pv);}
+    provId=pv.id;
+  } else if(provId){
+    const pv=E.proveedores.find(x=>x.id===provId);
+    if(pv){if(!pv.cif&&_pCif)pv.cif=_pCif;if(!pv.tel&&_pTel)pv.tel=_pTel;if(!pv.categoria&&_pCat)pv.categoria=_pCat;}
+  }
+  const _ref=(p.documento&&p.documento.numero)||null;
+  const lf=(p.lineas||[]).map(l=>{
+    const cantCompra=l.cantidad_compra!=null?l.cantidad_compra:(l.cantidad||0);
+    const factor=l.factor!=null?l.factor:1;
+    const cantBase=l.cantidad_base!=null?l.cantidad_base:(cantCompra*factor);
+    const precioCompra=l.precio_unitario!=null?l.precio_unitario:(l.precio||null);
+    return {nombre:l.descripcion||l.nombre||'',cantidadCompra:cantCompra,unidadCompra:l.unidad_compra||l.unidad||'ud',
+      factor:factor,cantidad:Math.round(cantBase*1000)/1000,unidad:l.unidad_base||l.unidad||'ud',
+      precioCompra:precioCompra,precio:(precioCompra!=null&&factor>0)?Math.round(precioCompra/factor*10000)/10000:precioCompra,
+      iva:l.iva_pct||l.iva||null,lote:l.lote||null,categoria:l.categoria||null};
+  }).filter(l=>l.cantidad>0);
+  lf.forEach(l=>{
+    let i=E.ingredientes.find(x=>x.nombre.toLowerCase().includes(l.nombre.toLowerCase())||l.nombre.toLowerCase().includes(x.nombre.toLowerCase().split(' ')[0]));
+    if(!i){i={id:uid(),nombre:l.nombre,categoria:l.categoria||'Otros',unidad:l.unidad||'ud',precio:l.precio||0,ivaPct:l.iva||null,stock:0,stockMin:0,proveedorId:provId||null,notas:'',creadoEn:fecha,formatoCompra:l.unidadCompra!==l.unidad?{unidad:l.unidadCompra,factor:l.factor}:null};E.ingredientes.push(i);}
+    if(l.precio&&l.precio>0){i.precio=l.precio;if(provId)i.proveedorId=provId;recordPrecio(i,l.precio,fecha,'albaran',provId||i.proveedorId);}
+    if(l.iva!=null&&i.ivaPct==null)i.ivaPct=l.iva;
+    if(l.categoria&&(!i.categoria||i.categoria==='Otros'))i.categoria=l.categoria;
+    if(l.unidadCompra!==l.unidad)i.formatoCompra={unidad:l.unidadCompra,factor:l.factor};
+    if(provId&&!i.proveedorId)i.proveedorId=provId;
+    i.stock=(i.stock||0)+l.cantidad;
+    E.movimientos.push({id:uid(),ingId:i.id,tipo:'entrada',cantidad:l.cantidad,unidad:l.unidad,cantidadCompra:l.cantidadCompra,unidadCompra:l.unidadCompra,factor:l.factor,fecha,coste:l.cantidadCompra*(l.precioCompra||0),motivo:'Albarán '+(_ref||fecha),iva:l.iva||null});
+  });
+  const totalAlb=(p.totales&&p.totales.total)?p.totales.total:lf.reduce((s,l)=>s+(l.precioCompra||0)*(l.cantidadCompra||0),0);
+  E.albaranes.push({id:uid(),proveedorId:provId||null,fecha,ref:_ref,lineas:lf,totales:p.totales||null,formaPago:p.documento?.forma_pago||null});
+  if(provId){const pv=E.proveedores.find(x=>x.id===provId);if(pv){if(!pv.ultimoPedido||fecha>pv.ultimoPedido)pv.ultimoPedido=fecha;pv.totalComprado=(pv.totalComprado||0)+totalAlb;pv.numAlbaranes=(pv.numAlbaranes||0)+1;}}
+}
+
+function renderAlbPreview(){
+  const p=albParsed;if(!p||!p.lineas)return;
+  // Soportar tanto JSON simple (proveedor string) como JSON rico (proveedor objeto)
+  const _pNombre=p.proveedor&&typeof p.proveedor==='object'?p.proveedor.nombre:p.proveedor;
+  const _fecha=p.fecha||(p.documento&&p.documento.fecha)||null;
+  const _ref=p.referencia||(p.documento&&p.documento.numero)||null;
+  if(_pNombre){const pv=E.proveedores.find(x=>x.nombre.toLowerCase().includes((_pNombre||'').toLowerCase()));if(pv)$('alb-prov').value=pv.id;}
+  const _fechaISO=toISO(_fecha);
+  if(_fechaISO)$('alb-fecha').value=_fechaISO;
+  else if(_fecha)console.warn('[ALBARÁN] No se pudo interpretar la fecha:',_fecha);
+  // Normalizar líneas con DOBLE REGISTRO (compra + base usable)
+  if(p.lineas)p.lineas=p.lineas.map(l=>{
+    // Compatibilidad: si la IA usó el formato antiguo (cantidad/unidad), mapearlo
+    const cantCompra = l.cantidad_compra!=null?l.cantidad_compra : (l.cantidad||0);
+    const udCompra   = l.unidad_compra || l.unidad || 'ud';
+    const factor     = l.factor!=null?l.factor : 1;
+    const cantBase   = l.cantidad_base!=null?l.cantidad_base : (cantCompra*factor);
+    const udBase     = l.unidad_base || l.unidad || 'ud';
+    return {
+      nombre: l.nombre||l.descripcion||'',
+      cantidadCompra: cantCompra,
+      unidadCompra: udCompra,
+      formato: l.formato||null,
+      factor: factor,
+      cantidadBase: Math.round(cantBase*1000)/1000,
+      unidadBase: udBase,
+      precio: l.precio||l.precio_unitario||null,  // precio por unidad de COMPRA
+      iva: l.iva_pct||l.iva||null,
+      lote: l.lote||null,
+      importe: l.importe||null,
+      categoria: l.categoria||null,
+      razonamiento: l.razonamiento||null
+    };
+  });
+  // Mostrar alertas si las hay
+  const _alertas=p.alertas&&p.alertas.length?'<div class="alert alert-amber" style="margin-bottom:8px">⚠ '+p.alertas.map(a=>esc(a)).join('<br>')+'</div>':'';
+  const filas=p.lineas.map((l,i)=>{
+    const match=E.ingredientes.find(x=>x.nombre.toLowerCase().includes(l.nombre.toLowerCase())||l.nombre.toLowerCase().includes(x.nombre.toLowerCase().split(' ')[0]));
+    // ¿Hay conversión de formato? (compra distinta de base)
+    const hayConversion = l.factor!==1 || l.unidadCompra!==l.unidadBase;
+    const convChip = hayConversion
+      ? `<div style="font-size:10.5px;color:var(--amber);margin-top:3px;background:rgba(232,145,74,.08);padding:2px 6px;border-radius:4px;display:inline-block">⇄ ${fc(l.cantidadCompra,l.cantidadCompra%1?2:0)} ${esc(l.unidadCompra)} → <strong>${fc(l.cantidadBase,l.cantidadBase%1?3:0)} ${esc(l.unidadBase)}</strong>${l.formato?' · '+esc(l.formato):''}</div>`
+      : '';
+    return`<tr>
+      <td><input type="text" value="${esc(l.nombre)}" id="an-${i}" style="width:100%;border:1px solid var(--bdr);border-radius:4px;padding:4px 6px;font-size:12px">
+        ${match?`<div style="font-size:10px;color:var(--green);margin-top:2px">✓ ${esc(match.nombre)}</div>`:`<div style="font-size:10px;color:var(--tx3)">Nuevo${l.categoria?' · '+esc(l.categoria):''}</div>`}
+        ${convChip}
+      </td>
+      <td><input type="number" value="${l.cantidadCompra||''}" id="aq-${i}" step="0.001" style="width:64px;border:1px solid var(--bdr);border-radius:4px;padding:4px 6px;font-size:12px" title="Cantidad de compra (latas, barriles...)"></td>
+      <td><input type="text" value="${esc(l.unidadCompra||'')}" id="au-${i}" style="width:62px;border:1px solid var(--bdr);border-radius:4px;padding:4px 6px;font-size:12px" title="Unidad de compra"></td>
+      <td><input type="number" value="${l.factor||1}" id="af-${i}" step="0.001" style="width:60px;border:1px solid var(--bdr);border-radius:4px;padding:4px 6px;font-size:12px" title="Contenido por unidad (factor de conversión)" onchange="albRecalcBase(${i})"></td>
+      <td><input type="number" value="${l.cantidadBase||''}" id="ab-${i}" step="0.001" style="width:64px;border:1px solid var(--bdr);border-radius:4px;padding:4px 6px;font-size:12px;background:#fffaf5" title="Cantidad base usable (kg, l, ud)"></td>
+      <td><input type="text" value="${esc(l.unidadBase||'')}" id="aub-${i}" style="width:50px;border:1px solid var(--bdr);border-radius:4px;padding:4px 6px;font-size:12px" title="Unidad base"></td>
+      <td><input type="number" value="${l.precio||''}" id="ap-${i}" step="0.01" style="width:74px;border:1px solid var(--bdr);border-radius:4px;padding:4px 6px;font-size:12px" placeholder="€/ud"></td>
+      <td><input type="number" value="${l.iva||''}" id="av-${i}" step="1" style="width:48px;border:1px solid var(--bdr);border-radius:4px;padding:4px 6px;font-size:12px" placeholder="%"></td>
+      <td><input type="date" id="ac-${i}" style="width:130px;border:1px solid var(--bdr);border-radius:4px;padding:4px 6px;font-size:12px" title="Caducidad (opcional)"></td>
+    </tr>`;
+  }).join('');
+  const _totStr=p.totales&&p.totales.total?` · Total: <strong>${p.totales.total}€</strong>`:'';
+  const _ivaStr=p.totales?(p.totales.iva_10?` IVA 10%: ${p.totales.iva_10}€`:'')+(p.totales.iva_21?` IVA 21%: ${p.totales.iva_21}€`:''):'';
+  const _catProv=p.proveedor&&p.proveedor.categoria_sugerida?` · Tipo: <strong>${esc(p.proveedor.categoria_sugerida)}</strong>`:'';
+  $('alb-result').innerHTML=`<div class="alert alert-green" style="margin-bottom:12px">✓ IA extrajo ${p.lineas.length} líneas e interpretó los formatos. Revisa la conversión (columna naranja = cantidad usable para escandallo).${_totStr}${_ivaStr?'<span style="font-size:11px;color:var(--tx3)"> ('+_ivaStr.trim()+')</span>':''}</div>
+    ${_alertas}
+    ${_pNombre?`<div style="font-size:12px;color:var(--tx3);margin-bottom:8px">Proveedor detectado: <strong>${esc(_pNombre)}</strong>${_catProv}${_ref?' · Ref: <strong>'+esc(_ref)+'</strong>':''}</div>`:''}
+    <div class="tbl-wrap"><table><thead><tr><th>Producto</th><th>Compra</th><th>Ud</th><th>Factor</th><th>Base</th><th>Ud base</th><th>€/ud</th><th>IVA%</th><th>Caducidad</th></tr></thead><tbody>${filas}</tbody></table></div>`;
+  $('btn-alb-aplicar').style.display='inline-flex';
+}
+
+// Recalcular la cantidad base cuando se edita el factor manualmente
+function albRecalcBase(i){
+  const cant=parseFloat($('aq-'+i)?.value)||0;
+  const fac=parseFloat($('af-'+i)?.value)||1;
+  const base=Math.round(cant*fac*1000)/1000;
+  if($('ab-'+i))$('ab-'+i).value=base;
+}
+
+function aplicarAlbaran(){
+  let provId=$('alb-prov').value;
+  const fecha=$('alb-fecha').value||hoy(),p=albParsed;
+  if(!p||!p.lineas)return;
+
+  // Crear proveedor automáticamente si la IA lo detectó y no existe en el sistema
+  if(!provId && p.proveedor) {
+    const _pNom=typeof p.proveedor==='object'?p.proveedor.nombre:p.proveedor;
+    const _pCif=typeof p.proveedor==='object'?p.proveedor.cif:null;
+    const _pTel=typeof p.proveedor==='object'?p.proveedor.telefono:null;
+    const _pCat=typeof p.proveedor==='object'?p.proveedor.categoria_sugerida:null;
+    if(_pNom) {
+      let pv=E.proveedores.find(x=>x.nombre.toLowerCase().includes(_pNom.toLowerCase().slice(0,8)));
+      if(!pv&&_pCif)pv=E.proveedores.find(x=>x.cif&&x.cif===_pCif);
+      if(!pv){
+        pv={id:uid(),nombre:_pNom,cif:_pCif||'',tel:_pTel||'',email:'',categoria:_pCat||'',dias:'',pago:'',notas:'Creado automáticamente desde albarán'};
+        E.proveedores.push(pv);
+        toast('Proveedor "'+_pNom+'" creado'+(_pCat?' · '+_pCat:''));
+      }
+      provId=pv.id;
+    }
+  } else if(provId && p.proveedor) {
+    // Enriquecer proveedor existente
+    const pv=E.proveedores.find(x=>x.id===provId);
+    if(pv){
+      if(!pv.cif&&p.proveedor.cif)pv.cif=p.proveedor.cif;
+      if(!pv.tel&&p.proveedor.telefono)pv.tel=p.proveedor.telefono;
+      if(!pv.categoria&&p.proveedor.categoria_sugerida)pv.categoria=p.proveedor.categoria_sugerida;
+    }
+  }
+
+  // Extraer ref del documento
+  const _ref=p.referencia||(p.documento&&p.documento.numero)||null;
+
+  // Leer líneas con DOBLE REGISTRO (compra + base usable)
+  const lf=p.lineas.map((l,i)=>{
+    const cantCompra=parseFloat($('aq-'+i)?.value)||0;
+    const factor=parseFloat($('af-'+i)?.value)||1;
+    const cantBase=parseFloat($('ab-'+i)?.value)|| (cantCompra*factor);
+    const precioCompra=parseFloat($('ap-'+i)?.value)||null; // €/unidad de compra
+    return {
+      nombre:$('an-'+i)?.value||l.nombre,
+      cantidadCompra:cantCompra,
+      unidadCompra:$('au-'+i)?.value||l.unidadCompra||'ud',
+      factor:factor,
+      cantidad:Math.round(cantBase*1000)/1000,   // cantidad BASE (lo que entra a stock)
+      unidad:$('aub-'+i)?.value||l.unidadBase||'ud',
+      precioCompra:precioCompra,
+      // precio por unidad base = precio compra / factor (para que el escandallo cuadre)
+      precio:(precioCompra!=null&&factor>0)?Math.round(precioCompra/factor*10000)/10000:precioCompra,
+      iva:parseFloat($('av-'+i)?.value)||l.iva||null,
+      lote:l.lote||null,
+      categoria:l.categoria||null,
+      caducidad:$('ac-'+i)?.value||null
+    };
+  }).filter(l=>l.cantidad>0);
+
+  lf.forEach(l=>{
+    let i=E.ingredientes.find(x=>x.nombre.toLowerCase().includes(l.nombre.toLowerCase())||l.nombre.toLowerCase().includes(x.nombre.toLowerCase().split(' ')[0]));
+    if(!i){i={id:uid(),nombre:l.nombre,categoria:l.categoria||'Otros',unidad:l.unidad||'ud',precio:l.precio||0,ivaPct:l.iva||null,stock:0,stockMin:0,proveedorId:provId||null,notas:'',creadoEn:fecha,
+      formatoCompra:l.unidadCompra!==l.unidad?{unidad:l.unidadCompra,factor:l.factor}:null};E.ingredientes.push(i);}
+    // precio del ingrediente = precio por unidad BASE (para escandallo correcto)
+    if(l.precio&&l.precio>0){i.precio=l.precio;if(provId)i.proveedorId=provId;recordPrecio(i,l.precio,fecha,'albaran',provId||i.proveedorId);}
+    if(l.iva!=null&&i.ivaPct==null)i.ivaPct=l.iva;
+    if(l.categoria&&(!i.categoria||i.categoria==='Otros'))i.categoria=l.categoria;
+    // Guardar/actualizar el formato de compra para futura trazabilidad
+    if(l.unidadCompra!==l.unidad)i.formatoCompra={unidad:l.unidadCompra,factor:l.factor};
+    if(provId&&!i.proveedorId)i.proveedorId=provId;
+    // El STOCK se incrementa en unidad BASE (cantidad usable)
+    i.stock=(i.stock||0)+l.cantidad;
+    // El movimiento guarda AMBOS registros para trazabilidad
+    E.movimientos.push({id:uid(),ingId:i.id,tipo:'entrada',
+      cantidad:l.cantidad,unidad:l.unidad,
+      cantidadCompra:l.cantidadCompra,unidadCompra:l.unidadCompra,factor:l.factor,
+      fecha,coste:l.cantidadCompra*(l.precioCompra||0),
+      motivo:'Albarán '+(_ref||fecha),iva:l.iva||null,caducidad:l.caducidad});
+    if(l.lote||l.caducidad){E.lotes=E.lotes||[];E.lotes.push({id:uid(),ingId:i.id,cantidad:l.cantidad,lote:l.lote||null,caducidad:l.caducidad||null,fecha});}
+  });
+  const totalAlb=p.totales&&p.totales.total?p.totales.total:lf.reduce((s,l)=>s+(l.precioCompra||0)*(l.cantidadCompra||0),0);
+  E.albaranes.push({id:uid(),proveedorId:provId||null,fecha,ref:_ref,lineas:lf,totales:p.totales||null,formaPago:p.documento?.forma_pago||null});
+
+  // Actualizar la ficha del proveedor con datos del albarán
+  if(provId){
+    const pv=E.proveedores.find(x=>x.id===provId);
+    if(pv){
+      // Última fecha de pedido
+      if(!pv.ultimoPedido||fecha>pv.ultimoPedido)pv.ultimoPedido=fecha;
+      // Forma de pago habitual (la del último albarán con dato)
+      const fp=p.documento&&p.documento.forma_pago;
+      if(fp)pv.pago=fp;
+      // Acumular total comprado y nº de albaranes (histórico)
+      pv.totalComprado=(pv.totalComprado||0)+totalAlb;
+      pv.numAlbaranes=(pv.numAlbaranes||0)+1;
+    }
+  }
+
+  save();closeM('modal-albaran');toast(`Albarán aplicado: ${lf.length} productos`);
+  if(provDetId)rProvDet(provDetId);upTopbar();
+}
+
+// ═══════════ INGENIERÍA DE MENÚ ═══════════
+/* ── Vínculo Inventario → Ventas: costes de platos al escandallo ──────
+   Al guardar, los costes reales (receta × precios actuales) se vuelcan a
+   restaid_escandallo_int_v1 con matching difuso de nombres. Respeta los
+   escandallos hechos a mano (metodo 'manual'); actualiza el resto. */
+function normNombre(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();}
+function matchPlatoEsc(nombre,escNames){
+  const nk=normNombre(nombre);
+  let m=escNames.find(x=>normNombre(x)===nk);if(m)return m;
+  m=escNames.find(x=>{const nx=normNombre(x);return nx.includes(nk)||nk.includes(nx);});if(m)return m;
+  const w=nk.split(' ').filter(x=>x.length>3);
+  if(w.length)m=escNames.find(x=>{const nx=normNombre(x);return w.filter(t=>nx.includes(t)).length>=Math.ceil(w.length*.6);});
+  return m||null;
+}
+function pushEscandallo(){
+  try{
+    const pls=(E.platos||[]).filter(pl=>pl.receta&&pl.receta.length);
+    if(!pls.length)return;
+    let esc;try{esc=JSON.parse(localStorage.getItem('restaid_escandallo_int_v1')||'null')||{platos:{}};}catch(e){esc={platos:{}};}
+    if(!esc.platos)esc.platos={};
+    const escNames=Object.keys(esc.platos);
+    let n=0;
+    pls.forEach(pl=>{
+      const coste=Math.round(costePlato(pl)*100)/100;
+      const key=matchPlatoEsc(pl.nombre,escNames)||pl.nombre;
+      if(!esc.platos[key])esc.platos[key]={variantes:{}};
+      if(!esc.platos[key].variantes)esc.platos[key].variantes={};
+      const prev=esc.platos[key].variantes.racion||{};
+      if(prev.metodo==='manual')return; // el trabajo manual del gestor manda
+      if(prev.coste===coste&&prev.metodo==='inventario')return; // sin cambios
+      esc.platos[key].variantes.racion={...prev,coste,metodo:'inventario',pvp:prev.pvp!=null?prev.pvp:(pl.pvp||undefined)};
+      n++;
+    });
+    if(n>0){
+      localStorage.setItem('restaid_escandallo_int_v1',JSON.stringify(esc));
+      console.log(`[RESTAID inv] ${n} coste(s) de plato enviados al escandallo de Ventas`);
+    }
+  }catch(e){console.warn('[RESTAID inv] pushEscandallo',e);}
+}
+
+/* ── Vínculo Ventas → Inventario: importar platos del escandallo ───────
+   El escandallo de Ventas (restaid_escandallo_int_v1) es la fuente de la
+   CARTA: nombres de plato y, cuando existe, su PVP. Para no introducir los
+   platos dos veces, aquí leemos esos nombres y permitimos:
+   · ver qué platos de la carta aún no tienen receta en Inventario,
+   · importarlos como "stub" (nombre + PVP) listos para añadirles la receta.
+   El coste de la receta sigue volviendo a Ventas vía pushEscandallo(). */
+function escandalloDishes(){
+  let esc;try{esc=JSON.parse(localStorage.getItem('restaid_escandallo_int_v1')||'null');}catch(e){esc=null;}
+  if(!esc||!esc.platos)return [];
+  return Object.keys(esc.platos).map(nombre=>{
+    const p=esc.platos[nombre]||{};const v=(p.variantes&&p.variantes.racion)||{};
+    return{nombre,pvp:(v.pvp!=null&&v.pvp!=='')?+v.pvp:null,coste:(v.coste!=null&&v.coste!=='')?+v.coste:null,metodo:v.metodo||null};
+  });
+}
+// Indica si un plato de Inventario está vinculado a un plato del escandallo de Ventas
+function platoVinculado(pl){
+  const ds=escandalloDishes().map(d=>d.nombre);
+  return !!matchPlatoEsc(pl.nombre,ds);
+}
+function sincronizarDesdeVentas(){
+  const ds=escandalloDishes();
+  if(!ds.length){toast('No hay platos en el escandallo de Ventas todavía','a');return;}
+  const existentesNombres=E.platos.map(p=>p.nombre);
+  let nuevos=0;
+  ds.forEach(d=>{
+    // ¿Ya existe un plato en Inventario que case con este nombre del escandallo?
+    const yaExiste=matchPlatoEsc(d.nombre,existentesNombres);
+    if(yaExiste)return;
+    E.platos.push({id:uid(),nombre:d.nombre,categoria:'Otros',pvp:d.pvp||0,uds:0,receta:[],origen:'ventas'});
+    existentesNombres.push(d.nombre);
+    nuevos++;
+  });
+  // Además, completar PVP en platos ya existentes que no lo tengan
+  let pvpAct=0;
+  E.platos.forEach(pl=>{
+    if(pl.pvp>0)return;
+    const m=ds.find(d=>matchPlatoEsc(pl.nombre,[d.nombre])===d.nombre);
+    if(m&&m.pvp>0){pl.pvp=m.pvp;pvpAct++;}
+  });
+  if(nuevos||pvpAct){save();rIng();toast(`Sincronizado: ${nuevos} plato(s) importado(s)${pvpAct?', '+pvpAct+' PVP actualizado(s)':''}`);}
+  else toast('Todo sincronizado: sin platos nuevos en Ventas','g');
+}
+
+/* ── Publicación al bus cross-módulo (restaid_pub_v1) ─────────────────
+   Inventario tiene el food cost REAL (coste de receta a precios actuales
+   ÷ PVP, ponderado por unidades vendidas que publica Ventas) y el valor
+   de stock. El shell prefiere este food cost sobre el teórico de Ventas
+   para el prime cost, por ser más preciso. */
+function pushInvPub(){
+  try{
+    let pub={};try{pub=JSON.parse(localStorage.getItem('restaid_pub_v1')||'{}')||{};}catch(e){}
+    // Valor de stock actual (a precios vigentes)
+    const valorStock=(E.ingredientes||[]).reduce((s,i)=>s+(i.stock||0)*(i.precio||0),0);
+    // Food cost real: coste de receta × uds vendidas / PVP × uds vendidas.
+    // Las uds vendidas vienen del consumo que publica Ventas; si no hay,
+    // se cae a uds/sem manuales del plato (pl.uds) para no quedarse sin dato.
+    const con=(typeof consumoPub==='function')?consumoPub():null;
+    let costeTot=0,ventasTot=0,platosCub=0,udsCub=0;
+    (E.platos||[]).filter(pl=>pl.receta&&pl.receta.length&&pl.pvp>0).forEach(pl=>{
+      let uds=0;
+      if(con&&con.uds){
+        const dishNames=Object.keys(con.uds);
+        const matches=dishNames.filter(d=>matchPlatoEsc(pl.nombre,[d])===d);
+        uds=matches.reduce((s,d)=>s+con.uds[d],0);
+      }
+      if(!uds)uds=Number(pl.uds)||0;
+      if(!uds)return;
+      const c=costePlato(pl);
+      costeTot+=c*uds; ventasTot+=pl.pvp*uds; platosCub++; udsCub+=uds;
+    });
+    const foodCostPct=ventasTot>0?Math.round(costeTot/ventasTot*1000)/10:null;
+    // Origen del volumen: 'ventas' (consumo real) o 'manual' (uds/sem del plato)
+    const fuente=(con&&con.uds)?'ventas':'manual';
+    pub.inventario={
+      foodCostPct,
+      foodCostFuente:fuente,
+      platosCubiertos:platosCub,
+      valorStock:Math.round(valorStock),
+      ingredientes:(E.ingredientes||[]).length,
+      _ts:Date.now()
+    };
+    localStorage.setItem('restaid_pub_v1',JSON.stringify(pub));
+  }catch(e){console.warn('[RESTAID inv] pushInvPub',e);}
+}
+
+function costePlato(pl){if(!pl.receta||!pl.receta.length)return 0;return pl.receta.reduce((s,r)=>{const i=E.ingredientes.find(x=>x.id===r.ingId);return s+(r.cantidad||0)*(i?.precio||0);},0);}
+function median(a){if(!a.length)return 0;const s=[...a].sort((x,y)=>x-y);const m=Math.floor(s.length/2);return s.length%2===0?(s[m-1]+s[m])/2:s[m];}
+
+
+
+function escAttr(s){return String(s||'').replace(/"/g,'&quot;');}
+
+function renderRec(){
+  const cont=$('rec-rows');
+  if(!recRows.length){cont.innerHTML='<div style="color:var(--tx3);font-size:12.5px;padding:8px 0">Sin ingredientes. Pulsa "+ Añadir".</div>';$('pl-coste-prev').textContent='';return;}
+  cont.innerHTML=recRows.map((r,i)=>{
+    const ing=E.ingredientes.find(x=>x.id===r.ingId);
+    const c=(r.cantidad||0)*(ing?.precio||0);
+    return`<div style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid var(--bdr)">
+      <select style="flex:2;border:1px solid var(--bdr);border-radius:4px;padding:5px 6px;font-size:12px" onchange="recRows[${i}].ingId=this.value;renderRec()">
+        <option value="">— Ingrediente —</option>
+        ${E.ingredientes.map(x=>`<option value="${x.id}"${r.ingId===x.id?' selected':''}>${esc(x.nombre)} (${esc(x.unidad)})</option>`).join('')}
+      </select>
+      <input type="number" step="0.001" value="${r.cantidad||''}" placeholder="Cant." style="width:80px;border:1px solid var(--bdr);border-radius:4px;padding:5px 6px;font-size:12px" oninput="recRows[${i}].cantidad=parseFloat(this.value)||0;renderRec()">
+      <span style="font-size:11px;color:var(--tx3);min-width:50px">${esc(ing?.unidad||'')}</span>
+      <span style="font-family:var(--ff-mono);font-size:11.5px;color:var(--tx2);min-width:60px;text-align:right">${fcp(c)}</span>
+      <button class="btn-icon" style="color:var(--red)" onclick="recRows.splice(${i},1);renderRec()">✕</button>
+    </div>`;
+  }).join('');
+  const tot=recRows.reduce((s,r)=>{const i=E.ingredientes.find(x=>x.id===r.ingId);return s+(r.cantidad||0)*(i?.precio||0);},0);
+  const pvp=parseFloat($('pl-pvp').value)||0;
+  $('pl-coste-prev').innerHTML=`Coste: <strong>${fcp(tot)}</strong> · Food cost: <strong>${pvp>0?fc(tot/pvp*100,1)+'%':'—'}</strong> · Margen: <strong>${pvp>0?fcp(pvp-tot):'—'}</strong>`;
+}
+function addRecRow(){recRows.push({ingId:'',cantidad:0});renderRec();}
+
+
+
+
+// ═══════════ IA: PEDIDO ═══════════
+async function aiPed(){
+  const al=E.ingredientes.filter(i=>(i.stock||0)<(i.stockMin||0));
+  if(!al.length){toast('Sin ingredientes bajo mínimo','a');return;}
+  const btn=$('btn-ai-ped');if(btn)btn.innerHTML='<span class="spin spin-w"></span> Analizando…';
+  const ctx=al.map(i=>{const pv=E.proveedores.find(p=>p.id===i.proveedorId);return`${i.nombre}: stock ${fc(i.stock||0,2)} ${i.unidad}, mínimo ${fc(i.stockMin||0,2)}${pv?', proveedor: '+pv.nombre:''}`;}).join('\n');
+  try{
+    const r=await fetch(API,{method:'POST',headers:aiHeaders(),body:JSON.stringify({model:MODEL,max_tokens:400,messages:[{role:'user',content:`Soy el gestor de un restaurante. Ingredientes bajo mínimos:\n${ctx}\n\nRecomiéndame cantidades a pedir (para ~2 semanas), agrupación por proveedor y posibles ajustes de stock mínimo. Conciso y práctico, en español.`}]})});
+    if(!r.ok)await aiCheck(r);const d=await r.json();const txt=d.content?.find(c=>c.type==='text')?.text||'';
+    const box=$('ai-ped-box');if(box)box.innerHTML=`<div class="card"><div class="card-title">✨ Recomendación IA</div><div style="font-size:13px;line-height:1.7;color:var(--tx2)">${esc(txt).replace(/\n/g,'<br>')}</div></div>`;
+  }catch(e){toast('Error IA: '+e.message,'r');}
+  if(btn)btn.innerHTML='✨ Optimizar con IA';
+}
+
+
+
+// ═══════════ IA: RECETA ═══════════
+async function aiReceta(){
+  const nm=$('pl-nombre').value.trim();if(!nm){toast('Introduce el nombre del plato','a');return;}
+  $('sp-rec').style.display='inline-block';
+  const ings=E.ingredientes.map(i=>`${i.nombre} (${i.unidad})`).join(', ');
+  try{
+    const r=await fetch(API,{method:'POST',headers:aiHeaders(),body:JSON.stringify({model:MODEL,max_tokens:300,messages:[{role:'user',content:`Para el plato "${nm}" sugiere una receta con cantidades para 1 ración. Ingredientes disponibles: ${ings||'ninguno aún'}. Responde SOLO con JSON sin backticks:\n{"ingredientes":[{"nombre":"nombre exacto","cantidad":número,"unidad":"unidad"}]}`}]})});
+    if(!r.ok)await aiCheck(r);const d=await r.json();const txt=d.content?.find(c=>c.type==='text')?.text||'';
+    const parsed=JSON.parse(txt.replace(/```json|```/g,'').trim());
+    recRows=[];
+    (parsed.ingredientes||[]).forEach(rx=>{const i=E.ingredientes.find(x=>x.nombre.toLowerCase()===rx.nombre.toLowerCase()||x.nombre.toLowerCase().includes(rx.nombre.toLowerCase()));if(i)recRows.push({ingId:i.id,cantidad:rx.cantidad||0});});
+    renderRec();toast(recRows.length?`${recRows.length} ingredientes sugeridos`:'Sin coincidencias en inventario','a');
+  }catch(e){toast('Error IA: '+e.message,'r');}
+  $('sp-rec').style.display='none';
+}
+
+// ═══════════ CADUCIDADES ═══════════
+function diasHasta(fecha){
+  const h=new Date(hoy()),d=new Date(fecha);
+  return Math.round((d-h)/(1000*60*60*24));
+}
+function rCaducidades(){
+  const pg=$('pg-caducidades');
+  const lotes=(E.lotes||[]).filter(l=>l.caducidad).map(l=>{
+    const ing=E.ingredientes.find(x=>x.id===l.ingId);
+    return {...l, nombre:ing?.nombre||'(eliminado)', unidad:ing?.unidad||'', dias:diasHasta(l.caducidad)};
+  }).sort((a,b)=>a.dias-b.dias);
+
+  const caducados=lotes.filter(l=>l.dias<0);
+  const urgente=lotes.filter(l=>l.dias>=0&&l.dias<=3);
+  const proximo=lotes.filter(l=>l.dias>3&&l.dias<=7);
+  const ok_=lotes.filter(l=>l.dias>7);
+
+  if(lotes.length===0){
+    pg.innerHTML=`<div class="sec-head"><h2>Caducidades</h2></div>
+    <div class="empty-state"><div class="icon">📅</div><h3>Sin lotes con caducidad</h3>
+    <p>Al registrar una entrada de stock (manual o por albarán), añade la fecha de caducidad para hacer seguimiento aquí.</p>
+    <button class="btn btn-amber" style="margin-top:16px" onclick="openMovM()">+ Registrar entrada con caducidad</button></div>`;
+    return;
+  }
+
+  const tarjeta=(titulo,arr,clase,emoji)=>arr.length===0?'':`<div class="card" style="margin-bottom:16px">
+    <div class="card-title">${emoji} ${titulo} (${arr.length})</div>
+    <div class="tbl-wrap"><table><thead><tr><th>Ingrediente</th><th>Cantidad</th><th>Caduca</th><th>Días</th><th>Valor en riesgo</th><th></th></tr></thead><tbody>
+    ${arr.map(l=>{
+      const val=(l.cantidad||0)*ingPx(l.ingId);
+      const dTxt=l.dias<0?`hace ${Math.abs(l.dias)}d`:l.dias===0?'hoy':`en ${l.dias}d`;
+      return `<tr>
+        <td><strong>${esc(l.nombre)}</strong></td>
+        <td class="td-num">${fc(l.cantidad,2)} ${esc(l.unidad)}</td>
+        <td style="font-size:12px;color:var(--tx3)">${fday(l.caducidad)}</td>
+        <td><span class="badge badge-${clase}">${dTxt}</span></td>
+        <td class="td-num">${fcp(val)}</td>
+        <td class="td-actions"><button class="btn btn-xs btn-ghost" title="Dar de baja por merma" onclick="bajaLote('${l.id}')">Dar de baja</button></td>
+      </tr>`;
+    }).join('')}</tbody></table></div></div>`;
+
+  const valorCaducado=caducados.reduce((s,l)=>s+(l.cantidad||0)*ingPx(l.ingId),0);
+  const valorUrgente=urgente.reduce((s,l)=>s+(l.cantidad||0)*ingPx(l.ingId),0);
+
+  pg.innerHTML=`<div class="sec-head"><h2>Caducidades</h2>
+    <button class="btn btn-ghost btn-sm" onclick="openMovM()">+ Entrada con caducidad</button></div>
+  <div class="grid-3" style="margin-bottom:20px">
+    <div class="kpi red"><div class="kpi-lbl">Caducados</div><div class="kpi-val" style="font-size:22px">${caducados.length}</div><div class="kpi-sub">${fcp(valorCaducado)} a dar de baja</div></div>
+    <div class="kpi amber"><div class="kpi-lbl">Caducan en ≤3 días</div><div class="kpi-val" style="font-size:22px">${urgente.length}</div><div class="kpi-sub">${fcp(valorUrgente)} en riesgo</div></div>
+    <div class="kpi navy"><div class="kpi-lbl">Lotes con seguimiento</div><div class="kpi-val" style="font-size:22px">${lotes.length}</div><div class="kpi-sub">total activos</div></div>
+  </div>
+  ${tarjeta('Caducados — dar de baja ya',caducados,'red','🔴')}
+  ${tarjeta('Urgente — usar en ≤3 días',urgente,'amber','🟠')}
+  ${tarjeta('Próximos — esta semana',proximo,'amber','🟡')}
+  ${tarjeta('En plazo',ok_,'green','🟢')}`;
+}
+
+function bajaLote(id){
+  const l=(E.lotes||[]).find(x=>x.id===id);if(!l)return;
+  const ing=E.ingredientes.find(x=>x.id===l.ingId);
+  confirm_('Dar de baja lote',`¿Dar de baja <strong>${fc(l.cantidad,2)} ${esc(ing?.unidad||'')}</strong> de "${esc(ing?.nombre||'')}" como merma?`,()=>{
+    // Descontar stock y registrar merma
+    if(ing){ing.stock=Math.max(0,(ing.stock||0)-l.cantidad);
+      E.movimientos.push({id:uid(),ingId:ing.id,tipo:'merma',cantidad:l.cantidad,fecha:hoy(),coste:l.cantidad*(ing.precio||0),motivo:'Caducidad ('+l.caducidad+')'});}
+    E.lotes=E.lotes.filter(x=>x.id!==id);
+    save();rCaducidades();upTopbar();toast('Lote dado de baja por merma');
+  },'Dar de baja');
+}
+
+// ═══════════ RECUENTO FÍSICO ═══════════
+let recuentoVals={};
+function rRecuento(){
+  const pg=$('pg-recuento');
+  if(E.ingredientes.length===0){
+    pg.innerHTML=`<div class="sec-head"><h2>Recuento físico</h2></div>
+    <div class="empty-state"><div class="icon">📋</div><h3>Sin ingredientes</h3><p>Añade ingredientes para poder hacer recuento.</p></div>`;
+    return;
+  }
+  recuentoVals={};
+  const cats=[...new Set(E.ingredientes.map(i=>i.categoria||'Sin categoría'))].sort();
+  const ultimo=[...(E.recuentos||[])].sort((a,b)=>b.fecha.localeCompare(a.fecha))[0];
+
+  const filasPorCat=cats.map(cat=>{
+    const ings=E.ingredientes.filter(i=>(i.categoria||'Sin categoría')===cat);
+    return `<tr style="background:var(--bg2)"><td colspan="5" style="font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--tx2)">${esc(cat)}</td></tr>`+
+    ings.map(i=>`<tr>
+      <td><strong>${esc(i.nombre)}</strong></td>
+      <td class="td-num" style="color:var(--tx3)">${fc(i.stock||0,2)} ${esc(i.unidad)}</td>
+      <td><input type="number" step="0.01" min="0" id="rec-${i.id}" placeholder="contar…" style="width:100px;border:1px solid var(--bdr);border-radius:4px;padding:5px 7px;text-align:right;font-family:var(--ff-mono);font-size:12px" oninput="calcDesv('${i.id}')"></td>
+      <td class="td-num" id="desv-${i.id}" style="color:var(--tx3)">—</td>
+      <td class="td-num" id="desvval-${i.id}" style="color:var(--tx3)">—</td>
+    </tr>`).join('');
+  }).join('');
+
+  pg.innerHTML=`<div class="sec-head"><h2>Recuento físico de inventario</h2>
+    ${ultimo?`<span style="color:var(--tx3);font-size:12px">Último recuento: ${ultimo.fecha}</span>`:''}</div>
+  <div class="alert alert-amber" style="margin-bottom:16px">
+    <span>ℹ</span><div>Introduce las cantidades <strong>realmente contadas</strong> en cada ingrediente. Al guardar, se ajustará el stock teórico y se registrarán los movimientos de corrección (merma si falta, entrada si sobra).</div>
+  </div>
+  <div class="card">
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Ingrediente</th><th>Stock teórico</th><th>Stock real (contado)</th><th>Desviación</th><th>Valor desv.</th></tr></thead>
+      <tbody>${filasPorCat}</tbody>
+    </table></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
+      <div id="rec-resumen" style="font-size:13px;color:var(--tx2)"></div>
+      <button class="btn btn-amber" onclick="guardarRecuento()">Guardar recuento y ajustar stock</button>
+    </div>
+  </div>
+  ${(E.recuentos||[]).length>0?`<div class="card" style="margin-top:20px">
+    <div class="card-title">Historial de recuentos</div>
+    <div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Ítems contados</th><th>Ajustes</th><th>Valor neto ajustado</th></tr></thead><tbody>
+    ${[...(E.recuentos||[])].sort((a,b)=>b.fecha.localeCompare(a.fecha)).map(rc=>`<tr>
+      <td style="font-size:12px;color:var(--tx3)">${rc.fecha}</td>
+      <td class="td-num">${rc.items}</td>
+      <td class="td-num">${rc.ajustes}</td>
+      <td class="td-num ${rc.valorNeto<0?'price-up':rc.valorNeto>0?'price-down':''}">${fcp(rc.valorNeto)}</td>
+    </tr>`).join('')}</tbody></table></div>
+  </div>`:''}`;
+}
+
+function calcDesv(id){
+  const i=E.ingredientes.find(x=>x.id===id);if(!i)return;
+  const real=parseFloat($('rec-'+id).value);
+  if(isNaN(real)){$('desv-'+id).textContent='—';$('desv-'+id).style.color='var(--tx3)';$('desvval-'+id).textContent='—';recuentoVals[id]=undefined;actualizarResumenRec();return;}
+  recuentoVals[id]=real;
+  const desv=real-(i.stock||0);
+  const valDesv=desv*(i.precio||0);
+  const el=$('desv-'+id),elv=$('desvval-'+id);
+  el.textContent=(desv>0?'+':'')+fc(desv,2)+' '+i.unidad;
+  el.style.color=desv<0?'var(--red)':desv>0?'var(--green)':'var(--tx3)';
+  el.style.fontWeight=desv!==0?'600':'400';
+  elv.textContent=(valDesv>0?'+':'')+fcp(valDesv);
+  elv.style.color=valDesv<0?'var(--red)':valDesv>0?'var(--green)':'var(--tx3)';
+  actualizarResumenRec();
+}
+
+function actualizarResumenRec(){
+  const ids=Object.keys(recuentoVals).filter(k=>recuentoVals[k]!==undefined);
+  let ajustes=0,valorNeto=0;
+  ids.forEach(id=>{const i=E.ingredientes.find(x=>x.id===id);const desv=recuentoVals[id]-(i.stock||0);if(Math.abs(desv)>1e-9){ajustes++;valorNeto+=desv*(i.precio||0);}});
+  const el=$('rec-resumen');if(el)el.innerHTML=`${ids.length} contados · <strong>${ajustes}</strong> con desviación · Valor neto: <strong class="${valorNeto<0?'price-up':valorNeto>0?'price-down':''}">${(valorNeto>0?'+':'')+fcp(valorNeto)}</strong>`;
+}
+
+function guardarRecuento(){
+  const ids=Object.keys(recuentoVals).filter(k=>recuentoVals[k]!==undefined);
+  if(ids.length===0){toast('Introduce al menos un recuento','a');return;}
+  let ajustes=0,valorNeto=0;
+  ids.forEach(id=>{
+    const i=E.ingredientes.find(x=>x.id===id);if(!i)return;
+    const real=recuentoVals[id],desv=real-(i.stock||0);
+    if(Math.abs(desv)>1e-9){
+      ajustes++;valorNeto+=desv*(i.precio||0);
+      // Registrar movimiento de ajuste
+      E.movimientos.push({id:uid(),ingId:i.id,tipo:desv<0?'merma':'entrada',cantidad:Math.abs(desv),fecha:hoy(),coste:Math.abs(desv)*(i.precio||0),motivo:'Ajuste por recuento físico'});
+      i.stock=real;
+    }
+  });
+  E.recuentos=E.recuentos||[];
+  E.recuentos.push({id:uid(),fecha:hoy(),items:ids.length,ajustes,valorNeto});
+  save();rRecuento();upTopbar();
+  toast(`Recuento guardado: ${ajustes} ajustes (${(valorNeto>0?'+':'')+fcp(valorNeto)})`);
+}
+
+// ═══════════ DETECTOR DE FUGAS (consumo teórico vs real) ═══════════
+/* Teórico: unidades vendidas por plato (publicadas por Ventas en restaid_pub_v1)
+   × cantidades de sus recetas = lo que DEBERÍA haberse consumido por ingrediente.
+   Real: movimientos de salida y merma del mismo período.
+   La desviación señala raciones generosas, mermas sin registrar o sustracciones. */
+function consumoPub(){
+  try{const p=JSON.parse(localStorage.getItem('restaid_pub_v1')||'null');return p&&p.ventas&&p.ventas.consumo&&p.ventas.consumo.uds?p.ventas.consumo:null;}catch(e){return null;}
+}
+function calcFugas(){
+  const con=consumoPub();if(!con)return null;
+  const dishNames=Object.keys(con.uds);
+  // Teórico por ingrediente
+  const teorico={};let platosCubiertos=0,udsCubiertas=0,udsTotales=0;
+  dishNames.forEach(d=>udsTotales+=con.uds[d]);
+  (E.platos||[]).filter(pl=>pl.receta&&pl.receta.length).forEach(pl=>{
+    // Todas las variantes del TPV que casan con este plato (Tapa/½/Ración suman)
+    const matches=dishNames.filter(d=>{const m=matchPlatoEsc(pl.nombre,[d]);return m===d;});
+    const uds=matches.reduce((s,d)=>s+con.uds[d],0);
+    if(!uds)return;
+    platosCubiertos++;udsCubiertas+=uds;
+    pl.receta.forEach(r=>{if(!r.ingId||!r.cantidad)return;teorico[r.ingId]=(teorico[r.ingId]||0)+r.cantidad*uds;});
+  });
+  if(!Object.keys(teorico).length)return{vacio:true,con};
+  // Real: salidas + mermas del período
+  const d0=con.d0||'0000',d1=con.d1||'9999';
+  const real={},mermas={};
+  (E.movimientos||[]).forEach(m=>{
+    if(!m.fecha||m.fecha<d0||m.fecha>d1)return;
+    if(m.origen==='ventas_auto')return; // descuentos automáticos: son el teórico, no el real
+    if(m.tipo==='salida')real[m.ingId]=(real[m.ingId]||0)+(m.cantidad||0);
+    else if(m.tipo==='merma'){real[m.ingId]=(real[m.ingId]||0)+(m.cantidad||0);mermas[m.ingId]=(mermas[m.ingId]||0)+(m.cantidad||0);}
+  });
+  // Filas por ingrediente
+  const rows=Object.keys(teorico).map(id=>{
+    const i=E.ingredientes.find(x=>x.id===id);if(!i)return null;
+    const t=teorico[id],re=real[id]||0,desv=re-t,eur=desv*(i.precio||0);
+    return{id,nombre:i.nombre,unidad:i.unidad||'',precio:i.precio||0,teorico:t,real:re,merma:mermas[id]||0,desv,eur,pct:t>0?desv/t*100:null,sinReal:!(id in real)};
+  }).filter(Boolean).sort((a,b)=>Math.abs(b.eur)-Math.abs(a.eur));
+  const eurTotal=rows.reduce((s,r)=>s+(r.eur>0?r.eur:0),0);
+  const conReal=rows.filter(r=>!r.sinReal).length;
+  return{rows,eurTotal,conReal,platosCubiertos,cobUds:udsTotales>0?Math.round(udsCubiertas/udsTotales*100):0,con};
+}
+function periodoYaAplicado(d0,d1){
+  return (E.consumosAplicados||[]).some(c=>c.d0===d0&&c.d1===d1);
+}
+function aplicarConsumoVentas(){
+  const F=calcFugas();
+  if(!F||F.vacio||!F.rows){toast('No hay consumo que aplicar','r');return;}
+  const d0=F.con.d0,d1=F.con.d1;
+  if(!d0||!d1){toast('El período de Ventas no tiene fechas válidas','r');return;}
+  if(periodoYaAplicado(d0,d1)){toast('Este período ya se descontó del stock','r');return;}
+  const det=F.rows.map(r=>`· ${r.nombre}: −${fc(r.teorico,2)} ${r.unidad}`).slice(0,12).join('\n');
+  if(!confirm(`Descontar del stock el consumo teórico del período ${d0} → ${d1}:\n\n${det}${F.rows.length>12?'\n…y '+(F.rows.length-12)+' más':''}\n\nSe crearán movimientos de salida auditables. ¿Continuar?`))return;
+  const hoy=new Date().toISOString().slice(0,10);
+  let n=0;
+  F.rows.forEach(r=>{
+    const i=E.ingredientes.find(x=>x.id===r.id);if(!i||!r.teorico)return;
+    i.stock=Math.round(((i.stock||0)-r.teorico)*1000)/1000;
+    E.movimientos.unshift({id:'mov_'+Date.now()+'_'+n,ingId:r.id,tipo:'salida',cantidad:Math.round(r.teorico*1000)/1000,fecha:hoy,motivo:`Consumo por ventas (${d0} → ${d1})`,origen:'ventas_auto'});
+    n++;
+  });
+  if(!E.consumosAplicados)E.consumosAplicados=[];
+  E.consumosAplicados.push({d0,d1,_ts:Date.now(),nMov:n});
+  save();
+  toast(`Stock actualizado: ${n} ingredientes descontados`);
+  rFugas();
+}
+function rFugas(){
+  const pg=$('pg-fugas');
+  const F=calcFugas();
+  if(!F){pg.innerHTML=`<div class="sec-head"><h2>Detector de fugas</h2></div>
+    <div class="empty-state"><div class="icon">🔍</div><h3>Falta el consumo de Ventas</h3><p>Analiza un período en el módulo <strong>Ventas</strong> y vuelve aquí: compararé lo vendido contra lo consumido de cada ingrediente.</p></div>`;return;}
+  if(F.vacio){pg.innerHTML=`<div class="sec-head"><h2>Detector de fugas</h2></div>
+    <div class="empty-state"><div class="icon">🍽</div><h3>Sin recetas que casar</h3><p>Hay ventas publicadas (${Object.keys(F.con.uds).length} productos del TPV) pero ningún plato de Ingeniería de menú con receta coincide por nombre. Crea platos con receta y nombres parecidos a los del TPV.</p></div>`;return;}
+  const periodo=(F.con.d0&&F.con.d1)?`${F.con.d0} → ${F.con.d1}`:'período analizado en Ventas';
+  const filas=F.rows.map(r=>{
+    const desvTxt=r.sinReal?'<span style="color:var(--tx3)">sin registro</span>':
+      `<span class="${r.desv>0?'price-up':r.desv<0?'price-down':''}">${(r.desv>0?'+':'')}${fc(r.desv,2)} ${esc(r.unidad)}${r.pct!=null?' ('+(r.desv>0?'+':'')+fc(r.pct,0)+'%)':''}</span>`;
+    const eurTxt=r.sinReal?'—':`<strong class="${r.eur>0?'price-up':r.eur<0?'price-down':''}">${(r.eur>0?'+':'')}${fcp(r.eur)}</strong>`;
+    return`<tr>
+      <td><strong>${esc(r.nombre)}</strong></td>
+      <td class="td-num">${fc(r.teorico,2)} ${esc(r.unidad)}</td>
+      <td class="td-num">${r.sinReal?'<span style="color:var(--tx3)">—</span>':fc(r.real,2)+' '+esc(r.unidad)}</td>
+      <td class="td-num">${r.merma?fc(r.merma,2)+' '+esc(r.unidad):'—'}</td>
+      <td class="td-num">${desvTxt}</td>
+      <td class="td-num">${eurTxt}</td>
+    </tr>`;}).join('');
+  const yaAplicado=F.con.d0&&F.con.d1&&periodoYaAplicado(F.con.d0,F.con.d1);
+  pg.innerHTML=`<div class="sec-head"><h2>Detector de fugas</h2>
+    <span style="color:var(--tx3);font-size:12px">${periodo} · ${F.platosCubiertos} platos con receta cubren el ${F.cobUds}% de las unidades vendidas</span>
+    ${yaAplicado?'<span class="badge badge-green" style="margin-left:auto">✓ Período ya descontado del stock</span>':'<button class="btn btn-sm" style="margin-left:auto" onclick="aplicarConsumoVentas()">⬇ Descontar consumo del stock</button>'}</div>
+  <div class="kpi-row" style="margin-bottom:14px">
+    <div class="kpi-card"><div class="kpi-lbl">Sobreconsumo detectado</div><div class="kpi-val" style="font-size:22px;color:${F.eurTotal>0?'var(--red)':'var(--green)'}">${fcp(F.eurTotal)}</div><div class="kpi-sub">coste por encima de lo teórico</div></div>
+    <div class="kpi-card"><div class="kpi-lbl">Ingredientes analizados</div><div class="kpi-val" style="font-size:22px">${F.rows.length}</div><div class="kpi-sub">${F.conReal} con consumo real registrado</div></div>
+  </div>
+  ${F.conReal<F.rows.length?`<div class="alert alert-amber" style="margin-bottom:14px"><span>ℹ</span><div>Los ingredientes "sin registro" no tienen movimientos de <strong>salida o merma</strong> en el período: la comparación necesita que registres consumos (o hagas recuentos). El teórico te sirve igualmente como guía de compra.</div></div>`:''}
+  <div class="table-wrap"><table><thead><tr>
+    <th>Ingrediente</th><th class="td-num">Teórico (ventas×receta)</th><th class="td-num">Real (salidas+mermas)</th><th class="td-num">De ello, merma</th><th class="td-num">Desviación</th><th class="td-num">Impacto €</th>
+  </tr></thead><tbody>${filas}</tbody></table></div>
+  <p style="font-size:11.5px;color:var(--tx3);margin-top:10px">Desviación positiva = consumes más de lo que justifican las ventas (raciones generosas, mermas sin registrar, errores de receta… o salidas no contabilizadas). Negativa = recetas sobredimensionadas o ventas no casadas. Las variantes Tapa/½/Ración del TPV se suman como raciones: tómalo como aproximación.</p>`;
+}
+
+// ═══════════ ASISTENTE IA ═══════════
+function ctxFugas(){
+  try{const F=calcFugas();if(!F||F.vacio||!F.rows)return'';
+    const top=F.rows.filter(r=>!r.sinReal&&r.eur>0).slice(0,5).map(r=>`${r.nombre}: teórico ${fc(r.teorico,1)}${r.unidad}, real ${fc(r.real,1)}${r.unidad} → +${fcp(r.eur)}`).join('; ');
+    return`\nFUGAS (teórico vs real, ${F.con.d0||'?'}→${F.con.d1||'?'}): sobreconsumo total ${fcp(F.eurTotal)}. Peores: ${top||'ninguna con registro real'}`;
+  }catch(e){return'';}
+}
+function ctxInv(){
+  const r=calcRes();
+  const al=E.ingredientes.filter(i=>(i.stock||0)<(i.stockMin||0)).map(i=>i.nombre).join(', ');
+  const tv=E.ingredientes.slice().sort((a,b)=>(b.stock||0)*(b.precio||0)-(a.stock||0)*(a.precio||0)).slice(0,8).map(i=>`${i.nombre}: ${fcp((i.stock||0)*(i.precio||0))}`).join(', ');
+  const pls=E.platos.map(pl=>`${pl.nombre} (${fcp(pl.pvp)}, coste ${fcp(costePlato(pl))})`).join(', ');
+  return`INVENTARIO:\n- Ingredientes: ${r.total} | Valor: ${fcp(r.val)}\n- Alertas: ${r.alertas.length>0?al:'ninguna'}\n- Caducados: ${r.caducados.length} lote(s) | Caducan ≤3d: ${r.porCaducar.length} lote(s)\n- Merma 30d: ${fc(r.pMerma,1)}% (${fcp(r.mr30)})\n- Pedidos pendientes: ${r.pPend}\n- Proveedores: ${E.proveedores.length}\n- Top por valor: ${tv||'—'}\n- Platos: ${E.platos.length>0?pls:'ninguno'}`+ctxFugas();
+}
+
+function rAsistente(){
+  const pg=$('pg-asistente');if(pg.dataset.init)return;pg.dataset.init='1';
+  pg.innerHTML=`<div class="sec-head"><h2>Asistente IA</h2></div>
+    <div class="chat-wrap">
+      <div class="chat-msgs" id="chat-msgs">
+        <div class="chat-msg ai">Hola, soy tu asistente de inventario. Puedo ayudarte a analizar stock, detectar anomalías en mermas, optimizar pedidos o mejorar la rentabilidad de tu carta. ¿En qué te puedo ayudar?</div>
+      </div>
+      <div class="chat-suggestions">
+        ${['¿Qué ingredientes necesito pedir urgentemente?','¿Cuál es mi food cost global?','¿Qué platos tienen peor rentabilidad?','Analiza mis mermas del último mes','¿Qué proveedor me está subiendo los precios?'].map(s=>`<div class="chat-sug" onclick="sendChat(${JSON.stringify(s)})">${s}</div>`).join('')}
+      </div>
+      <div class="chat-input-row">
+        <input id="chat-in" placeholder="Pregunta sobre tu inventario…" onkeydown="if(event.key==='Enter')sendChat()">
+        <button class="btn btn-amber" onclick="sendChat()" id="chat-send">Enviar</button>
+      </div>
+    </div>`;
+}
+
+async function sendChat(msg){
+  if(chatBusy)return;
+  const inp=$('chat-in');const txt=msg||(inp?.value||'').trim();if(!txt)return;
+  if(inp)inp.value='';
+  const msgs=$('chat-msgs');
+  const ud=document.createElement('div');ud.className='chat-msg user';ud.textContent=txt;msgs.appendChild(ud);
+  chatH.push({role:'user',content:txt});chatBusy=true;$('chat-send').disabled=true;
+  const ad=document.createElement('div');ad.className='chat-msg ai';ad.innerHTML='<span class="spin"></span>';msgs.appendChild(ad);msgs.scrollTop=msgs.scrollHeight;
+  try{
+    const r=await fetch(API,{method:'POST',headers:aiHeaders(),body:JSON.stringify({model:MODEL,max_tokens:400,system:'Eres el asistente de gestión de inventario de un restaurante. Eres conciso, práctico y hablas en español.\n'+ctxInv(),messages:chatH})});
+    if(!r.ok)await aiCheck(r);const d=await r.json();const t=d.content?.find(c=>c.type==='text')?.text||'Sin respuesta.';
+    chatH.push({role:'assistant',content:t});ad.innerHTML=esc(t).replace(/\n/g,'<br>');
+  }catch(e){ad.innerHTML='Error: '+esc(e.message);}
+  chatBusy=false;$('chat-send').disabled=false;msgs.scrollTop=msgs.scrollHeight;
+}
+
+// ═══════════ UTILS ═══════════
+function exportData(){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(E,null,2)],{type:'application/json'}));
+  a.download='restaid_inventario_'+hoy()+'.json';a.click();toast('Exportado');
+}
+function upTopbar(){$('tbSub').textContent=`${E.ingredientes.length} ingredientes · ${E.proveedores.length} proveedores`;}
+
+// ═══════════ INIT ═══════════
+sanitizeE();rResumen();upTopbar();loadFromDB();
+// Publicar food cost real al bus al arrancar (sin esperar a la primera edición)
+if(typeof pushInvPub==='function')pushInvPub();
+</script></body></html>

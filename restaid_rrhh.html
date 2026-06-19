@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RESTAID · Personas & Turnos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+:root{
+  --navy:#1A2B3C;--navy-mid:#243547;--navy-lt:#2E4259;
+  --amber:#E8914A;--amber-dk:#C8712A;--amber-lt:#F5C49A;
+  --bg:#F5F4F0;--surf:#FFFFFF;--surf-alt:#FAFAF8;
+  --bdr:#E6E4DF;--bdr-strong:#CCC9C0;
+  --tx:#1C2428;--tx2:#596570;--tx3:#98A3AC;
+  --green:#1D7A4A;--green-bg:#E6F5EE;
+  --red:#C03020;--red-bg:#FAECEA;
+  --ylw:#B07010;--ylw-bg:#FBF5E0;
+  --blue:#1A4A8A;--blue-bg:#EEF3FB;
+  --sb:222px;--r:8px;--rsm:5px;--rlg:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{font-size:14px}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);height:100vh;display:flex;overflow:hidden}
+.sb-metric-pill{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px}
+.sb-metric-pill.ok{background:rgba(29,122,74,.25);color:#7BE0A8}
+.sb-metric-pill.warn{background:rgba(176,112,16,.25);color:#F0C868}
+.sb-metric-pill.bad{background:rgba(192,48,32,.25);color:#F09080}
+.sb-metric-pill.none{background:rgba(255,255,255,.1);color:rgba(255,255,255,.45)}
+#main{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}
+#topbar{background:var(--navy);flex-shrink:0;display:flex;flex-direction:column}
+.tb-row1{display:flex;align-items:center;gap:12px;padding:0 20px;height:48px;border-bottom:1px solid rgba(255,255,255,.08)}
+.tb-brand{display:flex;align-items:center;gap:8px}
+.tb-logo-sq{width:24px;height:24px;background:var(--amber);border-radius:6px;display:flex;align-items:center;justify-content:center;font-family:'DM Serif Display';font-size:13px;color:#fff}
+.tb-logo{font-family:'DM Serif Display';font-size:16px;color:#fff;letter-spacing:.01em}
+.tb-module{font-size:11px;color:rgba(255,255,255,.35);text-transform:uppercase;letter-spacing:.08em}
+.tb-metric{margin-left:auto;display:flex;align-items:center;gap:9px}
+.tb-metric-lbl{font-size:9px;color:rgba(255,255,255,.3);text-transform:uppercase;letter-spacing:.08em}
+.tb-metric-val{font-family:'DM Serif Display';font-size:20px;line-height:1;color:#fff}
+.btn-tb{background:rgba(255,255,255,.08);color:rgba(255,255,255,.7);border:1px solid rgba(255,255,255,.14)}
+.btn-tb:hover{background:rgba(255,255,255,.16);color:#fff}
+#tabbar{display:flex;align-items:flex-end;padding:0 12px;height:38px;gap:2px;overflow-x:auto;scrollbar-width:none}
+#tabbar::-webkit-scrollbar{display:none}
+@media(max-width:768px){
+  .mobile-hide{display:none!important}
+  .tb-row1{padding:0 12px;height:auto;min-height:0}
+  .tb-row1:empty{display:none}
+  .tb-actions{margin-left:0!important;padding:6px 0}
+  #tabbar{padding:0 8px;height:42px}
+  .tab{font-size:13px;padding:0 11px}
+  #content{padding:14px}
+  .tbl-wrap,table{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  /* KPIs en grid de 2 columnas en vez de fila que se corta */
+  [class*="kpi-row"],.kpi-grid{grid-template-columns:repeat(2,1fr)!important;overflow:visible!important}
+  .grid-4,.grid-3{grid-template-columns:repeat(2,1fr)!important}
+  .grid-2{grid-template-columns:1fr!important}
+  .modal-box,[class*="modal"] .box{max-width:94vw!important;width:94vw!important;max-height:88vh!important}
+}
+.tab{display:flex;align-items:center;gap:6px;padding:0 14px;height:32px;border-radius:8px 8px 0 0;font-size:12.5px;font-weight:500;color:rgba(255,255,255,.45);cursor:pointer;transition:all .15s;white-space:nowrap;flex-shrink:0;user-select:none;border:1px solid transparent;border-bottom:none}
+.tab:hover{color:rgba(255,255,255,.75);background:rgba(255,255,255,.06)}
+.tab.active{background:var(--bg);color:var(--navy);border-color:rgba(255,255,255,.1);font-weight:600}
+.tab-sep{width:1px;background:rgba(255,255,255,.1);height:18px;margin:0 4px;align-self:center}
+.tb-title{font-family:'DM Serif Display';font-size:20px;color:var(--tx)}
+.tb-sub{font-size:12px;color:var(--tx3);margin-left:6px;font-weight:400}
+.tb-actions{margin-left:auto;display:flex;gap:8px;align-items:center}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer;border:none;transition:all .15s;font-family:'DM Sans',sans-serif;white-space:nowrap}
+.btn-navy{background:var(--navy);color:#fff}.btn-navy:hover{background:var(--navy-mid)}
+.btn-amber{background:var(--amber);color:#fff}.btn-amber:hover{background:var(--amber-dk)}
+.btn-ghost{background:transparent;color:var(--tx2);border:1px solid var(--bdr-strong)}.btn-ghost:hover{background:var(--bg)}
+.btn-sm{padding:5px 10px;font-size:11.5px}
+.btn-danger{background:transparent;color:var(--red);border:1px solid var(--bdr-strong)}.btn-danger:hover{background:var(--red-bg);border-color:var(--red)}
+.btn:disabled{opacity:.5;pointer-events:none}
+#content{flex:1;overflow-y:auto;padding:28px}
+/* Pages */
+.page{display:none;animation:pgIn .25s ease}
+.page.active{display:block}
+@keyframes pgIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.page-hd{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:1.5rem;padding-bottom:1.25rem;border-bottom:1px solid var(--bdr);flex-wrap:wrap;gap:8px}
+.page-hd h2{font-family:'DM Serif Display';font-size:22px;font-weight:400}
+.page-hd p{font-size:11px;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em}
+/* Empty state */
+.empty{text-align:center;padding:3.5rem 2rem;color:var(--tx2)}
+.empty-icon{font-size:34px;opacity:.5;margin-bottom:1rem}
+.empty h3{font-family:'DM Serif Display';font-size:20px;font-weight:400;margin-bottom:.5rem;color:var(--tx)}
+.empty p{font-size:13px;max-width:420px;margin:0 auto 1.25rem;line-height:1.7}
+/* KPI */
+.kpi-row{display:grid;gap:1px;background:var(--bdr);border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden;margin-bottom:1.25rem}
+.kpi-row-2{grid-template-columns:repeat(2,1fr)}.kpi-row-3{grid-template-columns:repeat(3,1fr)}.kpi-row-4{grid-template-columns:repeat(4,1fr)}
+.kpi{background:var(--surf);padding:1.125rem}
+.kpi-lbl{font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--tx3);margin-bottom:7px}
+.kpi-val{font-family:'DM Serif Display';font-size:24px;color:var(--tx);line-height:1;margin-bottom:4px}
+.kpi-sub{font-size:11px;color:var(--tx3)}
+.kpi-pill{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-top:4px}
+.kpi-pill.ok{background:var(--green-bg);color:var(--green)}.kpi-pill.warn{background:var(--ylw-bg);color:var(--ylw)}.kpi-pill.bad{background:var(--red-bg);color:var(--red)}
+/* Panels */
+.panel{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--r);padding:1.125rem 1.25rem;margin-bottom:1.25rem}
+.panel-title{font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--tx3);margin-bottom:.35rem}
+.panel-desc{font-size:11.5px;color:var(--tx3);margin-bottom:1rem;line-height:1.5;font-style:italic}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:1.25rem;margin-bottom:1.25rem}
+/* Insights */
+.insights-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-bottom:1.25rem}
+.insight{padding:.875rem 1rem;border-radius:var(--r);border-left:3px solid;background:var(--surf);border:1px solid var(--bdr)}
+.insight.info{border-left-color:var(--navy)}
+.insight.good{border-left-color:var(--green);background:var(--green-bg)}
+.insight.warn{border-left-color:var(--ylw);background:var(--ylw-bg)}
+.insight.opp{border-left-color:var(--blue);background:var(--blue-bg)}
+.insight-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+.insight.info .insight-lbl{color:var(--navy)}.insight.good .insight-lbl{color:var(--green)}.insight.warn .insight-lbl{color:var(--ylw)}.insight.opp .insight-lbl{color:var(--blue)}
+.insight-txt{font-size:12px;color:var(--tx2);line-height:1.55}
+/* Subtabs */
+.subtabs{display:flex;gap:4px;background:var(--bg);padding:3px;border-radius:7px;width:fit-content;margin-bottom:1.125rem}
+.subtab{padding:6px 14px;border-radius:5px;font-size:12.5px;font-weight:600;color:var(--tx3);cursor:pointer;transition:all .15s;border:none;font-family:'DM Sans',sans-serif}
+.subtab.active{background:var(--surf);color:var(--navy);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+/* Employee cards */
+.emp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-bottom:1.25rem}
+.emp-card{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--r);padding:1.1rem 1.2rem;position:relative;transition:all .15s}
+.emp-card:hover{border-color:var(--bdr-strong);box-shadow:0 2px 10px rgba(0,0,0,.04)}
+.emp-card-top{display:flex;align-items:center;gap:11px;margin-bottom:.9rem}
+.emp-av{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;flex-shrink:0;font-family:'DM Serif Display';color:#fff}
+.emp-card-name{font-size:15px;font-weight:600;line-height:1.2}
+.emp-card-rol{font-size:11px;color:var(--tx3);margin-top:2px}
+.emp-role-tag{display:inline-block;font-size:9.5px;font-weight:600;padding:1px 7px;border-radius:9px;text-transform:uppercase;letter-spacing:.04em}
+.role-sala{background:var(--blue-bg);color:var(--blue)}
+.role-cocina{background:var(--green-bg);color:var(--green)}
+.role-barra{background:var(--ylw-bg);color:var(--ylw)}
+.role-office{background:#EEE;color:var(--tx2)}
+.emp-card-stats{display:flex;flex-direction:column;gap:6px;padding-top:.85rem;border-top:1px solid var(--bdr)}
+.emp-card-stat{display:flex;justify-content:space-between;font-size:12px}
+.emp-card-stat span:first-child{color:var(--tx3)}
+.emp-card-stat span:last-child{font-weight:600}
+.emp-card-acts{display:flex;gap:6px;margin-top:.85rem}
+.emp-card-acts .btn{flex:1;justify-content:center}
+/* Forms */
+.field{margin-bottom:.85rem}
+.field label{display:block;font-size:11px;font-weight:600;color:var(--tx2);margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em}
+.field input,.field select,.field textarea{width:100%;padding:8px 10px;border:1px solid var(--bdr-strong);border-radius:6px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--tx);background:var(--surf)}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--amber)}
+.field textarea{resize:vertical;min-height:60px}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.field-hint{font-size:10.5px;color:var(--tx3);margin-top:4px;line-height:1.4}
+/* Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(26,43,60,.5);display:flex;align-items:center;justify-content:center;z-index:100;padding:1rem;backdrop-filter:blur(2px)}
+.modal{background:var(--surf);border-radius:var(--rlg);padding:1.6rem 1.75rem;max-width:520px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.modal.wide{max-width:680px}
+.modal h3{font-family:'DM Serif Display';font-size:21px;font-weight:400;margin-bottom:.35rem}
+.modal-desc{font-size:12.5px;color:var(--tx2);margin-bottom:1.25rem;line-height:1.6}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:1.5rem;flex-wrap:wrap}
+/* Cuadrante grid */
+.cuad-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:1.1rem;flex-wrap:wrap}
+.cuad-week{display:flex;align-items:center;gap:8px;background:var(--surf);border:1px solid var(--bdr);border-radius:7px;padding:5px 8px}
+.cuad-week button{background:transparent;border:none;cursor:pointer;font-size:16px;color:var(--tx2);padding:2px 7px;border-radius:5px}
+.cuad-week button:hover{background:var(--bg)}
+.cuad-week-lbl{font-size:12.5px;font-weight:600;min-width:148px;text-align:center}
+.cuad-scroll{overflow-x:auto;border:1px solid var(--bdr);border-radius:var(--r);background:var(--surf)}
+.cuad-table{width:100%;border-collapse:collapse;min-width:760px;table-layout:fixed}
+.cuad-table th,.cuad-table td{border:1px solid var(--bg);padding:0;text-align:center;vertical-align:top}
+.cuad-table thead th{background:var(--surf-alt);font-size:11px;font-weight:600;color:var(--tx2);padding:9px 6px;position:sticky;top:0}
+.cuad-table thead th.today{background:#fef4ec;color:var(--amber-dk)}
+.cuad-emp-cell{text-align:left;padding:9px 11px!important;background:var(--surf-alt);min-width:148px;position:sticky;left:0;z-index:2}
+.cuad-emp-name{font-size:12.5px;font-weight:600}
+.cuad-emp-sub{font-size:10px;color:var(--tx3);margin-top:1px}
+.cuad-cell{min-width:88px;padding:5px!important;cursor:pointer;transition:background .12s}
+.cuad-cell:hover{background:#fef8f2}
+.cuad-chip{display:block;font-size:10.5px;font-weight:600;padding:3px 6px;border-radius:5px;margin-bottom:3px;line-height:1.3}
+.cuad-chip.comida{background:var(--green-bg);color:var(--green)}
+.cuad-chip.cena{background:var(--blue-bg);color:var(--blue)}
+.cuad-chip-empty{font-size:16px;color:var(--bdr-strong);font-weight:400}
+.cuad-total-cell{background:var(--surf-alt);font-size:11.5px;min-width:92px;padding:9px 8px!important}
+.cuad-total-h{font-weight:700;font-size:13px}
+.cuad-total-sub{font-size:10px;color:var(--tx3);margin-top:1px}
+.cuad-foot td{background:var(--navy);color:#fff;padding:9px 6px!important;font-size:11px;border-color:var(--navy-lt)}
+.cuad-foot .cuad-emp-cell{background:var(--navy);color:#fff}
+.cuad-foot-val{font-weight:700;font-size:13px}
+.cuad-foot-pct{font-size:10px;margin-top:1px;opacity:.8}
+.cuad-pct-ok{color:#7BE0A8}.cuad-pct-warn{color:#F0C868}.cuad-pct-bad{color:#F09080}
+.cuad-over{background:rgba(192,48,32,.25)!important}
+/* Cost table */
+.ct-table{width:100%;border-collapse:collapse;font-size:12.5px}
+.ct-table th{padding:8px 11px;color:var(--tx3);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.05em;text-align:right;border-bottom:1px solid var(--bdr)}
+.ct-table th:first-child{text-align:left}
+.ct-table td{padding:9px 11px;text-align:right;border-bottom:1px solid var(--bg)}
+.ct-table td:first-child{text-align:left;font-weight:600}
+.ct-table tr:last-child td{border-bottom:none}
+.ct-pct{display:inline-block;padding:2px 9px;border-radius:5px;font-weight:700;font-size:11.5px}
+.ct-pct.ok{background:var(--green-bg);color:var(--green)}.ct-pct.warn{background:var(--ylw-bg);color:var(--ylw)}.ct-pct.bad{background:var(--red-bg);color:var(--red)}
+/* Gauge */
+.gauge-wrap{display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap}
+.gauge{position:relative;width:150px;height:150px;flex-shrink:0}
+.gauge svg{transform:rotate(-90deg)}
+.gauge-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.gauge-val{font-family:'DM Serif Display';font-size:30px;line-height:1}
+.gauge-lbl{font-size:10px;color:var(--tx3);text-transform:uppercase;letter-spacing:.06em;margin-top:3px}
+.gauge-legend{flex:1;min-width:200px}
+.gauge-leg-row{display:flex;align-items:center;gap:8px;font-size:12px;padding:4px 0}
+.gauge-leg-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+/* Rank rows */
+.rank-item{display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid var(--bg)}
+.rank-item:last-child{border-bottom:none}
+.rank-label{flex:1;font-size:12.5px;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rank-bar-wrap{width:60px;height:4px;background:var(--bg);border-radius:2px;flex-shrink:0}
+.rank-bar{height:4px;border-radius:2px}
+.rank-val{font-size:12.5px;font-weight:600;text-align:right;flex-shrink:0;min-width:78px}
+/* Extras */
+.extra-row{display:flex;align-items:center;gap:14px;padding:11px 0;border-bottom:1px solid var(--bdr)}
+.extra-row:last-child{border-bottom:none}
+.extra-av{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;font-family:'DM Serif Display';color:#fff}
+.extra-info{flex:1;min-width:0}
+.extra-name{font-size:13px;font-weight:600}
+.extra-meta{font-size:11px;color:var(--tx3);margin-top:1px}
+.extra-hours{font-family:'DM Serif Display';font-size:18px;text-align:right;min-width:60px}
+.extra-state{font-size:10px;font-weight:600;padding:2px 9px;border-radius:10px;text-transform:uppercase;letter-spacing:.04em;cursor:pointer}
+.state-pendiente{background:var(--ylw-bg);color:var(--ylw)}
+.state-compensada{background:var(--green-bg);color:var(--green)}
+.state-pagada{background:var(--blue-bg);color:var(--blue)}
+/* Personas */
+.pers-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.pers-card{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--r);padding:1.15rem 1.25rem}
+.pers-card-top{display:flex;align-items:center;gap:11px;margin-bottom:.9rem}
+.pers-name{font-size:14px;font-weight:600}
+.pers-tenure{font-size:11px;color:var(--tx3);margin-top:1px}
+.pers-block{margin-bottom:.75rem}
+.pers-block-lbl{font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);margin-bottom:4px}
+.pers-block-val{font-size:12.5px;color:var(--tx2);line-height:1.5}
+.pers-skills{display:flex;flex-wrap:wrap;gap:5px}
+.pers-skill{font-size:10.5px;background:var(--bg);border:1px solid var(--bdr);padding:2px 9px;border-radius:11px;color:var(--tx2)}
+.pers-celebrate{background:linear-gradient(135deg,#fef4ec,#fdeee0);border:1px solid var(--amber-lt);border-radius:var(--r);padding:1rem 1.2rem;margin-bottom:1.25rem;display:flex;align-items:center;gap:14px}
+.pers-celebrate-icon{font-size:26px;flex-shrink:0}
+.pers-celebrate-txt{font-size:12.5px;color:var(--tx);line-height:1.55}
+.pers-celebrate-txt strong{color:var(--amber-dk)}
+/* AI guided panel */
+.aiguide{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--r);padding:1.4rem 1.5rem;margin-bottom:1.25rem}
+.aiguide-step{margin-bottom:1.25rem}
+.aiguide-step-lbl{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;margin-bottom:.65rem}
+.aiguide-step-n{width:20px;height:20px;border-radius:50%;background:var(--navy);color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.sales-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:7px}
+.sales-day{text-align:center}
+.sales-day-lbl{font-size:10px;color:var(--tx3);margin-bottom:4px;font-weight:600}
+.sales-day input{width:100%;padding:6px 4px;border:1px solid var(--bdr-strong);border-radius:5px;font-size:11.5px;text-align:center;font-family:'DM Sans',sans-serif;margin-bottom:4px}
+.sales-day input:focus{outline:none;border-color:var(--amber)}
+.sales-day .lbl-c{font-size:8.5px;color:var(--green);font-weight:600}
+.sales-day .lbl-n{font-size:8.5px;color:var(--blue);font-weight:600}
+/* Chat IA */
+.ia-wrap{display:flex;flex-direction:column;height:calc(100vh - 58px - 56px);max-height:760px}
+.ia-messages{flex:1;overflow-y:auto;padding:.5rem 0 1rem;display:flex;flex-direction:column;gap:14px}
+.ia-msg{display:flex;gap:10px;max-width:82%}
+.ia-msg.user{align-self:flex-end;flex-direction:row-reverse}
+.ia-avatar{width:30px;height:30px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;font-family:'DM Serif Display'}
+.ia-msg.bot .ia-avatar{background:var(--navy);color:#fff}
+.ia-msg.user .ia-avatar{background:var(--amber);color:#fff}
+.ia-bubble{background:var(--surf);border:1px solid var(--bdr);border-radius:12px;padding:.7rem 1rem;font-size:13px;line-height:1.6}
+.ia-msg.user .ia-bubble{background:var(--navy);color:#fff;border-color:var(--navy)}
+.ia-bubble h3{font-size:14px;font-family:'DM Serif Display';font-weight:400;margin:.5rem 0 .3rem}
+.ia-bubble h4{font-size:12.5px;font-weight:700;margin:.5rem 0 .25rem}
+.ia-bubble p{margin:.35rem 0}.ia-bubble p:first-child{margin-top:0}.ia-bubble p:last-child{margin-bottom:0}
+.ia-bubble ul{margin:.35rem 0;padding-left:1.1rem}.ia-bubble li{margin:.2rem 0}
+.ia-bubble strong{font-weight:600}
+.ia-error{color:var(--red);font-size:12.5px;line-height:1.5}
+.ia-typing{display:flex;gap:4px;padding:3px 0}
+.ia-typing span{width:7px;height:7px;border-radius:50%;background:var(--tx3);animation:iaBlink 1.2s infinite}
+.ia-typing span:nth-child(2){animation-delay:.2s}.ia-typing span:nth-child(3){animation-delay:.4s}
+@keyframes iaBlink{0%,60%,100%{opacity:.25}30%{opacity:1}}
+.ia-suggest{display:flex;flex-wrap:wrap;gap:7px;margin:.5rem 0 1rem}
+.ia-chip{font-size:11.5px;padding:6px 12px;border-radius:16px;background:var(--surf);border:1px solid var(--bdr-strong);color:var(--tx2);cursor:pointer;transition:all .15s}
+.ia-chip:hover{border-color:var(--amber);color:var(--amber-dk);background:#fef8f2}
+.ia-input-row{display:flex;gap:9px;padding-top:.85rem;border-top:1px solid var(--bdr)}
+.ia-input{flex:1;padding:10px 14px;border:1px solid var(--bdr-strong);border-radius:9px;font-size:13px;font-family:'DM Sans',sans-serif;resize:none;height:44px}
+.ia-input:focus{outline:none;border-color:var(--amber)}
+.spin{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:.875rem 1.5rem;border-radius:10px;font-size:13px;font-weight:500;box-shadow:0 8px 30px rgba(0,0,0,.25);z-index:200;animation:tIn .25s ease}
+@keyframes tIn{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}
+.ai-hint{background:var(--ylw-bg);border:1px solid #e8d070;border-radius:6px;padding:.6rem .8rem;font-size:11.5px;color:var(--ylw);line-height:1.5;margin-bottom:1rem}
+/* Voice */
+.btn-mic{width:44px;height:44px;border-radius:50%;background:var(--surf);border:1.5px solid var(--bdr-strong);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0;position:relative}
+.btn-mic:hover{border-color:var(--amber);background:#fef8f2}
+.btn-mic.recording{background:var(--red);border-color:var(--red);animation:micPulse 1.4s infinite}
+.btn-mic.recording svg{stroke:#fff}
+.btn-mic svg{width:18px;height:18px;stroke:var(--tx2);fill:none;stroke-width:2}
+@keyframes micPulse{0%,100%{box-shadow:0 0 0 0 rgba(192,48,32,.4)}50%{box-shadow:0 0 0 10px rgba(192,48,32,0)}}
+.voice-lang{font-size:9px;color:var(--tx3);text-align:center;margin-top:3px;letter-spacing:.04em}
+.voice-hint{font-size:10.5px;color:var(--tx3);text-align:center;padding:3px 0;animation:fadeHint .3s ease}
+@keyframes fadeHint{from{opacity:0}to{opacity:1}}
+/* Action confirmation */
+.ia-action-bar{display:flex;align-items:center;gap:9px;background:var(--green-bg);border:1px solid #b5dfc8;border-radius:8px;padding:8px 12px;margin-top:8px;font-size:12px;color:var(--green);animation:actIn .25s ease}
+.ia-action-bar.pending{background:var(--ylw-bg);border-color:#e8d070;color:var(--ylw)}
+@keyframes actIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+.ia-action-icon{font-size:16px;flex-shrink:0}
+.ia-action-txt{flex:1;line-height:1.45}
+.ia-action-btns{display:flex;gap:5px;flex-shrink:0}
+.ia-action-btns .btn{font-size:11px;padding:4px 10px}
+/* Cuadrante secciones */
+.cuad-section-hd{background:var(--navy);color:#fff;padding:7px 12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;display:flex;align-items:center;gap:8px}
+.cuad-section-hd .count-badge{background:rgba(255,255,255,.15);padding:1px 7px;border-radius:9px;font-size:10px;font-weight:600}
+.cuad-staff{font-size:9.5px;font-weight:700;padding:4px 6px!important;text-align:center}
+.cuad-staff-ok{color:var(--green);background:var(--green-bg)}
+.cuad-staff-warn{color:var(--ylw);background:var(--ylw-bg)}
+.cuad-staff-bad{color:var(--red);background:var(--red-bg)}
+/* Pasivo laboral */
+.pasivo-bar{display:flex;align-items:center;gap:6px;margin-top:4px}
+.pasivo-bar-fill{height:3px;border-radius:2px;background:var(--amber)}
+.pasivo-tag{font-size:10px;padding:1px 7px;border-radius:9px;background:var(--ylw-bg);color:var(--ylw);font-weight:600}
+/* Avatar con imagen */
+.emp-av-img{width:42px;height:42px;border-radius:50%;object-fit:cover;flex-shrink:0}
+.img-upload-wrap{position:relative;cursor:pointer;display:inline-block}
+.img-upload-wrap input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.img-upload-placeholder{width:80px;height:80px;border-radius:50%;background:var(--bg);border:2px dashed var(--bdr-strong);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--tx3);text-align:center;padding:8px}
+.img-upload-preview{width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid var(--bdr)}
+/* Vacaciones */
+.vac-list{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.vac-row{display:flex;align-items:center;gap:8px;font-size:12px;padding:5px 8px;background:var(--bg);border-radius:6px}
+.vac-dates{font-weight:600;flex-shrink:0}.vac-motivo{color:var(--tx2);flex:1}
+.vac-row .btn{flex-shrink:0}
+/* Structured personal */
+.pers-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px}
+.pers-info-item{font-size:12px;padding:4px 0}.pers-info-item .pers-info-k{font-size:9.5px;color:var(--tx3);text-transform:uppercase;letter-spacing:.04em;font-weight:600}.pers-info-item .pers-info-v{margin-top:1px;color:var(--tx2)}
+/* Salary preview */
+.salary-preview{background:var(--bg);border-radius:6px;padding:8px 10px;margin-top:6px;font-size:11.5px;color:var(--tx2);display:flex;gap:14px;flex-wrap:wrap}
+.salary-preview strong{color:var(--tx);font-weight:700}
+
+.tb-copilot-btn{display:flex;align-items:center;gap:7px;padding:6px 14px;background:var(--navy,#1e293b);color:#fff;border:none;border-radius:20px;font-size:12.5px;font-weight:600;cursor:pointer;letter-spacing:.01em;transition:background .15s}
+.tb-copilot-btn:hover{background:#334155}
+.tb-copilot-btn .pulse-dot{width:7px;height:7px;border-radius:50%;background:#E8914A;animation:pulse-ring 2s ease-in-out infinite}
+@keyframes pulse-ring{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(1.3)}}
+</style>
+</head>
+<body>
+<div id="main">
+  <header id="topbar">
+    <div class="tb-row1">
+      <div class="tb-brand mobile-hide"><span class="tb-logo-sq">R</span><span class="tb-logo">RESTAID</span></div>
+      <div class="tb-module mobile-hide">Personal</div>
+      <div class="tb-metric mobile-hide">
+        <span class="tb-metric-lbl">Coste laboral / ventas</span>
+        <span class="tb-metric-val" id="sbCostPct">—</span>
+        <span class="sb-metric-pill none" id="sbCostPill">Sin datos de semana</span>
+      </div>
+      <div class="tb-actions">
+        <button class="tb-copilot-btn mobile-hide" onclick="window.parent.postMessage({type:'restaid_open_copilot'},'*')"><div class="pulse-dot"></div>Copiloto</button>
+
+        <button class="btn btn-tb btn-sm" onclick="openConfig()">⚙ Parámetros</button>
+      </div>
+    </div>
+    <div id="tabbar">
+      <div class="tab active" data-page="resumen">Resumen</div>
+      <div class="tab" data-page="empleados">Empleados</div>
+      <div class="tab" data-page="cuadrante">Cuadrante</div>
+      <div class="tab-sep"></div>
+      <div class="tab" data-page="costes">Costes</div>
+      <div class="tab" data-page="extras">Horas extras</div>
+      <div class="tab-sep"></div>
+      <div class="tab" data-page="personas">Personas</div>
+      <div class="tab-sep"></div>
+      <div class="tab" data-page="asistente">✦ Asistente</div>
+    </div>
+  </header>
+  <div id="content">
+    <div class="page active" id="pg-resumen"></div>
+    <div class="page" id="pg-empleados"></div>
+    <div class="page" id="pg-cuadrante"></div>
+    <div class="page" id="pg-costes"></div>
+    <div class="page" id="pg-extras"></div>
+    <div class="page" id="pg-personas"></div>
+    <div class="page" id="pg-asistente"></div>
+  </div>
+</div>
+
+<div id="modal-host"></div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   RESTAID CORE · shim compartido
+═══════════════════════════════════════════════════════════════════ */
+window.RESTAID=window.RESTAID||(function(){const l={};return{version:'3.0',config:{},data:{},ventas:null,modules:{},register(n,m){this.modules[n]=m;return m;},on(e,c){(l[e]=l[e]||[]).push(c);},emit(e,p){(l[e]||[]).forEach(c=>{try{c(p);}catch(x){console.error(x);}});}};})();
+
+const API_URL='https://api.anthropic.com/v1/messages';
+// Modelo de IA — uno de los 4 puntos a editar al cambiar de versión
+// (ventas, rrhh, inventario, shell deben coincidir).
+const MODEL='claude-haiku-4-5';
+/* ── IA: cabeceras con clave API compartida (la misma del Copiloto del shell) ──
+   Si hay clave en localStorage, la IA funciona en standalone (Live Server).
+   Sin clave, se mantiene el comportamiento previo (válido dentro de Artifacts). */
+const AI_KEY_STORE='restaid_copilot_apikey';
+function aiHeaders(){
+  const h={'Content-Type':'application/json'};
+  let k='';try{k=localStorage.getItem(AI_KEY_STORE)||'';}catch(e){}
+  if(k){h['x-api-key']=k;h['anthropic-version']='2023-06-01';h['anthropic-dangerous-direct-browser-access']='true';}
+  return h;
+}
+function aiKeyHint(){
+  let k='';try{k=localStorage.getItem(AI_KEY_STORE)||'';}catch(e){}
+  return k?'Error de conexión con la IA. Reintenta en unos segundos.':'IA no configurada: abre el Copiloto en RESTAID (shell) y guarda tu clave API. Después recarga este módulo.';
+}
+
+const DIAS=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+const DIAS_FULL=['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+const TURNOS=['Comida','Cena'];
+const ROLES=['Sala','Cocina','Barra','Office'];
+const AVCOLORS=['#1A2B3C','#2E4259','#E8914A','#5A8A6A','#8A5A2A','#2A6A8A','#6A2A8A','#8A6A2A','#1A4A8A','#1D7A4A'];
+
+const $=id=>document.getElementById(id);
+const $$=s=>Array.from(document.querySelectorAll(s));
+const fc=(n,d=2)=>(Number(n)||0).toLocaleString('es-ES',{minimumFractionDigits:d,maximumFractionDigits:d});
+const fk=n=>n>=1000?(n/1000).toLocaleString('es-ES',{minimumFractionDigits:1,maximumFractionDigits:1})+'k':fc(n,0);
+const uid=()=>Math.random().toString(36).slice(2,9);
+const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+let TOAST_T=null;
+function toast(msg){const ex=$('rrhh-toast');if(ex)ex.remove();const d=document.createElement('div');d.className='toast';d.id='rrhh-toast';d.textContent=msg;document.body.appendChild(d);clearTimeout(TOAST_T);TOAST_T=setTimeout(()=>d.remove(),2800);}
+
+/* ── Persistencia ──────────────────────────────────── */
+const STORE='restaid_rrhh_v1';
+window.addEventListener('message', function(e) {
+  if (e.data && e.data.type === 'restaid_request_pub') {
+    try { if (typeof DB !== 'undefined' && DB) window.parent.postMessage({type:'restaid_pub',key:STORE,value:JSON.stringify(DB)},'*'); } catch(err) {}
+  }
+});
+function defaultDB(){return{empleados:[],semanas:{},config:{targetPct:30,ssMult:1.32,premiumExtra:1.5,ticketMedio:18,ratioSala:25,ratioCocina:30},semanaActual:null};}
+function loadDB(){try{const s=localStorage.getItem(STORE);if(!s)return defaultDB();const d=JSON.parse(s);return{...defaultDB(),...d,config:{...defaultDB().config,...(d.config||{})}};}catch(e){return defaultDB();}}
+let LOCAL_DIRTY=false;
+function saveDB(){LOCAL_DIRTY=true;DB._ts=Date.now();try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(e){console.error('No se pudo guardar',e);}try{window.parent.postMessage({type:'restaid_pub',key:STORE,value:JSON.stringify(DB)},'*');}catch(e){}publishCore();sbSetRRHH();}
+let DB=loadDB();
+
+/* ── Supabase (mismo proyecto que Inventario/Ventas) ──────────────
+   Tabla: rrhh (restaurante text, datos jsonb)
+   Lectura al arrancar; escritura en segundo plano con debounce para
+   no saturar al editar el cuadrante celda a celda. */
+const SB_URL='https://gtdsqvebuhdndfaiqoyj.supabase.co';
+const SB_KEY='sb_publishable_cu53L_4O6Rz-RlGurDI3Kg_CJHqaa8U';
+const SB_RESTAURANTE='default';
+const SB_TABLE='rrhh';
+
+async function sbGetRRHH(){
+  try{
+    const r=await fetch(`${SB_URL}/rest/v1/${SB_TABLE}?restaurante=eq.${SB_RESTAURANTE}&select=datos`,{
+      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}
+    });
+    if(!r.ok)return null;
+    const d=await r.json();
+    return d&&d[0]?d[0].datos:null;
+  }catch(e){return null;}
+}
+
+let SB_TIMER=null;
+function sbSetRRHH(){
+  // Debounce: agrupa ráfagas de guardado (edición del cuadrante) en una sola escritura
+  clearTimeout(SB_TIMER);
+  SB_TIMER=setTimeout(sbWriteNow,1500);
+}
+async function sbWriteNow(){
+  // Upsert robusto: PATCH si la fila existe; si no actualizó nada, INSERT
+  try{
+    const rPatch=await fetch(`${SB_URL}/rest/v1/${SB_TABLE}?restaurante=eq.${SB_RESTAURANTE}`,{
+      method:'PATCH',
+      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=representation'},
+      body:JSON.stringify({datos:DB})
+    });
+    const patchTxt=await rPatch.text().catch(()=>'');
+    let patched=[];try{patched=JSON.parse(patchTxt);}catch(e){}
+    if(Array.isArray(patched)&&patched.length===0){
+      const rPost=await fetch(`${SB_URL}/rest/v1/${SB_TABLE}`,{
+        method:'POST',
+        headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+        body:JSON.stringify({restaurante:SB_RESTAURANTE,datos:DB})
+      });
+      if(!rPost.ok){const t=await rPost.text().catch(()=>'');console.warn('SB rrhh insert error',rPost.status,t.slice(0,150));}
+    }
+  }catch(e){console.warn('SB rrhh write error',e);}
+}
+
+async function loadFromDB(){
+  // Supabase al arrancar, con protección contra carreras:
+  //  - si el usuario ya guardó algo en esta sesión (LOCAL_DIRTY), lo local manda
+  //  - si lo local tiene un timestamp más reciente que lo remoto, lo local manda
+  const remote=await sbGetRRHH();
+  if(!remote||typeof remote!=='object')return;
+  if(LOCAL_DIRTY){console.log('[RESTAID rrhh] Remoto ignorado: hay cambios locales de esta sesión');return;}
+  const remoteTs=Number(remote._ts)||0,localTs=Number(DB._ts)||0;
+  if(remoteTs<localTs){console.log('[RESTAID rrhh] Remoto ignorado: lo local es más reciente');return;}
+  DB={...defaultDB(),...remote,config:{...defaultDB().config,...(remote.config||{})}};
+  if(sanitizeDB()){console.log('[RESTAID rrhh] Datos remotos reparados, subiendo versión corregida');sbSetRRHH();}
+  try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(e){}
+  publishCore();updateSidebar();
+  const act=document.querySelector('.tab[data-page].active');
+  showPage(act&&act.dataset.page?act.dataset.page:'resumen');
+  console.log('[RESTAID rrhh] Datos cargados desde Supabase');
+}
+
+/* ── Helpers de empleados ──────────────────────────── */
+function emp(id){return DB.empleados.find(e=>e.id===id);}
+function empColor(id){const i=DB.empleados.findIndex(e=>e.id===id);return AVCOLORS[(i<0?0:i)%AVCOLORS.length];}
+function initials(name){return(name||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase();}
+function roleClass(r){return'role-'+(r||'office').toLowerCase();}
+function calcSalarioHora(e){const hSem=Number(e.horasContrato)||40;const mes=Number(e.salarioBrutoMes)||0;return mes>0?mes/(hSem*4.33):Number(e.salarioHora)||0;}
+function calcPasivoLaboral(e){
+  if(!e.fechaAlta)return 0;
+  const dias=Math.max(0,(new Date()-new Date(e.fechaAlta))/86400000);
+  const anos=dias/365.25;
+  const salDiario=(Number(e.salarioBrutoMes)||calcSalarioHora(e)*(Number(e.horasContrato)||40)*4.33)*12/365;
+  let indemnizacion=salDiario*33*anos; // 33 días/año para indefinidos post-2012
+  const tope=Number(e.salarioBrutoMes||0)*24;
+  if(tope>0)indemnizacion=Math.min(indemnizacion,tope);
+  return Math.max(0,indemnizacion);
+}
+function empAvatar(e,size){
+  if(e.imagen)return`<img class="emp-av-img" style="width:${size||42}px;height:${size||42}px" src="${e.imagen}" alt="${esc(e.nombre)}">`;
+  return`<div class="emp-av" style="background:${empColor(e.id)};width:${size||42}px;height:${size||42}px;font-size:${(size||42)*0.36}px">${esc(initials(e.nombre))}</div>`;
+}
+
+/* ── Helpers de semana (ISO) ───────────────────────── */
+function isoWeekId(date){const d=new Date(Date.UTC(date.getFullYear(),date.getMonth(),date.getDate()));const day=d.getUTCDay()||7;d.setUTCDate(d.getUTCDate()+4-day);const yStart=new Date(Date.UTC(d.getUTCFullYear(),0,1));const wk=Math.ceil((((d-yStart)/86400000)+1)/7);return d.getUTCFullYear()+'-W'+String(wk).padStart(2,'0');}
+function mondayOf(date){const d=new Date(date);const day=(d.getDay()||7)-1;d.setDate(d.getDate()-day);d.setHours(0,0,0,0);return d;}
+function weekIdToMonday(wid){if(!wid||!/^\d{4}-W\d{2}$/.test(String(wid)))wid=isoWeekId(new Date());const[y,w]=wid.split('-W').map(Number);const simple=new Date(Date.UTC(y,0,1+(w-1)*7));const dow=simple.getUTCDay();const monday=new Date(simple);if(dow<=4)monday.setUTCDate(simple.getUTCDate()-dow+1);else monday.setUTCDate(simple.getUTCDate()+8-dow);return monday;}
+function weekLabel(wid){const m=weekIdToMonday(wid);const sun=new Date(m);sun.setUTCDate(m.getUTCDate()+6);const fmt=d=>d.getUTCDate()+' '+['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'][d.getUTCMonth()];return fmt(m)+' – '+fmt(sun);}
+function shiftWeek(wid,delta){const m=weekIdToMonday(wid);m.setUTCDate(m.getUTCDate()+delta*7);return isoWeekId(new Date(m.getUTCFullYear(),m.getUTCMonth(),m.getUTCDate()));}
+
+/* Sanitiza la DB tras CUALQUIER carga (localStorage o Supabase).
+   Repara semanaActual inválida y migra semanas guardadas bajo claves
+   corruptas ('null'/'undefined') conservando los turnos del usuario. */
+function sanitizeDB(){
+  let changed=false;
+  if(!DB.semanaActual||!/^\d{4}-W\d{2}$/.test(String(DB.semanaActual))){DB.semanaActual=isoWeekId(new Date());changed=true;}
+  if(!DB.semanas||typeof DB.semanas!=='object'){DB.semanas={};changed=true;}
+  ['null','undefined'].forEach(bad=>{
+    if(DB.semanas[bad]){
+      const cur=DB.semanas[DB.semanaActual];
+      if(!cur||!((cur.asignaciones||[]).length)){DB.semanas[DB.semanaActual]=DB.semanas[bad];}
+      delete DB.semanas[bad];changed=true;
+    }
+  });
+  return changed;
+}
+sanitizeDB();
+(function(){const pv=pubVentas();if(pv&&pv.ticketMedio>0&&!DB.config.ticketMedioManual){const t=Math.round(pv.ticketMedio*100)/100;if(Math.abs((DB.config.ticketMedio||0)-t)>0.01){DB.config.ticketMedio=t;try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(e){}console.log('[RESTAID rrhh] Ticket medio actualizado con el real de Ventas: '+t+'€');}}})();
+/* ── Vínculo Ventas → RRHH: previsión automática de ventas ──────────
+   Ventas publica en restaid_pub_v1 las medias reales por día y turno.
+   Las semanas nuevas del cuadrante se rellenan solas con ese histórico
+   (marcadas como auto); el gestor puede sobrescribirlas cuando quiera. */
+function pubVentas(){
+  try{const p=JSON.parse(localStorage.getItem('restaid_pub_v1')||'null');return p&&p.ventas&&p.ventas.prevSemana?p.ventas:null;}catch(e){return null;}
+}
+function prefillVentas(w){
+  const pv=pubVentas();if(!pv)return false;
+  let n=0;DIAS.forEach(d=>{const v=pv.prevSemana[d];if(v&&(v.Comida||v.Cena)){w.ventas[d]={Comida:Number(v.Comida)||0,Cena:Number(v.Cena)||0};n++;}});
+  if(n>0){w.ventasAuto=true;return true;}
+  return false;
+}
+function curWeek(){const wid=DB.semanaActual;let nueva=false;if(!DB.semanas[wid]){DB.semanas[wid]={ventas:{},asignaciones:[],extras:[]};nueva=true;}const w=DB.semanas[wid];if(!w.ventas)w.ventas={};if(!w.asignaciones)w.asignaciones=[];if(!w.extras)w.extras=[];if((nueva||Object.keys(w.ventas).length===0)&&!w.ventasEditadas){if(prefillVentas(w)){try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(e){}}}return w;}
+
+/* ── Cálculo de horas y coste ──────────────────────── */
+function parseHM(s){if(!s)return null;const m=String(s).match(/^(\d{1,2}):?(\d{2})?$/);if(!m)return null;return parseInt(m[1])+(m[2]?parseInt(m[2])/60:0);}
+function asignHoras(a){let ini=parseHM(a.ini),fin=parseHM(a.fin);if(ini==null||fin==null)return 0;if(fin<=ini)fin+=24;return Math.max(0,fin-ini);}
+function asignCoste(a){const e=emp(a.empId);if(!e)return 0;return asignHoras(a)*calcSalarioHora(e)*(DB.config.ssMult||1);}
+function ventasSemana(w){let t=0;DIAS.forEach(d=>{const v=w.ventas[d]||{};t+=(Number(v.Comida)||0)+(Number(v.Cena)||0);});return t;}
+function ventasDia(w,d){const v=w.ventas[d]||{};return(Number(v.Comida)||0)+(Number(v.Cena)||0);}
+function ventasTurno(w,d,t){const v=w.ventas[d]||{};return Number(v[t])||0;}
+function costeSemana(w){return w.asignaciones.reduce((s,a)=>s+asignCoste(a),0);}
+function costeDia(w,d){return w.asignaciones.filter(a=>a.dia===d).reduce((s,a)=>s+asignCoste(a),0);}
+function horasEmpSemana(w,empId){return w.asignaciones.filter(a=>a.empId===empId).reduce((s,a)=>s+asignHoras(a),0);}
+function pctClass(pct){if(pct==null||!isFinite(pct))return'none';const t=DB.config.targetPct||30;if(pct<=t-2)return'ok';if(pct<=t+5)return'warn';return'bad';}
+/* Dotación: ¿cuántas personas del rol hay asignadas en día+turno? */
+function staffCount(w,dia,turno,rol){return w.asignaciones.filter(a=>a.dia===dia&&a.turno===turno&&(()=>{const e=emp(a.empId);return e&&e.rol===rol;})()).length;}
+function staffNeeded(w,dia,turno,rol){const vt=ventasTurno(w,dia,turno);if(vt<=0)return 0;const comensales=vt/(DB.config.ticketMedio||18);const ratio=rol==='Sala'?DB.config.ratioSala||25:DB.config.ratioCocina||30;return Math.max(1,Math.ceil(comensales/ratio));}
+
+/* ── Publicar al core para otros módulos ───────────── */
+function publishCore(){const w=DB.semanas[DB.semanaActual];RESTAID.rrhh={empleados:DB.empleados,config:DB.config,semanaActual:DB.semanaActual,costeSemana:w?costeSemana(w):0,ventasSemana:w?ventasSemana(w):0};RESTAID.emit&&RESTAID.emit('rrhh:ready',RESTAID.rrhh);
+  // Publicación cross-módulo: el shell calcula el prime cost con esto
+  try{
+    const cs=w?costeSemana(w):0,vs=w?ventasSemana(w):0;
+    let pub={};try{pub=JSON.parse(localStorage.getItem('restaid_pub_v1')||'{}')||{};}catch(e){}
+    pub.rrhh={costeSemana:Math.round(cs),ventasSemana:Math.round(vs),pctLaboral:vs>0?Math.round(cs/vs*1000)/10:null,empleados:DB.empleados.length,semana:DB.semanaActual,_ts:Date.now()};
+    localStorage.setItem('restaid_pub_v1',JSON.stringify(pub));
+  }catch(e){}}
+
+/* ── Sidebar metric ────────────────────────────────── */
+function updateSidebar(){
+  const w=DB.semanas[DB.semanaActual];
+  if(!w||!DB.empleados.length){$('sbCostPct').textContent='—';$('sbCostPill').className='sb-metric-pill none';$('sbCostPill').textContent='Sin datos de semana';return;}
+  const ventas=ventasSemana(w),coste=costeSemana(w);
+  if(ventas<=0){$('sbCostPct').textContent='—';$('sbCostPill').className='sb-metric-pill none';$('sbCostPill').textContent='Falta prever ventas';return;}
+  const pct=coste/ventas*100,cls=pctClass(pct);
+  $('sbCostPct').textContent=fc(pct,1)+'%';
+  const pill=$('sbCostPill');pill.className='sb-metric-pill '+cls;
+  pill.textContent=cls==='ok'?'✓ En objetivo':cls==='warn'?'⚠ Ajustado':'▲ Por encima';
+}
+
+/* ── NAVEGACIÓN ────────────────────────────────────── */
+$$('.tab[data-page]').forEach(el=>el.addEventListener('click',()=>showPage(el.dataset.page)));
+function showPage(id){
+  $$('.tab[data-page]').forEach(el=>el.classList.toggle('active',el.dataset.page===id));
+  $$('.page').forEach(p=>p.classList.remove('active'));$('pg-'+id).classList.add('active');
+  ({resumen:renderResumen,empleados:renderEmpleados,cuadrante:renderCuadrante,costes:renderCostes,extras:renderExtras,personas:renderPersonas,asistente:renderAsistente}[id]||function(){})();
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   RESUMEN
+═══════════════════════════════════════════════════════════════════ */
+function renderResumen(){
+  const pg=$('pg-resumen');
+  if(!DB.empleados.length){pg.innerHTML=`<div class="page-hd"><h2>Resumen</h2><p>Personas & Turnos</p></div><div class="empty"><div class="empty-icon">👥</div><h3>Empieza por tu equipo</h3><p>Da de alta a tus empleados con su salario mensual y podrás montar el cuadrante semanal y controlar el coste laboral en tiempo real.</p><button class="btn btn-amber" onclick="showPage('empleados')">Añadir empleados →</button></div>`;return;}
+  const w=curWeek(),ventas=ventasSemana(w),coste=costeSemana(w);
+  const pct=ventas>0?coste/ventas*100:null,cls=pctClass(pct),t=DB.config.targetPct||30;
+  const totHoras=w.asignaciones.reduce((s,a)=>s+asignHoras(a),0);
+  const extrasPend=Object.values(DB.semanas).flatMap(s=>s.extras||[]).filter(x=>x.estado==='pendiente');
+  const horasExtraPend=extrasPend.reduce((s,x)=>s+(Number(x.horas)||0),0);
+  const pasivoTotal=DB.empleados.reduce((s,e)=>s+calcPasivoLaboral(e),0);
+  const cel=proximasCelebraciones(14);
+  const ins=[];
+  if(pct!=null){if(cls==='ok')ins.push({type:'good',label:'Coste bajo control',txt:`Coste laboral en ${fc(pct,1)}%, por debajo del objetivo (${t}%).`});else if(cls==='warn')ins.push({type:'warn',label:'Coste ajustado',txt:`Coste laboral en ${fc(pct,1)}%, cerca del límite.`});else ins.push({type:'warn',label:'Coste alto',txt:`Coste laboral en ${fc(pct,1)}%, por encima del ${t}%. Revisa cuadrante o ventas previstas.`});}
+  else ins.push({type:'opp',label:'Faltan ventas previstas',txt:'Introduce las ventas previstas para ver el coste laboral. Puedes pedírselo a la IA.'});
+  if(cel.length)ins.push({type:'info',label:'Próxima celebración',txt:`${cel[0].txt}.`});
+  if(horasExtraPend>0)ins.push({type:'opp',label:'Horas extra pendientes',txt:`${fc(horasExtraPend,1)} h sin compensar ni pagar.`});
+  pg.innerHTML=`
+  <div class="page-hd"><h2>Resumen</h2><p>Semana ${weekLabel(DB.semanaActual)}</p></div>
+  ${insightCards(ins)}
+  <div class="kpi-row kpi-row-4">
+    <div class="kpi"><div class="kpi-lbl">Coste laboral / ventas</div><div class="kpi-val">${pct!=null?fc(pct,1)+'%':'—'}</div><div class="kpi-sub">objetivo ${t}%</div>${pct!=null?`<div class="kpi-pill ${cls==='ok'?'ok':cls==='warn'?'warn':'bad'}">${cls==='ok'?'✓ en objetivo':cls==='warn'?'⚠ ajustado':'▲ por encima'}</div>`:''}</div>
+    <div class="kpi"><div class="kpi-lbl">Coste de personal</div><div class="kpi-val">${fk(coste)} €</div><div class="kpi-sub">con SS empresa (×${fc(DB.config.ssMult,2)})</div></div>
+    <div class="kpi"><div class="kpi-lbl">Horas planificadas</div><div class="kpi-val">${fc(totHoras,0)} h</div><div class="kpi-sub">${w.asignaciones.length} turnos</div></div>
+    <div class="kpi"><div class="kpi-lbl">Pasivo laboral</div><div class="kpi-val">${fk(pasivoTotal)} €</div><div class="kpi-sub">coste de despido acumulado</div></div>
+  </div>
+  <div class="g2">
+    <div class="panel"><p class="panel-title">Coste laboral por día</p><div style="height:210px"><canvas id="cCosteDia"></canvas></div></div>
+    <div class="panel"><p class="panel-title">Horas por rol</p><div style="height:210px"><canvas id="cRol"></canvas></div></div>
+  </div>
+  <div class="panel"><p class="panel-title">Atajos</p><div style="display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn btn-amber btn-sm" onclick="showPage('cuadrante')">📅 Cuadrante</button>
+    <button class="btn btn-ghost btn-sm" onclick="showPage('costes')">📊 Costes</button>
+    <button class="btn btn-ghost btn-sm" onclick="showPage('asistente')">✨ Asistente IA</button>
+  </div></div>`;
+  const cv=DIAS.map(d=>costeDia(w,d)),vt=DIAS.map(d=>ventasDia(w,d));
+  mkChart('cCosteDia','bar',DIAS,[{label:'Ventas prev.',data:vt,backgroundColor:'#E8E5DE',borderRadius:4,barPercentage:.7,order:2},{label:'Coste personal',data:cv,backgroundColor:'#1A2B3C',borderRadius:4,barPercentage:.45,order:1}],{plugins:{legend:{display:true,labels:{font:{size:10},boxWidth:10,padding:12,color:'#596570'}}}});
+  const rolH={};ROLES.forEach(r=>rolH[r]=0);w.asignaciones.forEach(a=>{const e=emp(a.empId);if(e)rolH[e.rol]=(rolH[e.rol]||0)+asignHoras(a);});
+  const rolKeys=ROLES.filter(r=>rolH[r]>0);
+  mkChart('cRol','doughnut',rolKeys,[{data:rolKeys.map(r=>rolH[r]),backgroundColor:['#1A4A8A','#1D7A4A','#B07010','#98A3AC'],borderWidth:0}],{cutout:'62%',plugins:{legend:{display:true,position:'right',labels:{font:{size:11},boxWidth:11,padding:9,color:'#596570'}}}});
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   EMPLEADOS — salario mensual, auto-40h, pasivo laboral, descanso
+═══════════════════════════════════════════════════════════════════ */
+function renderEmpleados(){
+  const pg=$('pg-empleados'),w=curWeek();
+  const salaEmps=DB.empleados.filter(e=>e.rol==='Sala'||e.rol==='Barra');
+  const cocEmps=DB.empleados.filter(e=>e.rol==='Cocina'||e.rol==='Office');
+  pg.innerHTML=`<div class="page-hd"><h2>Empleados</h2><button class="btn btn-amber btn-sm" onclick="openEmpModal()">+ Añadir empleado</button></div>
+  ${!DB.empleados.length?`<div class="empty"><div class="empty-icon">🧑‍🍳</div><h3>Aún no hay nadie en plantilla</h3><p>Añade a cada persona con su rol y salario bruto mensual.</p><button class="btn btn-amber" onclick="openEmpModal()">+ Añadir el primero</button></div>`:
+  `${salaEmps.length?`<div class="panel-title" style="margin-bottom:.75rem;font-size:11px">SALA Y BARRA <span style="opacity:.5">(${salaEmps.length})</span></div><div class="emp-grid" style="margin-bottom:1.5rem">${salaEmps.map(e=>empCard(e,w)).join('')}</div>`:''}
+  ${cocEmps.length?`<div class="panel-title" style="margin-bottom:.75rem;font-size:11px">COCINA Y OFFICE <span style="opacity:.5">(${cocEmps.length})</span></div><div class="emp-grid">${cocEmps.map(e=>empCard(e,w)).join('')}</div>`:''}`}`;
+}
+function empCard(e,w){
+  const hSem=horasEmpSemana(w,e.id),sH=calcSalarioHora(e),pasivo=calcPasivoLaboral(e);
+  const over=e.horasContrato&&hSem>e.horasContrato;
+  return `<div class="emp-card">
+    <div class="emp-card-top">
+      ${empAvatar(e)}
+      <div><div class="emp-card-name">${esc(e.nombre)}</div><div class="emp-card-rol"><span class="emp-role-tag ${roleClass(e.rol)}">${esc(e.rol)}</span> · ${esc(e.contrato||'—')}</div></div>
+    </div>
+    <div class="emp-card-stats">
+      <div class="emp-card-stat"><span>Salario bruto/mes</span><span>${fc(e.salarioBrutoMes||0,0)} €</span></div>
+      <div class="emp-card-stat"><span>→ €/hora bruto</span><span>${fc(sH)} €/h</span></div>
+      <div class="emp-card-stat"><span>Coste empresa/hora</span><span>${fc(sH*DB.config.ssMult)} €/h</span></div>
+      <div class="emp-card-stat"><span>Contrato</span><span>${e.horasContrato?fc(e.horasContrato,0)+' h/sem':'—'}</span></div>
+      <div class="emp-card-stat"><span>Planif. esta semana</span><span style="color:${over?'var(--red)':'inherit'}">${fc(hSem,1)} h</span></div>
+      <div class="emp-card-stat"><span>Descanso estándar</span><span>${e.diaDescanso?esc(e.diaDescanso):'—'}</span></div>
+      <div class="emp-card-stat"><span>Pasivo laboral</span><span>${pasivo>0?`<span class="pasivo-tag">${fk(pasivo)} €</span>`:'—'}</span></div>
+    </div>
+    <div class="emp-card-acts">
+      <button class="btn btn-ghost btn-sm" onclick="openEmpModal('${e.id}')">Editar</button>
+      <button class="btn btn-danger btn-sm" onclick="delEmp('${e.id}')">Baja</button>
+    </div>
+  </div>`;
+}
+function openEmpModal(id){
+  const e=id?emp(id):{};const hc=Number(e.horasContrato)||40;
+  const host=$('modal-host');
+  host.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()"><div class="modal">
+    <h3>${id?'Editar empleado':'Nuevo empleado'}</h3>
+    <p class="modal-desc">El salario bruto mensual y las horas de contrato calculan automáticamente el coste por hora.</p>
+    <div class="field"><label>Nombre</label><input id="em-nombre" value="${esc(e.nombre||'')}" placeholder="Ej. Ana García"></div>
+    <div class="field-row">
+      <div class="field"><label>Rol</label><select id="em-rol">${ROLES.map(r=>`<option ${e.rol===r?'selected':''}>${r}</option>`).join('')}</select></div>
+      <div class="field"><label>Tipo de contrato</label><select id="em-contrato" onchange="empContratoChange()">${['Jornada completa','Media jornada','Fijo discontinuo','Extra / por horas'].map(c=>`<option ${(e.contrato||'Jornada completa')===c?'selected':''}>${c}</option>`).join('')}</select></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Salario bruto mensual (€)</label><input id="em-salario-mes" type="number" step="1" value="${e.salarioBrutoMes||''}" placeholder="1400" oninput="empSalaryPreview()"><div class="field-hint">Bruto mensual sin pagas extra. La SS de empresa se añade automáticamente.</div></div>
+      <div class="field"><label>Horas/semana contrato</label><input id="em-horas" type="number" step="1" value="${hc}" placeholder="40" oninput="empSalaryPreview()"></div>
+    </div>
+    <div class="salary-preview" id="em-sal-preview"></div>
+    <div class="field-row">
+      <div class="field"><label>Fecha de incorporación</label><input id="em-alta" type="date" value="${e.fechaAlta||''}"></div>
+      <div class="field"><label>Día de descanso estándar</label><select id="em-descanso"><option value="">Sin definir</option>${DIAS_FULL.map(d=>`<option ${e.diaDescanso===d?'selected':''}>${d}</option>`).join('')}</select></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-amber btn-sm" onclick="saveEmp('${id||''}')">${id?'Guardar':'Añadir'}</button>
+    </div>
+  </div></div>`;
+  empSalaryPreview();
+}
+function empContratoChange(){
+  const c=$('em-contrato').value;
+  if(c==='Jornada completa')$('em-horas').value='40';
+  else if(c==='Media jornada')$('em-horas').value='20';
+  empSalaryPreview();
+}
+function empSalaryPreview(){
+  const mes=parseFloat($('em-salario-mes')?.value)||0;
+  const hSem=parseFloat($('em-horas')?.value)||40;
+  const pv=$('em-sal-preview');if(!pv)return;
+  if(mes<=0){pv.innerHTML='';return;}
+  const porHora=mes/(hSem*4.33);
+  const costeEmpresa=porHora*DB.config.ssMult;
+  pv.innerHTML=`<div><strong>${fc(porHora)} €/h</strong> bruto</div><div><strong>${fc(costeEmpresa)} €/h</strong> coste empresa</div><div><strong>${fc(mes*12,0)} €/año</strong> anual</div>`;
+}
+function saveEmp(id){
+  const nombre=$('em-nombre').value.trim();
+  if(!nombre){toast('Pon al menos el nombre');return;}
+  const salarioBrutoMes=parseFloat($('em-salario-mes').value)||0;
+  const horasContrato=parseFloat($('em-horas').value)||40;
+  const salarioHora=salarioBrutoMes>0?salarioBrutoMes/(horasContrato*4.33):0;
+  const obj={nombre,rol:$('em-rol').value,contrato:$('em-contrato').value,salarioBrutoMes,salarioHora,horasContrato,fechaAlta:$('em-alta').value||'',diaDescanso:$('em-descanso').value||''};
+  if(id){const e=emp(id);Object.assign(e,obj);}
+  else{obj.id=uid();obj.cumple='';obj.prefs='';obj.skills=[];obj.personal={};obj.vacaciones=[];obj.imagen='';DB.empleados.push(obj);}
+  saveDB();closeModal();renderEmpleados();updateSidebar();toast(id?'Empleado actualizado':'Empleado añadido');
+}
+function delEmp(id){
+  const e=emp(id);if(!e)return;
+  confirmModal(`Dar de baja a ${esc(e.nombre)}`,'Se quitará de la plantilla y de los cuadrantes.',()=>{
+    DB.empleados=DB.empleados.filter(x=>x.id!==id);
+    Object.values(DB.semanas).forEach(s=>{s.asignaciones=(s.asignaciones||[]).filter(a=>a.empId!==id);s.extras=(s.extras||[]).filter(x=>x.empId!==id);});
+    saveDB();closeModal();renderEmpleados();updateSidebar();toast('Empleado dado de baja');
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   CUADRANTE — secciones Sala y Cocina + dotación
+═══════════════════════════════════════════════════════════════════ */
+let CUAD_AI_OPEN=false;
+function renderCuadrante(){
+  const pg=$('pg-cuadrante');
+  if(!DB.empleados.length){pg.innerHTML=`<div class="page-hd"><h2>Cuadrante</h2></div><div class="empty"><div class="empty-icon">📅</div><h3>Primero, tu equipo</h3><p>Necesitas empleados dados de alta para montar el cuadrante.</p><button class="btn btn-amber" onclick="showPage('empleados')">Añadir empleados →</button></div>`;return;}
+  const w=curWeek();
+  const todayWid=isoWeekId(new Date()),todayDow=(new Date().getDay()||7)-1,isCurWeek=DB.semanaActual===todayWid;
+  const salaEmps=DB.empleados.filter(e=>e.rol==='Sala'||e.rol==='Barra');
+  const cocEmps=DB.empleados.filter(e=>e.rol==='Cocina'||e.rol==='Office');
+  const thDay=(d,i)=>`<th class="${isCurWeek&&i===todayDow?'today':''}">${d}</th>`;
+  pg.innerHTML=`
+  <div class="page-hd"><h2>Cuadrante</h2><p>Toca una celda para asignar turno</p></div>
+  <div class="cuad-toolbar">
+    <div class="cuad-week"><button onclick="navWeek(-1)">‹</button><span class="cuad-week-lbl">${weekLabel(DB.semanaActual)}</span><button onclick="navWeek(1)">›</button></div>
+    <button class="btn btn-amber btn-sm" onclick="openCuadAI()">✨ Generar con IA</button>
+    <button class="btn btn-ghost btn-sm" onclick="openVentasPrev()">€ Ventas previstas</button>
+    <button class="btn btn-ghost btn-sm" onclick="exportCuad()">↓ Excel</button>
+    ${w.asignaciones.length?`<button class="btn btn-danger btn-sm" onclick="clearCuad()">Vaciar</button>`:''}
+  </div>
+  <div id="cuad-ai-panel"></div>
+  <div class="cuad-scroll"><table class="cuad-table">
+    <colgroup><col style="width:160px">${DIAS.map(()=>'<col>').join('')}<col style="width:100px"></colgroup>
+    <thead><tr><th class="cuad-emp-cell"></th>${DIAS.map(thDay).join('')}<th class="cuad-total-cell">Semana</th></tr></thead>
+    <tbody>
+    ${renderCuadRows('Sala y Barra',salaEmps,'Sala',w,isCurWeek,todayDow)}
+    ${renderCuadRows('Cocina y Office',cocEmps,'Cocina',w,isCurWeek,todayDow)}
+    </tbody>
+    <tfoot><tr class="cuad-foot">
+      <td class="cuad-emp-cell">Coste / Ventas</td>
+      ${DIAS.map(d=>{const cd=costeDia(w,d),vd=ventasDia(w,d),p=vd>0?cd/vd*100:null;const pc=p==null?'':p<=DB.config.targetPct-2?'cuad-pct-ok':p<=DB.config.targetPct+5?'cuad-pct-warn':'cuad-pct-bad';return `<td><div class="cuad-foot-val">${fk(cd)}€</div><div class="cuad-foot-pct ${pc}">${p!=null?fc(p,0)+'%':'—'}</div></td>`;}).join('')}
+      <td class="cuad-total-cell" style="background:var(--navy);color:#fff">${(()=>{const v=ventasSemana(w),c=costeSemana(w),p=v>0?c/v*100:null;const pc=p==null?'':p<=DB.config.targetPct-2?'cuad-pct-ok':p<=DB.config.targetPct+5?'cuad-pct-warn':'cuad-pct-bad';return `<div class="cuad-foot-val">${fk(c)}€</div><div class="cuad-foot-pct ${pc}">${p!=null?fc(p,1)+'%':'sin ventas'}</div>`;})()}</td>
+    </tr></tfoot>
+  </table></div>
+  <p style="font-size:11px;color:var(--tx3);margin-top:.75rem;line-height:1.6">Dotación: fuerza presente vs necesaria (≈1 cam./${DB.config.ratioSala} comensales, 1 coc./${DB.config.ratioCocina}). Ticket medio: ${fc(DB.config.ticketMedio,0)}€.</p>`;
+}
+function renderCuadRows(label,emps,rolKey,w,isCurWeek,todayDow){
+  if(!emps.length)return'';
+  const cols=9; // nombre + 7 dias + semana
+  let html=`<tr><td colspan="${cols}" class="cuad-section-hd">${esc(label)}<span class="count-badge">${emps.length}</span></td></tr>`;
+  emps.forEach(e=>{
+    const hSem=horasEmpSemana(w,e.id),cSem=w.asignaciones.filter(a=>a.empId===e.id).reduce((s,a)=>s+asignCoste(a),0);
+    const over=e.horasContrato&&hSem>e.horasContrato;
+    const isDescanso=d=>e.diaDescanso&&DIAS_FULL[DIAS.indexOf(d)]===e.diaDescanso;
+    html+=`<tr>
+      <td class="cuad-emp-cell"><div class="cuad-emp-name">${esc(e.nombre)}</div><div class="cuad-emp-sub"><span class="emp-role-tag ${roleClass(e.rol)}">${esc(e.rol)}</span> ${fc(calcSalarioHora(e),1)}€/h${e.diaDescanso?` · lib. ${e.diaDescanso.slice(0,3)}`:''}</div></td>
+      ${DIAS.map(d=>{
+        const cells=w.asignaciones.filter(a=>a.empId===e.id&&a.dia===d);
+        const bg=isDescanso(d)&&!cells.length?'background:repeating-linear-gradient(135deg,transparent,transparent 4px,var(--bg) 4px,var(--bg) 8px);':'';
+        return `<td class="cuad-cell" style="${bg}" onclick="openTurno('${e.id}','${d}')">${cells.length?cells.map(a=>`<span class="cuad-chip ${a.turno.toLowerCase()}">${esc(a.turno[0])} ${esc(a.ini)}-${esc(a.fin)}</span>`).join(''):'<span class="cuad-chip-empty">+</span>'}</td>`;
+      }).join('')}
+      <td class="cuad-total-cell ${over?'cuad-over':''}"><div class="cuad-total-h">${fc(hSem,1)} h</div><div class="cuad-total-sub">${fk(cSem)}€${e.horasContrato?` / ${fc(e.horasContrato,0)}h`:''}</div></td>
+    </tr>`;
+  });
+  TURNOS.forEach(tn=>{
+    html+=`<tr><td class="cuad-emp-cell" style="font-size:10px;font-weight:600;color:var(--tx3)">Dotación ${tn}</td>
+    ${DIAS.map(d=>{
+      const have=w.asignaciones.filter(a=>a.dia===d&&a.turno===tn&&emps.some(e=>e.id===a.empId)).length;
+      const need=staffNeeded(w,d,tn,rolKey);
+      if(need<=0)return `<td class="cuad-staff" style="color:var(--tx3)">—</td>`;
+      const cls=have>=need?'cuad-staff-ok':have>=need-1?'cuad-staff-warn':'cuad-staff-bad';
+      return `<td class="cuad-staff ${cls}">${have}/${need}</td>`;
+    }).join('')}<td class="cuad-total-cell"></td></tr>`;
+  });
+  return html;
+}
+function navWeek(delta){DB.semanaActual=shiftWeek(DB.semanaActual,delta);saveDB();renderCuadrante();updateSidebar();}
+function openTurno(empId,dia){
+  const w=curWeek(),e=emp(empId);const existing=w.asignaciones.filter(a=>a.empId===empId&&a.dia===dia);const byTurno={};existing.forEach(a=>byTurno[a.turno]=a);
+  $('modal-host').innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()"><div class="modal">
+    <h3>${esc(e.nombre)} · ${DIAS_FULL[DIAS.indexOf(dia)]}</h3>
+    <p class="modal-desc">${e.diaDescanso&&DIAS_FULL[DIAS.indexOf(dia)]===e.diaDescanso?'<strong style="color:var(--ylw)">⚠ Este es su día de descanso estándar.</strong><br>':''}Marca los turnos que trabaja. Déjalo en blanco para librar.</p>
+    ${TURNOS.map(tn=>{const a=byTurno[tn]||{};const on=!!byTurno[tn];const def=tn==='Comida'?{i:'12:00',f:'17:00'}:{i:'20:00',f:'00:00'};
+      return `<div class="field" style="border:1px solid var(--bdr);border-radius:7px;padding:.7rem .85rem;margin-bottom:.7rem">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px"><input type="checkbox" id="tn-${tn}" ${on?'checked':''} style="width:auto" onchange="document.getElementById('tn-${tn}-fields').style.opacity=this.checked?'1':'.4'"> ${tn}</label>
+        <div id="tn-${tn}-fields" class="field-row" style="opacity:${on?'1':'.4'}"><div><input type="time" id="tn-${tn}-ini" value="${a.ini||def.i}"></div><div><input type="time" id="tn-${tn}-fin" value="${a.fin||def.f}"></div></div>
+      </div>`;}).join('')}
+    <div class="modal-actions"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-amber btn-sm" onclick="saveTurno('${empId}','${dia}')">Guardar</button></div>
+  </div></div>`;
+}
+function saveTurno(empId,dia){const w=curWeek();w.asignaciones=w.asignaciones.filter(a=>!(a.empId===empId&&a.dia===dia));TURNOS.forEach(tn=>{if($('tn-'+tn).checked){const ini=$('tn-'+tn+'-ini').value,fin=$('tn-'+tn+'-fin').value;if(ini&&fin)w.asignaciones.push({id:uid(),empId,dia,turno:tn,ini,fin});}});saveDB();closeModal();renderCuadrante();updateSidebar();}
+function clearCuad(){confirmModal('Vaciar el cuadrante','Se eliminarán todos los turnos de esta semana.',()=>{curWeek().asignaciones=[];saveDB();closeModal();renderCuadrante();updateSidebar();toast('Cuadrante vaciado');});}
+function openVentasPrev(){
+  const w=curWeek();
+  $('modal-host').innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()"><div class="modal wide">
+    <h3>Ventas previstas de la semana</h3><p class="modal-desc">Base del cálculo de coste laboral % y dotación necesaria.</p>
+    <div class="sales-grid">${DIAS.map(d=>{const v=w.ventas[d]||{};return `<div class="sales-day"><div class="sales-day-lbl">${d}</div><input type="number" id="vp-${d}-c" value="${v.Comida||''}" placeholder="0"><div class="lbl-c">Comida</div><input type="number" id="vp-${d}-n" value="${v.Cena||''}" placeholder="0"><div class="lbl-n">Cena</div></div>`;}).join('')}</div>
+    <div class="modal-actions"><button class="btn btn-ghost btn-sm" onclick="usarHistorico()">↻ Usar histórico de Ventas</button><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-amber btn-sm" onclick="saveVentasPrev()">Guardar</button></div>
+  </div></div>`;
+}
+function saveVentasPrev(){const w=curWeek();DIAS.forEach(d=>{w.ventas[d]={Comida:parseFloat($('vp-'+d+'-c').value)||0,Cena:parseFloat($('vp-'+d+'-n').value)||0};});w.ventasAuto=false;w.ventasEditadas=true;saveDB();closeModal();renderCuadrante();updateSidebar();toast('Ventas previstas guardadas');}
+function usarHistorico(){const w=curWeek();const pv=pubVentas();if(!pv){toast('Aún no hay histórico: analiza tus ventas en el módulo Ventas');return;}DIAS.forEach(d=>{const v=pv.prevSemana[d]||{};const c=$('vp-'+d+'-c'),n=$('vp-'+d+'-n');if(c)c.value=v.Comida||'';if(n)n.value=v.Cena||'';});toast('Cargado del histórico real de Ventas — guarda para aplicar');}
+function exportCuad(){
+  const w=curWeek(),rows=[['Empleado','Rol','Sal€/h',...DIAS,'Horas','Coste €']];
+  DB.empleados.forEach(e=>{const row=[e.nombre,e.rol,fc(calcSalarioHora(e))];DIAS.forEach(d=>{const cs=w.asignaciones.filter(a=>a.empId===e.id&&a.dia===d);row.push(cs.map(a=>`${a.turno} ${a.ini}-${a.fin}`).join(' / '));});row.push(fc(horasEmpSemana(w,e.id),1));row.push(fc(w.asignaciones.filter(a=>a.empId===e.id).reduce((s,a)=>s+asignCoste(a),0),2));rows.push(row);});
+  const ws=XLSX.utils.aoa_to_sheet(rows),wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Cuadrante');XLSX.writeFile(wb,`cuadrante_${DB.semanaActual}.xlsx`);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   COSTES
+═══════════════════════════════════════════════════════════════════ */
+function renderCostes(){
+  const pg=$('pg-costes');
+  if(!DB.empleados.length){pg.innerHTML=`<div class="page-hd"><h2>Costes laborales</h2></div><div class="empty"><div class="empty-icon">📊</div><h3>Sin datos</h3><p>Da de alta el equipo y monta el cuadrante.</p><button class="btn btn-amber" onclick="showPage('empleados')">Empezar →</button></div>`;return;}
+  const w=curWeek(),ventas=ventasSemana(w),coste=costeSemana(w),pct=ventas>0?coste/ventas*100:null,t=DB.config.targetPct||30,cls=pctClass(pct);
+  const gaugePct=pct==null?0:Math.min(pct,60),gaugeCol=cls==='ok'?'#1D7A4A':cls==='warn'?'#B07010':cls==='bad'?'#C03020':'#98A3AC';
+  const circ=2*Math.PI*52,off=circ*(1-gaugePct/60);
+  pg.innerHTML=`
+  <div class="page-hd"><h2>Costes laborales</h2><p>Semana ${weekLabel(DB.semanaActual)}</p></div>
+  <div class="panel"><p class="panel-title">Coste laboral sobre ventas — la métrica estrella</p>
+    <div class="gauge-wrap">
+      <div class="gauge"><svg width="150" height="150" viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" fill="none" stroke="#EDEBE6" stroke-width="12"/><circle cx="60" cy="60" r="52" fill="none" stroke="${gaugeCol}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${circ}" stroke-dashoffset="${off}"/></svg><div class="gauge-center"><div class="gauge-val" style="color:${gaugeCol}">${pct!=null?fc(pct,1)+'%':'—'}</div><div class="gauge-lbl">coste / ventas</div></div></div>
+      <div class="gauge-legend">
+        <div class="gauge-leg-row"><span class="gauge-leg-dot" style="background:var(--green)"></span> <strong>≤ ${t-2}%</strong> Holgado</div>
+        <div class="gauge-leg-row"><span class="gauge-leg-dot" style="background:var(--ylw)"></span> <strong>${t-2}–${t+5}%</strong> Ajustado</div>
+        <div class="gauge-leg-row"><span class="gauge-leg-dot" style="background:var(--red)"></span> <strong>> ${t+5}%</strong> Alto</div>
+      </div>
+    </div>
+  </div>
+  <div class="kpi-row kpi-row-3">
+    <div class="kpi"><div class="kpi-lbl">Ventas previstas</div><div class="kpi-val">${fk(ventas)} €</div></div>
+    <div class="kpi"><div class="kpi-lbl">Coste de personal</div><div class="kpi-val">${fk(coste)} €</div><div class="kpi-sub">con SS empresa</div></div>
+    <div class="kpi"><div class="kpi-lbl">Pasivo laboral</div><div class="kpi-val">${fk(DB.empleados.reduce((s,e)=>s+calcPasivoLaboral(e),0))} €</div><div class="kpi-sub">coste total de despido</div></div>
+  </div>
+  <div class="g2">
+    <div class="panel"><p class="panel-title">Coste por día</p><table class="ct-table"><thead><tr><th>Día</th><th>Ventas</th><th>Coste</th><th>%</th></tr></thead><tbody>
+      ${DIAS.map(d=>{const cd=costeDia(w,d),vd=ventasDia(w,d),p=vd>0?cd/vd*100:null;return `<tr><td>${d}</td><td>${fk(vd)} €</td><td>${fk(cd)} €</td><td>${p!=null?`<span class="ct-pct ${pctClass(p)}">${fc(p,0)}%</span>`:'—'}</td></tr>`;}).join('')}
+    </tbody></table></div>
+    <div class="panel"><p class="panel-title">Coste por empleado</p><div id="costeEmp"></div></div>
+  </div>
+  <div class="panel"><p class="panel-title">Evolución coste laboral %</p><div style="height:220px"><canvas id="cEvol"></canvas></div></div>`;
+  const ce=DB.empleados.map(e=>({e,c:w.asignaciones.filter(a=>a.empId===e.id).reduce((s,a)=>s+asignCoste(a),0)})).filter(x=>x.c>0).sort((a,b)=>b.c-a.c);
+  rankRows('costeEmp',ce.map(x=>({label:x.e.nombre,val:x.c,color:empColor(x.e.id)})),ce[0]?.c||1,v=>fk(v)+' €');
+  const wids=Object.keys(DB.semanas).filter(id=>{const s=DB.semanas[id];return s.asignaciones&&s.asignaciones.length&&ventasSemana(s)>0;}).sort().slice(-8);
+  const evolPct=wids.map(id=>{const s=DB.semanas[id];return costeSemana(s)/ventasSemana(s)*100;});
+  if(wids.length)mkChart('cEvol','line',wids.map(id=>'S'+id.split('-W')[1]),[{label:'Coste %',data:evolPct,borderColor:'#E8914A',backgroundColor:'rgba(232,145,74,.1)',fill:true,tension:.3,pointRadius:4,pointBackgroundColor:'#E8914A'},{label:'Objetivo',data:wids.map(()=>t),borderColor:'#98A3AC',borderDash:[5,4],pointRadius:0,fill:false}],{plugins:{legend:{display:true,labels:{font:{size:10},boxWidth:10,padding:12,color:'#596570'}}},scales:{y:{ticks:{callback:v=>v+'%'}}}});
+  else $('cEvol').parentElement.innerHTML='<p style="font-size:12px;color:var(--tx3);text-align:center;padding:2rem">Aún no hay semanas para comparar.</p>';
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   HORAS EXTRAS
+═══════════════════════════════════════════════════════════════════ */
+function renderExtras(){
+  const pg=$('pg-extras');
+  if(!DB.empleados.length){pg.innerHTML=`<div class="page-hd"><h2>Horas extras</h2></div><div class="empty"><div class="empty-icon">⏱️</div><h3>Sin equipo</h3><p>Da de alta a tus empleados primero.</p><button class="btn btn-amber" onclick="showPage('empleados')">Añadir equipo →</button></div>`;return;}
+  const all=[];Object.keys(DB.semanas).forEach(wid=>{(DB.semanas[wid].extras||[]).forEach(x=>all.push({...x,wid}));});all.sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+  const acc={};all.forEach(x=>{if(!acc[x.empId])acc[x.empId]={pend:0,comp:0,pag:0};acc[x.empId][x.estado==='pendiente'?'pend':x.estado==='compensada'?'comp':'pag']+=Number(x.horas)||0;});
+  const pendTotal=all.filter(x=>x.estado==='pendiente').reduce((s,x)=>s+(Number(x.horas)||0),0);
+  const costeExtraPend=all.filter(x=>x.estado==='pendiente').reduce((s,x)=>{const e=emp(x.empId);return s+(e?(Number(x.horas)||0)*calcSalarioHora(e)*DB.config.ssMult*(DB.config.premiumExtra||1):0);},0);
+  pg.innerHTML=`
+  <div class="page-hd"><h2>Horas extras</h2><button class="btn btn-amber btn-sm" onclick="openExtraModal()">+ Registrar extra</button></div>
+  <div class="kpi-row kpi-row-3">
+    <div class="kpi"><div class="kpi-lbl">Pendientes</div><div class="kpi-val">${fc(pendTotal,1)} h</div>${pendTotal>0?'<div class="kpi-pill warn">⚠ atender</div>':'<div class="kpi-pill ok">✓ al día</div>'}</div>
+    <div class="kpi"><div class="kpi-lbl">Coste si se pagan</div><div class="kpi-val">${fk(costeExtraPend)} €</div><div class="kpi-sub">recargo ×${fc(DB.config.premiumExtra,2)}</div></div>
+    <div class="kpi"><div class="kpi-lbl">Registros</div><div class="kpi-val">${all.length}</div></div>
+  </div>
+  ${Object.keys(acc).length?`<div class="panel"><p class="panel-title">Acumulado por empleado</p><table class="ct-table"><thead><tr><th>Empleado</th><th>Pend.</th><th>Comp.</th><th>Pag.</th></tr></thead><tbody>${Object.keys(acc).map(eid=>{const e=emp(eid);if(!e)return'';const a=acc[eid];return`<tr><td>${esc(e.nombre)}</td><td>${a.pend?`<span class="ct-pct warn">${fc(a.pend,1)} h</span>`:'—'}</td><td>${fc(a.comp,1)} h</td><td>${fc(a.pag,1)} h</td></tr>`;}).join('')}</tbody></table></div>`:''}
+  <div class="panel"><p class="panel-title">Registro</p>
+    ${all.length?all.map(x=>{const e=emp(x.empId);if(!e)return'';return`<div class="extra-row"><div class="extra-av" style="background:${empColor(x.empId)}">${esc(initials(e.nombre))}</div><div class="extra-info"><div class="extra-name">${esc(e.nombre)}</div><div class="extra-meta">${x.fecha?fmtDate(x.fecha):''}${x.motivo?' · '+esc(x.motivo):''}</div></div><div class="extra-hours">${fc(x.horas,1)}<span style="font-size:11px;color:var(--tx3)"> h</span></div><div class="extra-state state-${x.estado}" onclick="cycleExtra('${x.wid}','${x.id}')" title="Clic para cambiar">${x.estado}</div><button class="btn btn-danger btn-sm" onclick="delExtra('${x.wid}','${x.id}')">✕</button></div>`;}).join(''):'<p style="font-size:12.5px;color:var(--tx3);text-align:center;padding:1.5rem">Sin horas extra registradas.</p>'}
+  </div>`;
+}
+function openExtraModal(){
+  $('modal-host').innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()"><div class="modal"><h3>Registrar horas extra</h3>
+    <div class="field"><label>Empleado</label><select id="ex-emp">${DB.empleados.map(e=>`<option value="${e.id}">${esc(e.nombre)}</option>`).join('')}</select></div>
+    <div class="field-row"><div class="field"><label>Fecha</label><input type="date" id="ex-fecha" value="${new Date().toISOString().slice(0,10)}"></div><div class="field"><label>Horas</label><input type="number" step="0.5" id="ex-horas" placeholder="2"></div></div>
+    <div class="field"><label>Motivo</label><input id="ex-motivo" placeholder="Evento, baja..."></div>
+    <div class="field"><label>Estado</label><select id="ex-estado"><option value="pendiente">Pendiente</option><option value="compensada">Compensada</option><option value="pagada">Pagada</option></select></div>
+    <div class="modal-actions"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-amber btn-sm" onclick="saveExtra()">Registrar</button></div>
+  </div></div>`;
+}
+function saveExtra(){const horas=parseFloat($('ex-horas').value);if(!horas||horas<=0){toast('Indica las horas');return;}const fecha=$('ex-fecha').value||new Date().toISOString().slice(0,10);const wid=isoWeekId(new Date(fecha));if(!DB.semanas[wid])DB.semanas[wid]={ventas:{},asignaciones:[],extras:[]};if(!DB.semanas[wid].extras)DB.semanas[wid].extras=[];DB.semanas[wid].extras.push({id:uid(),empId:$('ex-emp').value,fecha,horas,motivo:$('ex-motivo').value.trim(),estado:$('ex-estado').value});saveDB();closeModal();renderExtras();toast('Horas extra registradas');}
+function cycleExtra(wid,id){const x=DB.semanas[wid].extras.find(e=>e.id===id);if(!x)return;const ord=['pendiente','compensada','pagada'];x.estado=ord[(ord.indexOf(x.estado)+1)%3];saveDB();renderExtras();}
+function delExtra(wid,id){DB.semanas[wid].extras=DB.semanas[wid].extras.filter(e=>e.id!==id);saveDB();renderExtras();}
+
+/* ═══════════════════════════════════════════════════════════════════
+   PERSONAS — vacaciones, imagen, datos personales estructurados
+═══════════════════════════════════════════════════════════════════ */
+function renderPersonas(){
+  const pg=$('pg-personas');
+  if(!DB.empleados.length){pg.innerHTML=`<div class="page-hd"><h2>Personas</h2></div><div class="empty"><div class="empty-icon">💛</div><h3>Conoce a tu equipo</h3><p>Da de alta a tu equipo primero.</p><button class="btn btn-amber" onclick="showPage('empleados')">Añadir equipo →</button></div>`;return;}
+  const cel=proximasCelebraciones(30);
+  pg.innerHTML=`
+  <div class="page-hd"><h2>Personas</h2><p>La parte humana del equipo</p></div>
+  ${cel.length?`<div class="pers-celebrate"><span class="pers-celebrate-icon">🎉</span><div class="pers-celebrate-txt">${cel.slice(0,3).map(c=>`<div>${c.txt}</div>`).join('')}</div></div>`:''}
+  <div class="pers-grid">${DB.empleados.map(e=>{
+    const ten=tenure(e.fechaAlta);
+    const p=e.personal||{};
+    const vacs=(e.vacaciones||[]).filter(v=>new Date(v.fin)>=new Date());
+    return `<div class="pers-card">
+      <div class="pers-card-top">${empAvatar(e,46)}<div><div class="pers-name">${esc(e.nombre)}</div><div class="pers-tenure">${esc(e.rol)}${ten?' · '+ten:''}</div></div></div>
+      <div class="pers-block"><div class="pers-block-lbl">Cumpleaños</div><div class="pers-block-val">${e.cumple?fmtDay(e.cumple):'<span style="color:var(--tx3)">Sin definir</span>'}</div></div>
+      ${p.hijos||p.estadoCivil||p.direccion||p.telefono||p.contactoEmergencia?`<div class="pers-block"><div class="pers-block-lbl">Datos personales</div><div class="pers-info-grid">
+        ${p.telefono?`<div class="pers-info-item"><div class="pers-info-k">Teléfono</div><div class="pers-info-v">${esc(p.telefono)}</div></div>`:''}
+        ${p.estadoCivil?`<div class="pers-info-item"><div class="pers-info-k">Estado civil</div><div class="pers-info-v">${esc(p.estadoCivil)}</div></div>`:''}
+        ${p.hijos?`<div class="pers-info-item"><div class="pers-info-k">Hijos</div><div class="pers-info-v">${esc(p.hijos)}</div></div>`:''}
+        ${p.direccion?`<div class="pers-info-item"><div class="pers-info-k">Dirección</div><div class="pers-info-v">${esc(p.direccion)}</div></div>`:''}
+        ${p.contactoEmergencia?`<div class="pers-info-item"><div class="pers-info-k">Contacto emergencia</div><div class="pers-info-v">${esc(p.contactoEmergencia)}</div></div>`:''}
+      </div></div>`:''}
+      <div class="pers-block"><div class="pers-block-lbl">Preferencias de descanso</div><div class="pers-block-val">${e.prefs?esc(e.prefs):'<span style="color:var(--tx3)">—</span>'}</div></div>
+      <div class="pers-block"><div class="pers-block-lbl">Talentos</div>${e.skills&&e.skills.length?`<div class="pers-skills">${e.skills.map(s=>`<span class="pers-skill">${esc(s)}</span>`).join('')}</div>`:'<div class="pers-block-val" style="color:var(--tx3)">—</div>'}</div>
+      ${vacs.length?`<div class="pers-block"><div class="pers-block-lbl">Vacaciones programadas</div><div class="vac-list">${vacs.map(v=>`<div class="vac-row"><span class="vac-dates">${fmtDay(v.inicio)} – ${fmtDay(v.fin)}</span><span class="vac-motivo">${esc(v.motivo||'')}</span></div>`).join('')}</div></div>`:''}
+      ${(e.personal||{}).notas?`<div class="pers-block"><div class="pers-block-lbl">Notas</div><div class="pers-block-val">${esc(e.personal.notas)}</div></div>`:''}
+      <button class="btn btn-ghost btn-sm" style="width:100%;justify-content:center;margin-top:.5rem" onclick="openPersModal('${e.id}')">Editar ficha</button>
+    </div>`;
+  }).join('')}</div>`;
+}
+function openPersModal(id){
+  const e=emp(id),p=e.personal||{};
+  $('modal-host').innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()"><div class="modal wide">
+    <h3>Ficha de ${esc(e.nombre)}</h3><p class="modal-desc">Datos para cuidar y planificar mejor. Privados, en este dispositivo.</p>
+    <div class="field-row">
+      <div class="field" style="flex:0 0 100px;text-align:center">
+        <label>Foto</label>
+        <div class="img-upload-wrap">
+          ${e.imagen?`<img class="img-upload-preview" id="pe-img-prev" src="${e.imagen}">`:`<div class="img-upload-placeholder" id="pe-img-prev">Subir<br>foto</div>`}
+          <input type="file" accept="image/*" onchange="handleImgUpload(this,'${id}')">
+        </div>
+      </div>
+      <div style="flex:1"><div class="field"><label>Cumpleaños</label><input type="date" id="pe-cumple" value="${e.cumple||''}"></div>
+        <div class="field"><label>Preferencias de descanso</label><textarea id="pe-prefs" rows="2" placeholder="No puede miércoles por la tarde...">${esc(e.prefs||'')}</textarea></div>
+      </div>
+    </div>
+    <div class="field"><label>Talentos (separados por coma)</label><input id="pe-skills" value="${esc((e.skills||[]).join(', '))}" placeholder="Coctelería, inglés, vinos"></div>
+    <div style="border-top:1px solid var(--bdr);padding-top:1rem;margin-top:.5rem">
+      <p class="panel-title" style="margin-bottom:.7rem">Datos personales</p>
+      <div class="field-row">
+        <div class="field"><label>Teléfono</label><input id="pe-tel" value="${esc(p.telefono||'')}"></div>
+        <div class="field"><label>Estado civil</label><select id="pe-ecivil"><option value="">—</option>${['Soltero/a','Casado/a','Pareja de hecho','Divorciado/a','Viudo/a'].map(s=>`<option ${p.estadoCivil===s?'selected':''}>${s}</option>`).join('')}</select></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Hijos</label><input id="pe-hijos" value="${esc(p.hijos||'')}" placeholder="2 (6 y 3 años)"></div>
+        <div class="field"><label>Contacto de emergencia</label><input id="pe-emergencia" value="${esc(p.contactoEmergencia||'')}" placeholder="Nombre y teléfono"></div>
+      </div>
+      <div class="field"><label>Dirección</label><input id="pe-dir" value="${esc(p.direccion||'')}"></div>
+    </div>
+    <div style="border-top:1px solid var(--bdr);padding-top:1rem;margin-top:.5rem">
+      <p class="panel-title" style="margin-bottom:.7rem">Vacaciones</p>
+      <div id="pe-vacs-list">${renderVacRows(e.vacaciones||[])}</div>
+      <button class="btn btn-ghost btn-sm" onclick="addVacRow()" style="margin-top:.5rem">+ Añadir periodo</button>
+    </div>
+    <div class="field" style="margin-top:1rem"><label>Notas</label><textarea id="pe-notas" rows="2">${esc((p.notas||e.notas)||'')}</textarea></div>
+    <div class="modal-actions"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-amber btn-sm" onclick="savePers('${id}')">Guardar</button></div>
+  </div></div>`;
+}
+let _vacIdx=0;
+function renderVacRows(vacs){_vacIdx=0;return vacs.map(v=>{_vacIdx++;return`<div class="vac-row" id="vr-${_vacIdx}"><input type="date" value="${v.inicio||''}" class="vac-ini" style="font-size:12px;padding:4px;border:1px solid var(--bdr-strong);border-radius:5px;width:130px"><span style="color:var(--tx3)">–</span><input type="date" value="${v.fin||''}" class="vac-fin" style="font-size:12px;padding:4px;border:1px solid var(--bdr-strong);border-radius:5px;width:130px"><input value="${esc(v.motivo||'')}" class="vac-mot" placeholder="Motivo" style="flex:1;font-size:12px;padding:4px;border:1px solid var(--bdr-strong);border-radius:5px"><button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">✕</button></div>`;}).join('');}
+function addVacRow(){const el=$('pe-vacs-list');_vacIdx++;const d=document.createElement('div');d.className='vac-row';d.id='vr-'+_vacIdx;d.innerHTML=`<input type="date" class="vac-ini" style="font-size:12px;padding:4px;border:1px solid var(--bdr-strong);border-radius:5px;width:130px"><span style="color:var(--tx3)">–</span><input type="date" class="vac-fin" style="font-size:12px;padding:4px;border:1px solid var(--bdr-strong);border-radius:5px;width:130px"><input class="vac-mot" placeholder="Motivo" style="flex:1;font-size:12px;padding:4px;border:1px solid var(--bdr-strong);border-radius:5px"><button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">✕</button>`;el.appendChild(d);}
+function handleImgUpload(input,empId){const file=input.files[0];if(!file)return;const reader=new FileReader();reader.onload=e=>{const prev=$('pe-img-prev');if(prev.tagName==='IMG')prev.src=e.target.result;else{prev.outerHTML=`<img class="img-upload-preview" id="pe-img-prev" src="${e.target.result}">`;}emp(empId).__pendingImg=e.target.result;};reader.readAsDataURL(file);}
+function savePers(id){
+  const e=emp(id);
+  e.cumple=$('pe-cumple').value||'';e.prefs=$('pe-prefs').value.trim();
+  e.skills=$('pe-skills').value.split(',').map(s=>s.trim()).filter(Boolean);
+  if(e.__pendingImg){e.imagen=e.__pendingImg;delete e.__pendingImg;}
+  e.personal={telefono:$('pe-tel').value.trim(),estadoCivil:$('pe-ecivil').value,hijos:$('pe-hijos').value.trim(),contactoEmergencia:$('pe-emergencia').value.trim(),direccion:$('pe-dir').value.trim(),notas:$('pe-notas').value.trim()};
+  const vacRows=$$('#pe-vacs-list .vac-row');
+  e.vacaciones=vacRows.map(r=>{const ini=r.querySelector('.vac-ini')?.value,fin=r.querySelector('.vac-fin')?.value,mot=r.querySelector('.vac-mot')?.value;return ini&&fin?{inicio:ini,fin:fin,motivo:mot||''}:null;}).filter(Boolean);
+  saveDB();closeModal();renderPersonas();toast('Ficha actualizada');
+}
+function tenure(fecha){if(!fecha)return'';const d=new Date(fecha),now=new Date();let m=(now.getFullYear()-d.getFullYear())*12+(now.getMonth()-d.getMonth());if(m<0)return'';if(m<1)return'<1 mes';if(m<12)return m+' mes'+(m>1?'es':'');const y=Math.floor(m/12),rm=m%12;return y+' año'+(y>1?'s':'')+(rm?' '+rm+'m':'');}
+function fmtDay(iso){const d=new Date(iso);return d.getDate()+' '+['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'][d.getMonth()];}
+function fmtDate(iso){const d=new Date(iso);return d.getDate()+' '+['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'][d.getMonth()]+' '+d.getFullYear();}
+function proximasCelebraciones(dias){
+  const out=[],now=new Date();now.setHours(0,0,0,0);
+  DB.empleados.forEach(e=>{
+    if(e.cumple){const c=new Date(e.cumple);const next=new Date(now.getFullYear(),c.getMonth(),c.getDate());if(next<now)next.setFullYear(now.getFullYear()+1);const diff=Math.round((next-now)/86400000);if(diff<=dias)out.push({diff,txt:`<strong>${esc(e.nombre)}</strong> cumple años el ${fmtDay(e.cumple)}${diff===0?' (¡hoy!)':diff===1?' (mañana)':` (en ${diff} días)`}`});}
+    if(e.fechaAlta){const a=new Date(e.fechaAlta);const next=new Date(now.getFullYear(),a.getMonth(),a.getDate());if(next<now)next.setFullYear(now.getFullYear()+1);const diff=Math.round((next-now)/86400000);const years=next.getFullYear()-a.getFullYear();if(diff<=dias&&years>0)out.push({diff,txt:`<strong>${esc(e.nombre)}</strong> cumple ${years} año${years>1?'s':''} en el equipo el ${fmtDay(e.fechaAlta)}${diff===0?' (¡hoy!)':diff===1?' (mañana)':` (en ${diff} días)`}`});}
+  });
+  return out.sort((a,b)=>a.diff-b.diff);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   COMPONENTES COMPARTIDOS
+═══════════════════════════════════════════════════════════════════ */
+function insightCards(ins){if(!ins||!ins.length)return'';return`<div class="insights-row">${ins.map(i=>`<div class="insight ${i.type}"><div class="insight-lbl">${i.label}</div><div class="insight-txt">${i.txt}</div></div>`).join('')}</div>`;}
+function rankRows(id,items,max,fmt){const el=$(id);if(!el)return;el.innerHTML=items.length?items.map(it=>`<div class="rank-item"><div class="rank-label">${esc(it.label)}</div><div class="rank-bar-wrap"><div class="rank-bar" style="width:${Math.max(4,it.val/max*100)}%;background:${it.color||'#E8914A'}"></div></div><div class="rank-val">${fmt(it.val)}</div></div>`).join(''):'<p style="font-size:12px;color:var(--tx3)">Sin datos</p>';}
+const CHARTS=[];
+function mkChart(id,type,labels,datasets,opts={}){const el=$(id);if(!el)return;const ex=CHARTS.find(c=>c.canvas&&c.canvas.id===id);if(ex){try{ex.destroy();}catch(e){}}const isCircular=type==='doughnut'||type==='pie';const c=new Chart(el,{type,data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},...(opts.plugins||{})},scales:isCircular?undefined:{y:{beginAtZero:true,grid:{color:'#EDEBE6'},ticks:{font:{size:10},color:'#98A3AC',...(opts.scales&&opts.scales.y&&opts.scales.y.ticks||{})}},x:{grid:{display:false},ticks:{font:{size:10},color:'#98A3AC'}}}}});CHARTS.push(c);return c;}
+function closeModal(){$('modal-host').innerHTML='';}
+function confirmModal(title,desc,onYes){window.__confirmYes=onYes;$('modal-host').innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()"><div class="modal"><h3>${esc(title)}</h3><p class="modal-desc">${esc(desc)}</p><div class="modal-actions"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-danger btn-sm" onclick="(window.__confirmYes||function(){})()">Confirmar</button></div></div></div>`;}
+function openConfig(){
+  const c=DB.config;
+  $('modal-host').innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()"><div class="modal">
+    <h3>Parámetros</h3><p class="modal-desc">Ajusta los supuestos de cálculo a tu realidad.</p>
+    <div class="field-row">
+      <div class="field"><label>Objetivo coste laboral (%)</label><input type="number" id="cf-target" value="${c.targetPct}"><div class="field-hint">Umbral verde/ámbar/rojo. Hostelería ≈ 30%.</div></div>
+      <div class="field"><label>Recargo SS empresa (×)</label><input type="number" step="0.01" id="cf-ss" value="${c.ssMult}"><div class="field-hint">1.32 ≈ +32% SS.</div></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Recargo hora extra (×)</label><input type="number" step="0.05" id="cf-prem" value="${c.premiumExtra}"></div>
+      <div class="field"><label>Ticket medio (€)</label><input type="number" step="1" id="cf-ticket" value="${c.ticketMedio}"><div class="field-hint">Para estimar comensales y dotación necesaria.</div></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Ratio sala (comensales/camarero)</label><input type="number" step="1" id="cf-rsala" value="${c.ratioSala}"></div>
+      <div class="field"><label>Ratio cocina (comensales/cocinero)</label><input type="number" step="1" id="cf-rcoc" value="${c.ratioCocina}"></div>
+    </div>
+    <div class="modal-actions"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-amber btn-sm" onclick="saveConfig()">Guardar</button></div>
+  </div></div>`;
+}
+function saveConfig(){DB.config.targetPct=parseFloat($('cf-target').value)||30;DB.config.ssMult=parseFloat($('cf-ss').value)||1.32;DB.config.premiumExtra=parseFloat($('cf-prem').value)||1.5;const _tk=parseFloat($('cf-ticket').value)||18;if(_tk!==DB.config.ticketMedio)DB.config.ticketMedioManual=true;DB.config.ticketMedio=_tk;DB.config.ratioSala=parseInt($('cf-rsala').value)||25;DB.config.ratioCocina=parseInt($('cf-rcoc').value)||30;saveDB();closeModal();updateSidebar();showPage($$('.tab.active')[0]?.dataset.page||'resumen');toast('Parámetros guardados');}
+
+/* ═══════════════════════════════════════════════════════════════════
+   GENERACIÓN DE CUADRANTE CON IA — guiado con prefs y conflictos
+═══════════════════════════════════════════════════════════════════ */
+function openCuadAI(){
+  const w=curWeek();const panel=$('cuad-ai-panel');
+  if(CUAD_AI_OPEN){panel.innerHTML='';CUAD_AI_OPEN=false;return;}
+  CUAD_AI_OPEN=true;
+  const prefsHtml=DB.empleados.map(e=>{
+    const vacs=(e.vacaciones||[]).filter(v=>{const m=weekIdToMonday(DB.semanaActual);const s=new Date(m);const end=new Date(m);end.setUTCDate(end.getUTCDate()+6);return new Date(v.inicio)<=end&&new Date(v.fin)>=s;});
+    const vacTxt=vacs.length?'<span style="color:var(--red);font-weight:600"> · ¡DE VACACIONES!</span>':'';
+    return `<div style="font-size:12px;padding:4px 0;border-bottom:1px solid var(--bg)"><strong>${esc(e.nombre)}</strong> (${esc(e.rol)}) — ${e.horasContrato||40}h/sem${e.diaDescanso?' · libra '+e.diaDescanso:''}${e.prefs?' · '+esc(e.prefs):''}${vacTxt}</div>`;
+  }).join('');
+  panel.innerHTML=`<div class="aiguide">
+    <div class="aiguide-step"><div class="aiguide-step-lbl"><span class="aiguide-step-n">1</span>Ventas previstas por turno (€)</div>
+      <div class="sales-grid">${DIAS.map(d=>{const v=w.ventas[d]||{};return`<div class="sales-day"><div class="sales-day-lbl">${d}</div><input type="number" id="ai-vp-${d}-c" value="${v.Comida||''}" placeholder="0"><div class="lbl-c">Comida</div><input type="number" id="ai-vp-${d}-n" value="${v.Cena||''}" placeholder="0"><div class="lbl-n">Cena</div></div>`;}).join('')}</div>
+    </div>
+    <div class="aiguide-step"><div class="aiguide-step-lbl"><span class="aiguide-step-n">2</span>Tu equipo y sus preferencias</div>
+      <p class="panel-desc">La IA respetará estos datos. Si hay conflictos (ej. todos quieren librar el mismo día) te preguntará antes de decidir.</p>
+      ${prefsHtml}
+    </div>
+    <div class="aiguide-step"><div class="aiguide-step-lbl"><span class="aiguide-step-n">3</span>Peticiones específicas</div>
+      <div class="field"><textarea id="ai-peticiones" placeholder="Ej. El sábado hay boda de 40, refuerza sala. El lunes cerramos. Marcos solo mañanas."></textarea></div>
+    </div>
+    <div class="ai-hint">La IA usará las horas de contrato, días de descanso, preferencias y vacaciones de cada persona. Objetivo: coste laboral ≤ ${DB.config.targetPct}%. Tú tienes la última palabra.</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-ghost btn-sm" onclick="openCuadAI()">Cerrar</button>
+      <button class="btn btn-amber btn-sm" id="ai-gen-btn" onclick="generarCuadranteIA()">✨ Generar cuadrante</button>
+    </div>
+  </div>`;
+}
+function generarCuadranteIA(){
+  const w=curWeek();
+  DIAS.forEach(d=>{const c=parseFloat($('ai-vp-'+d+'-c').value)||0,n=parseFloat($('ai-vp-'+d+'-n').value)||0;if(c||n||w.ventas[d])w.ventas[d]={Comida:c,Cena:n};});saveDB();
+  const peticiones=$('ai-peticiones').value.trim();
+  const btn=$('ai-gen-btn');btn.innerHTML='<span class="spin"></span> Generando...';btn.disabled=true;
+  llamarCuadranteIA(peticiones).then(asigs=>{
+    if(asigs&&asigs.length){w.asignaciones=asigs.map(a=>({id:uid(),empId:a.empId,dia:a.dia,turno:a.turno,ini:a.ini,fin:a.fin}));saveDB();CUAD_AI_OPEN=false;renderCuadrante();updateSidebar();toast('Cuadrante generado · revísalo y ajusta lo que quieras');}
+    else{btn.innerHTML='✨ Generar cuadrante';btn.disabled=false;toast('No pude generar el cuadrante');}
+  }).catch(()=>{btn.innerHTML='✨ Generar cuadrante';btn.disabled=false;toast('No pude conectar con la IA.');});
+}
+async function llamarCuadranteIA(peticiones){
+  const w=curWeek();
+  const empList=DB.empleados.map(e=>{
+    const vacs=(e.vacaciones||[]).filter(v=>{const m=weekIdToMonday(DB.semanaActual);const s=new Date(m);const end=new Date(m);end.setUTCDate(end.getUTCDate()+6);return new Date(v.inicio)<=end&&new Date(v.fin)>=s;});
+    return `  id:${e.id} | ${e.nombre} | rol:${e.rol} | ${fc(calcSalarioHora(e))}€/h | contrato:${e.horasContrato||40}h/sem | descanso:${e.diaDescanso||'sin definir'} | prefs:${e.prefs||'ninguna'}${vacs.length?' | ¡DE VACACIONES esta semana!':''}`;
+  }).join('\n');
+  const ventasList=DIAS.map(d=>{const v=w.ventas[d]||{};return `  ${d}: Comida ${v.Comida||0}€, Cena ${v.Cena||0}€`;}).join('\n');
+  const sys=`Eres un jefe de sala experto en planificación de turnos en España. Genera cuadrantes que: (1) cubren demanda por ventas, (2) respetan horas de contrato, días de descanso estándar y preferencias, (3) NO asignan a personas de vacaciones, (4) mantienen coste laboral ≤${DB.config.targetPct}%, (5) garantizan dotación mínima (≈1 cam/${DB.config.ratioSala} comensales, 1 coc/${DB.config.ratioCocina}, ticket medio ${DB.config.ticketMedio}€). Turnos: Comida (12-17h) y Cena (20-00h). No asignes donde ventas=0 (cerrado). Si hay conflictos de descanso (varios quieren el mismo día), explícalos brevemente al final pero genera igualmente la mejor opción. Responde SOLO JSON válido sin texto ni backticks.`;
+  const usr=`EMPLEADOS:\n${empList}\n\nVENTAS PREVISTAS:\n${ventasList}\n\nPETICIONES:\n${peticiones||'ninguna'}\n\nDevuelve: {"asignaciones":[{"empId":"<id>","dia":"Lun","turno":"Comida","ini":"12:00","fin":"17:00"}],"conflictos":"texto breve o null"}`;
+  const res=await fetch(API_URL,{method:'POST',headers:aiHeaders(),body:JSON.stringify({model:MODEL,max_tokens:1200,system:sys,messages:[{role:'user',content:usr}]})});
+  if(!res.ok)throw new Error('HTTP '+res.status);
+  const data=await res.json();const txt=data.content.filter(b=>b.type==='text').map(b=>b.text).join('');
+  const j=parseJson(txt);if(!j||!j.asignaciones)return null;
+  if(j.conflictos)toast('⚠ '+j.conflictos);
+  const validIds=new Set(DB.empleados.map(e=>e.id));
+  return j.asignaciones.filter(a=>validIds.has(a.empId)&&DIAS.includes(a.dia)&&TURNOS.includes(a.turno)&&a.ini&&a.fin);
+}
+function parseJson(txt){try{return JSON.parse(txt);}catch(e){const m=txt.match(/\{[\s\S]*\}/);if(m){try{return JSON.parse(m[0]);}catch(e2){return null;}}return null;}}
+
+/* ═══════════════════════════════════════════════════════════════════
+   ASISTENTE IA — acciones + voz
+═══════════════════════════════════════════════════════════════════ */
+let CHAT_HISTORY=[],CHAT_BUSY=false,ASIST_INIT=false;
+const AI_ACTIONS={
+  add_employee(d){const obj={id:uid(),nombre:d.nombre||'Sin nombre',rol:d.rol||'Sala',salarioBrutoMes:Number(d.salarioBrutoMes||d.salarioMes)||0,salarioHora:0,horasContrato:Number(d.horasContrato)||40,contrato:d.contrato||'Jornada completa',fechaAlta:d.fechaAlta||'',diaDescanso:d.diaDescanso||'',cumple:d.cumple||'',prefs:d.prefs||'',skills:Array.isArray(d.skills)?d.skills:[],personal:d.personal||{},vacaciones:d.vacaciones||[],imagen:'',notas:''};obj.salarioHora=obj.salarioBrutoMes>0?obj.salarioBrutoMes/(obj.horasContrato*4.33):(Number(d.salarioHora)||0);DB.empleados.push(obj);saveDB();return`✅ **${esc(obj.nombre)}** añadido/a como ${obj.rol} a ${fc(obj.salarioBrutoMes,0)}€/mes.`;},
+  update_employee(d){const e=d.id?emp(d.id):DB.empleados.find(x=>x.nombre.toLowerCase().includes((d.nombre||'').toLowerCase()));if(!e)return'⚠️ No encontré al empleado.';['nombre','rol','salarioBrutoMes','horasContrato','contrato','fechaAlta','diaDescanso','cumple','prefs','notas'].forEach(k=>{if(d[k]!=null)e[k]=k==='salarioBrutoMes'||k==='horasContrato'?Number(d[k]):d[k];});if(d.skills)e.skills=Array.isArray(d.skills)?d.skills:String(d.skills).split(',').map(s=>s.trim());if(d.personal)e.personal={...(e.personal||{}),...d.personal};if(d.vacaciones)e.vacaciones=d.vacaciones;if(e.salarioBrutoMes)e.salarioHora=e.salarioBrutoMes/(e.horasContrato*4.33);saveDB();return`✅ Ficha de **${esc(e.nombre)}** actualizada.`;},
+  remove_employee(d){const e=d.id?emp(d.id):DB.empleados.find(x=>x.nombre.toLowerCase().includes((d.nombre||'').toLowerCase()));if(!e)return'⚠️ No encontré al empleado.';const name=e.nombre;DB.empleados=DB.empleados.filter(x=>x.id!==e.id);Object.values(DB.semanas).forEach(s=>{s.asignaciones=(s.asignaciones||[]).filter(a=>a.empId!==e.id);s.extras=(s.extras||[]).filter(x=>x.empId!==e.id);});saveDB();return`✅ **${esc(name)}** dado/a de baja.`;},
+  set_sales(d){const w=curWeek();const dias=d.dias||d;if(typeof dias==='object'&&!Array.isArray(dias)){Object.keys(dias).forEach(k=>{if(DIAS.includes(k)){const v=dias[k];w.ventas[k]={Comida:Number(v.Comida||v.comida)||0,Cena:Number(v.Cena||v.cena)||0};}});}saveDB();return'✅ Ventas previstas actualizadas.';},
+  assign_shift(d){const w=curWeek();const e=d.empId?emp(d.empId):DB.empleados.find(x=>x.nombre.toLowerCase().includes((d.nombre||'').toLowerCase()));if(!e)return'⚠️ No encontré al empleado.';if(!DIAS.includes(d.dia))return'⚠️ Día no válido.';if(d.turno)w.asignaciones=w.asignaciones.filter(a=>!(a.empId===e.id&&a.dia===d.dia&&a.turno===d.turno));w.asignaciones.push({id:uid(),empId:e.id,dia:d.dia,turno:d.turno||'Comida',ini:d.ini||'12:00',fin:d.fin||'17:00'});saveDB();return`✅ ${esc(e.nombre)} → ${d.dia} ${d.turno||'Comida'} (${d.ini||'12:00'}-${d.fin||'17:00'}).`;},
+  assign_shifts_bulk(d){const w=curWeek();const msgs=[];(d.asignaciones||[]).forEach(a=>{const e=a.empId?emp(a.empId):DB.empleados.find(x=>x.nombre.toLowerCase().includes((a.nombre||'').toLowerCase()));if(!e||!DIAS.includes(a.dia))return;if(a.turno)w.asignaciones=w.asignaciones.filter(x=>!(x.empId===e.id&&x.dia===a.dia&&x.turno===a.turno));w.asignaciones.push({id:uid(),empId:e.id,dia:a.dia,turno:a.turno||'Comida',ini:a.ini||'12:00',fin:a.fin||'17:00'});msgs.push(`${e.nombre} → ${a.dia} ${a.turno||'Comida'}`);});saveDB();return msgs.length?`✅ ${msgs.length} turnos asignados.`:'⚠️ No se pudo asignar.';},
+  clear_shifts(){curWeek().asignaciones=[];saveDB();return'✅ Cuadrante vaciado.';},
+  log_overtime(d){const e=d.empId?emp(d.empId):DB.empleados.find(x=>x.nombre.toLowerCase().includes((d.nombre||'').toLowerCase()));if(!e)return'⚠️ No encontré al empleado.';const fecha=d.fecha||new Date().toISOString().slice(0,10);const wid=isoWeekId(new Date(fecha));if(!DB.semanas[wid])DB.semanas[wid]={ventas:{},asignaciones:[],extras:[]};if(!DB.semanas[wid].extras)DB.semanas[wid].extras=[];DB.semanas[wid].extras.push({id:uid(),empId:e.id,fecha,horas:Number(d.horas)||0,motivo:d.motivo||'',estado:d.estado||'pendiente'});saveDB();return`✅ ${Number(d.horas)||0}h extra para **${esc(e.nombre)}**.`;},
+  set_config(d){if(d.targetPct!=null)DB.config.targetPct=Number(d.targetPct);if(d.ssMult!=null)DB.config.ssMult=Number(d.ssMult);if(d.premiumExtra!=null)DB.config.premiumExtra=Number(d.premiumExtra);if(d.ticketMedio!=null)DB.config.ticketMedio=Number(d.ticketMedio);saveDB();return'✅ Parámetros actualizados.';}
+};
+function execActions(txt){const actions=[],regex=/\[ACTION\]([\s\S]*?)\[\/ACTION\]/g;let m,clean=txt;while((m=regex.exec(txt))!==null){try{actions.push(JSON.parse(m[1].replace(/```json|```/g,'').trim()));}catch(e){}}clean=clean.replace(regex,'').trim();const confirms=[];actions.forEach(a=>{const fn=AI_ACTIONS[a.type||a.action];if(fn){try{confirms.push(fn(a.data||a));}catch(e){confirms.push('⚠️ Error: '+e.message);}}});if(confirms.length)updateSidebar();return{clean,confirms};}
+
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let srInstance=null,srRecording=false;
+function initVoice(){
+  if(!SR)return;
+  try{
+    srInstance=new SR();srInstance.lang='es-ES';srInstance.continuous=false;srInstance.interimResults=true;
+    srInstance.onresult=e=>{let interim='',final='';for(let i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)final+=e.results[i][0].transcript;else interim+=e.results[i][0].transcript;}const inp=$('ia-input');if(final){inp.value+=final;setVoiceHint('');}else setVoiceHint(interim||'Escuchando...');};
+    srInstance.onend=()=>{srRecording=false;updMicBtn();setVoiceHint('');};
+    srInstance.onerror=e=>{srRecording=false;updMicBtn();
+      if(e.error==='not-allowed')setVoiceHint('⚠ Micrófono no permitido — abre el archivo en tu navegador');
+      else if(e.error==='network')setVoiceHint('⚠ Sin conexión para voz');
+      else setVoiceHint('⚠ Error de voz: '+e.error);
+      setTimeout(()=>setVoiceHint(''),4000);
+    };
+  }catch(ex){srInstance=null;}
+}
+function toggleVoice(){
+  if(!srInstance){setVoiceHint('⚠ Voz no disponible en este entorno — descarga el archivo y ábrelo en Chrome');setTimeout(()=>setVoiceHint(''),4000);return;}
+  if(srRecording){srInstance.stop();srRecording=false;updMicBtn();return;}
+  try{srInstance.start();srRecording=true;setVoiceHint('🎙️ Escuchando...');}
+  catch(ex){srRecording=false;setVoiceHint('⚠ No se pudo activar el micrófono — prueba descargando el archivo y abriéndolo en Chrome');setTimeout(()=>setVoiceHint(''),5000);}
+  updMicBtn();
+}
+function updMicBtn(){const b=$('btn-mic');if(b)b.classList.toggle('recording',srRecording);}
+function setVoiceHint(t){const h=$('voice-hint');if(h)h.textContent=t||'';}
+
+function renderAsistente(){
+  const pg=$('pg-asistente');if(ASIST_INIT)return;ASIST_INIT=true;const hasMic=!!SR;
+  pg.innerHTML=`<div class="page-hd"><h2>Asistente IA</h2><p>Habla o escribe — la IA gestiona los datos por ti</p></div>
+  <div class="ia-wrap"><div class="ia-messages" id="ia-messages"></div><div class="ia-suggest" id="ia-suggest"></div><div id="voice-hint" class="voice-hint"></div>
+    <div class="ia-input-row">${hasMic?`<button class="btn-mic" id="btn-mic" onclick="toggleVoice()" title="Hablar"><svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>`:''}<textarea class="ia-input" id="ia-input" placeholder="${hasMic?'Escribe o pulsa 🎙️ para hablar…':'Escribe aquí...'}" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat();}"></textarea><button class="btn btn-amber" id="ia-send" onclick="sendChat()">Enviar</button></div>
+  </div>`;initVoice();
+  const isEmpty=!DB.empleados.length;
+  pushMsg('assistant',isEmpty?'Hola 👋 Veo que aún no hay equipo. Dime los nombres con su puesto y salario mensual bruto. Ejemplo: *"Da de alta a Ana como camarera a 1400€/mes y a Marcos como cocinero a 1600€/mes"*':'Hola 👋 **'+DB.empleados.length+' personas** en el equipo. Puedo hacer altas, turnos, horas extra, vacaciones… solo dímelo.');
+  updateSuggestions();
+}
+function updateSuggestions(){const sg=$('ia-suggest');if(!sg)return;const isEmpty=!DB.empleados.length;const w=DB.semanas[DB.semanaActual];const hasShifts=w&&w.asignaciones&&w.asignaciones.length;const hasSales=w&&ventasSemana(w)>0;let sugs=[];if(isEmpty)sugs=['Da de alta a mi equipo: Ana (sala, 1400€/mes), Marcos (cocina, 1600€/mes)','Tengo 5 empleados, te los cuento'];else if(!hasSales)sugs=['Mete las ventas previstas de la semana','Genera el cuadrante de esta semana'];else if(!hasShifts)sugs=['Genera el cuadrante optimizando costes','Asigna a Ana el lunes en comida'];else sugs=['¿Cómo está el coste laboral?','Registra 2h extra de Marcos el viernes','Actualiza las vacaciones de Ana: 1-15 julio'];sg.innerHTML=sugs.map(s=>`<span class="ia-chip" onclick="askSuggest(this)">${s}</span>`).join('');sg.style.display='flex';}
+function askSuggest(el){$('ia-input').value=el.textContent;sendChat();}
+function pushMsg(role,content,confirms){CHAT_HISTORY.push({role,content});const box=$('ia-messages');const div=document.createElement('div');div.className='ia-msg '+(role==='user'?'user':'bot');div.innerHTML=`<div class="ia-avatar">${role==='user'?'Tú':'R'}</div><div class="ia-bubble">${role==='user'?esc(content):mdToHtml(content)}${(confirms||[]).map(c=>`<div class="ia-action-bar"><span class="ia-action-icon">⚡</span><span class="ia-action-txt">${mdToHtml(c)}</span></div>`).join('')}</div>`;box.appendChild(div);box.scrollTop=box.scrollHeight;}
+function showTyping(){const box=$('ia-messages');const d=document.createElement('div');d.className='ia-msg bot';d.id='ia-typing-row';d.innerHTML='<div class="ia-avatar">R</div><div class="ia-bubble"><div class="ia-typing"><span></span><span></span><span></span></div></div>';box.appendChild(d);box.scrollTop=box.scrollHeight;}
+function hideTyping(){const t=$('ia-typing-row');if(t)t.remove();}
+function sendChat(){if(CHAT_BUSY)return;if(srRecording&&srInstance){srInstance.stop();srRecording=false;updMicBtn();}const inp=$('ia-input');const txt=inp.value.trim();if(!txt)return;inp.value='';pushMsg('user',txt);const sg=$('ia-suggest');if(sg)sg.style.display='none';callAI();}
+function buildAIContext(){
+  const w=curWeek(),ventas=ventasSemana(w),coste=costeSemana(w),pct=ventas>0?coste/ventas*100:null;
+  if(!DB.empleados.length)return`ESTADO: sin empleados.\nSemana: ${weekLabel(DB.semanaActual)}\nObjetivo: ${DB.config.targetPct}%`;
+  const emps=DB.empleados.map(e=>{const h=horasEmpSemana(w,e.id);const pasivo=calcPasivoLaboral(e);return`  id:${e.id} | ${e.nombre} | ${e.rol} | ${fc(e.salarioBrutoMes||0,0)}€/mes (${fc(calcSalarioHora(e))}€/h) | ${e.horasContrato||40}h/sem (${e.contrato||'—'}) | planif:${fc(h,1)}h | descanso:${e.diaDescanso||'—'} | prefs:${e.prefs||'—'} | cumple:${e.cumple||'—'} | skills:${(e.skills||[]).join(',')||'—'} | pasivo:${fk(pasivo)}€ | vacs:${(e.vacaciones||[]).map(v=>v.inicio+'→'+v.fin).join(',')||'—'}`;}).join('\n');
+  const porDia=DIAS.map(d=>{const cd=costeDia(w,d),vd=ventasDia(w,d),p=vd>0?cd/vd*100:null;const asigs=w.asignaciones.filter(a=>a.dia===d).map(a=>{const e=emp(a.empId);return e?`${e.nombre}(${a.turno} ${a.ini}-${a.fin})`:'';}).filter(Boolean).join(', ');return`  ${d}: ventas ${fc(vd,0)}€, coste ${fc(cd,0)}€${p!=null?` (${fc(p,0)}%)`:''}${asigs?' | '+asigs:''}`;}).join('\n');
+  const extras=Object.values(DB.semanas).flatMap(s=>s.extras||[]);const extrasPend={};extras.filter(x=>x.estado==='pendiente').forEach(x=>{const e=emp(x.empId);if(e)extrasPend[e.nombre]=(extrasPend[e.nombre]||0)+(Number(x.horas)||0);});
+  const cel=proximasCelebraciones(30).map(c=>'  '+c.txt.replace(/<[^>]+>/g,'')).join('\n')||'  ninguna';
+  return`EQUIPO — semana ${weekLabel(DB.semanaActual)}\nObjetivo: ${DB.config.targetPct}% | SS: ×${DB.config.ssMult} | Ticket medio: ${DB.config.ticketMedio}€\nMÉTRICA: ${pct!=null?fc(pct,1)+'%':'sin ventas'} | Ventas: ${fc(ventas,0)}€ | Coste: ${fc(coste,0)}€\n\nEMPLEADOS (${DB.empleados.length})\n${emps}\n\nSEMANA\n${porDia}\n\nEXTRAS PEND.\n${Object.keys(extrasPend).length?Object.keys(extrasPend).map(n=>'  '+n+': '+fc(extrasPend[n],1)+'h').join('\n'):'  ninguna'}\n\nCELEBRACIONES\n${cel}`;
+}
+const ACTION_SCHEMA=`
+ACCIONES: embebe [ACTION]{"type":"...","data":{...}}[/ACTION] en tu texto.
+Tipos: add_employee(nombre,rol,salarioBrutoMes,horasContrato,contrato,fechaAlta,diaDescanso,cumple,prefs,skills,personal:{telefono,estadoCivil,hijos,direccion,contactoEmergencia,notas},vacaciones:[{inicio,fin,motivo}])
+update_employee(nombre para buscar + campos a cambiar), remove_employee(nombre), set_sales(dias:{Lun:{Comida:N,Cena:N},...})
+assign_shift(nombre,dia:Lun-Dom,turno:Comida|Cena,ini,fin), assign_shifts_bulk(asignaciones:[...])
+clear_shifts, log_overtime(nombre,fecha,horas,motivo,estado:pendiente|compensada|pagada), set_config(targetPct,ssMult,premiumExtra,ticketMedio)
+Días: Lun,Mar,Mié,Jue,Vie,Sáb,Dom. salarioBrutoMes es mensual bruto. horasContrato=40 para jornada completa, 20 para media.`;
+async function callAI(){
+  CHAT_BUSY=true;$('ia-send').disabled=true;showTyping();
+  const system=`Eres el asistente de RESTAID para gestión de personas y turnos de un restaurante en España. El usuario puede hablar por voz. Tu rol: (1) EJECUTAR altas, turnos, extras, ventas, fichas — con bloques de acción, (2) ASESORAR sobre costes, cuadrante, equipo. Conciso, cifras, acciones. Tono humano.\n${ACTION_SCHEMA}\n\n=== DATOS ===\n${buildAIContext()}`;
+  const msgs=CHAT_HISTORY.slice(-10).map(m=>({role:m.role,content:m.content}));
+  try{const res=await fetch(API_URL,{method:'POST',headers:aiHeaders(),body:JSON.stringify({model:MODEL,max_tokens:800,system,messages:msgs})});if(!res.ok)throw new Error('HTTP '+res.status);const data=await res.json();const rawTxt=data.content.filter(b=>b.type==='text').map(b=>b.text).join('\n')||'Sin respuesta.';hideTyping();const{clean,confirms}=execActions(rawTxt);pushMsg('assistant',clean,confirms);if(confirms.length){updateSidebar();updateSuggestions();}
+  }catch(e){hideTyping();const box=$('ia-messages');const d=document.createElement('div');d.className='ia-msg bot';d.innerHTML='<div class="ia-avatar">R</div><div class="ia-bubble"><div class="ia-error">'+esc(aiKeyHint())+' El módulo funciona igual sin IA.</div></div>';box.appendChild(d);box.scrollTop=box.scrollHeight;CHAT_HISTORY.pop();}
+  CHAT_BUSY=false;$('ia-send').disabled=false;
+}
+function mdToHtml(md){let h=esc(md);h=h.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');h=h.replace(/\*(.+?)\*/g,'<em>$1</em>');const lines=h.split('\n');let out='',inList=false;for(let line of lines){if(/^###\s+/.test(line)){if(inList){out+='</ul>';inList=false;}out+='<h4>'+line.replace(/^###\s+/,'')+'</h4>';}else if(/^##\s+/.test(line)){if(inList){out+='</ul>';inList=false;}out+='<h3>'+line.replace(/^##\s+/,'')+'</h3>';}else if(/^\s*[-*•]\s+/.test(line)){if(!inList){out+='<ul>';inList=true;}out+='<li>'+line.replace(/^\s*[-*•]\s+/,'')+'</li>';}else if(/^\s*\d+\.\s+/.test(line)){if(!inList){out+='<ul>';inList=true;}out+='<li>'+line.replace(/^\s*\d+\.\s+/,'')+'</li>';}else if(line.trim()===''){if(inList){out+='</ul>';inList=false;}}else{if(inList){out+='</ul>';inList=false;}out+='<p>'+line+'</p>';}}if(inList)out+='</ul>';return out;}
+
+/* ── Sync entre módulos: refresh desde el shell u otras pestañas ── */
+function refreshFromStorage(){
+  DB=loadDB();sanitizeDB();updateSidebar();
+  const act=document.querySelector('.tab[data-page].active');
+  showPage(act&&act.dataset.page?act.dataset.page:'resumen');
+  toast('Datos actualizados');
+}
+window.addEventListener('message',e=>{if(e&&e.data&&e.data.type==='restaid_refresh')refreshFromStorage();});
+window.addEventListener('storage',e=>{if(e.key===STORE)refreshFromStorage();if(e.key==='restaid_pub_v1'){const w=DB.semanas[DB.semanaActual];if(w&&Object.keys(w.ventas||{}).length===0&&!w.ventasEditadas){if(prefillVentas(w)){saveDB();updateSidebar();const act=document.querySelector('.tab[data-page].active');if(act&&act.dataset.page==='cuadrante')renderCuadrante();}}}});
+
+RESTAID.register('rrhh',{render:renderResumen});
+publishCore();updateSidebar();renderResumen();
+loadFromDB();
+</script>
+</body>
+</html>
