@@ -442,6 +442,9 @@ nav {
   color: #fff;
   box-shadow: 0 4px 18px rgba(232,131,42,.4);
   transition: all .2s cubic-bezier(.34,1.56,.64,1);
+  touch-action: none;
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
 }
 #cp-mic-btn svg { width: 22px; height: 22px; }
 #cp-mic-btn:hover { transform: scale(1.07); box-shadow: 0 6px 24px rgba(232,131,42,.55); }
@@ -988,7 +991,7 @@ nav {
           <polygon points="22 2 15 22 11 13 2 9 22 2"/>
         </svg>
       </button>
-      <button id="cp-mic-btn" onclick="toggleMic()" title="Dictar por voz">
+      <button id="cp-mic-btn" title="Mantén pulsado para hablar">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
           <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
@@ -2483,64 +2486,117 @@ function escHtml(str) {
    VOZ — Web Speech API
 ════════════════════════════════════════════════════════ */
 
+/* ── Dictado por voz ──
+   Móvil (táctil): mantener pulsado para hablar, soltar para terminar (estilo WhatsApp).
+   Escritorio (ratón): pulsar para empezar, pulsar de nuevo para terminar. */
+let micHoldMode = false;     // ¿estamos en gesto "mantener pulsado"?
+let voiceBase = '';          // texto acumulado entre tramos de una misma grabación
+const VOICE_TOUCH = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+
+function micHintDefault() {
+  return VOICE_TOUCH
+    ? 'Mantén pulsado el <span class="mic-word">micrófono</span> para hablar · suelta para terminar'
+    : 'Pulsa el <span class="mic-word">micrófono</span> y dicta los datos · más rápido que escribir';
+}
+
 function toggleMic() {
   if (isRecording) stopRecording();
   else startRecording();
 }
 
 function startRecording() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    alert('Tu navegador no soporta reconocimiento de voz. Usa Chrome.');
-    return;
-  }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { alert('Tu navegador no soporta reconocimiento de voz. Usa Chrome.'); return; }
+  voiceBase = '';            // dictado nuevo
+  beginRecognition();
+}
 
-  recognition = new SpeechRecognition();
+function beginRecognition() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return;
+  recognition = new SR();
   recognition.lang = 'es-ES';
-  recognition.continuous = false;
+  recognition.continuous = true;     // sigue escuchando aunque haya pausas breves
   recognition.interimResults = true;
 
   recognition.onstart = () => {
     isRecording = true;
     if (window.speechSynthesis) window.speechSynthesis.cancel();
-    document.getElementById('cp-mic-btn').classList.add('recording');
-    document.getElementById('cp-listening-indicator').classList.add('active');
-    document.getElementById('cp-input').placeholder = 'Escuchando… habla ahora';
+    const mic = document.getElementById('cp-mic-btn'); if (mic) mic.classList.add('recording');
+    const li = document.getElementById('cp-listening-indicator'); if (li) li.classList.add('active');
+    const inp = document.getElementById('cp-input'); if (inp) inp.placeholder = 'Escuchando… habla ahora';
     const hint = document.getElementById('cp-voice-hint');
-    if (hint) { hint.classList.add('recording'); hint.innerHTML = '🔴 Escuchando… pulsa de nuevo para terminar'; }
+    if (hint) { hint.classList.add('recording'); hint.innerHTML = VOICE_TOUCH ? '🔴 Escuchando… suelta para terminar' : '🔴 Escuchando… pulsa de nuevo para terminar'; }
   };
 
   recognition.onresult = (e) => {
-    const transcript = Array.from(e.results)
-      .map(r => r[0].transcript)
-      .join('');
-    document.getElementById('cp-input').value = transcript;
+    const transcript = Array.from(e.results).map(r => r[0].transcript).join('');
+    const inp = document.getElementById('cp-input');
+    if (inp) { inp.value = voiceBase + transcript; autoResize(inp); }
   };
 
   recognition.onend = () => {
-    stopRecording();
-    // Modo dictado: dejamos el texto en el input para que el gestor lo revise y envíe
-    const inp = document.getElementById('cp-input');
-    if (inp.value.trim()) { inp.focus(); autoResize(inp); }
+    // Si se mantiene pulsado y el motor cortó por una pausa, reanudamos conservando el texto
+    if (micHoldMode) {
+      const inp = document.getElementById('cp-input');
+      voiceBase = ((inp && inp.value) || '').replace(/\s+$/, '') + ' ';
+      setTimeout(() => { if (micHoldMode) beginRecognition(); }, 150);
+      return;
+    }
+    finalizeStop();
   };
 
   recognition.onerror = (e) => {
     console.error('Speech error', e.error);
-    stopRecording();
+    if (micHoldMode && (e.error === 'no-speech' || e.error === 'aborted')) return; // onend reanudará
+    micHoldMode = false;
+    finalizeStop();
   };
 
-  recognition.start();
+  try { recognition.start(); } catch (_) {}
 }
 
 function stopRecording() {
-  if (recognition) { try { recognition.stop(); } catch {} recognition = null; }
-  isRecording = false;
-  document.getElementById('cp-mic-btn').classList.remove('recording');
-  document.getElementById('cp-listening-indicator').classList.remove('active');
-  document.getElementById('cp-input').placeholder = 'Escribe o pulsa el micro para dictar…';
-  const hint = document.getElementById('cp-voice-hint');
-  if (hint) { hint.classList.remove('recording'); hint.innerHTML = 'Pulsa el <span class="mic-word">micrófono</span> y dicta los datos · más rápido que escribir'; }
+  micHoldMode = false;
+  if (recognition) { try { recognition.stop(); } catch (_) {} }
+  finalizeStop();
 }
+
+function finalizeStop() {
+  isRecording = false;
+  recognition = null;
+  const mic = document.getElementById('cp-mic-btn'); if (mic) mic.classList.remove('recording');
+  const li = document.getElementById('cp-listening-indicator'); if (li) li.classList.remove('active');
+  const inp = document.getElementById('cp-input');
+  if (inp) { inp.placeholder = 'Escribe o pulsa el micro para dictar…'; if (inp.value.trim()) { inp.focus(); autoResize(inp); } }
+  const hint = document.getElementById('cp-voice-hint');
+  if (hint) { hint.classList.remove('recording'); hint.innerHTML = micHintDefault(); }
+}
+
+/* Gestos del botón de micro: mantener pulsado (táctil) vs alternar (ratón) */
+(function () {
+  const mic = document.getElementById('cp-mic-btn');
+  if (!mic) return;
+  // Ajustar el texto de ayuda al dispositivo
+  const hint0 = document.getElementById('cp-voice-hint');
+  if (hint0 && !hint0.classList.contains('recording')) hint0.innerHTML = micHintDefault();
+
+  mic.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse') { e.preventDefault(); toggleMic(); return; }
+    e.preventDefault();
+    micHoldMode = true;
+    try { mic.setPointerCapture(e.pointerId); } catch (_) {}
+    if (!isRecording) startRecording();
+  });
+
+  const release = (e) => {
+    if (e && e.pointerType === 'mouse') return;     // el ratón usa alternar, no soltar
+    if (micHoldMode || isRecording) { micHoldMode = false; stopRecording(); }
+  };
+  mic.addEventListener('pointerup', release);
+  mic.addEventListener('pointercancel', release);
+  mic.addEventListener('contextmenu', (e) => e.preventDefault()); // sin menú al mantener pulsado
+})();
 
 /* ── Text-to-Speech ── */
 function speak(text) {
