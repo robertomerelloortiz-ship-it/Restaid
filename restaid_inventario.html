@@ -22,7 +22,44 @@ a{color:var(--amber);text-decoration:none}
 .tb-actions{display:flex;gap:6px;margin-left:auto}
 #tabbar{display:flex;align-items:flex-end;padding:0 12px;height:38px;gap:2px;overflow-x:auto;scrollbar-width:none}
 #tabbar::-webkit-scrollbar{display:none}
+/* ── Vista móvil simplificada (contenedor oculto en escritorio) ── */
+#mobile-view{display:none;padding-bottom:1.5rem}
+.mb-alb{display:flex;flex-direction:column;align-items:center;gap:3px;width:100%;background:linear-gradient(135deg,var(--amber),#d97e30);color:#fff;border:none;border-radius:14px;padding:1.05rem 1rem;font-size:16px;font-weight:700;cursor:pointer;margin-bottom:1.5rem;box-shadow:0 4px 16px rgba(232,145,74,.32);font-family:var(--ff-body)}
+.mb-alb small{font-size:11px;font-weight:500;opacity:.92}
+.mb-alb:active{transform:scale(.985)}
+.mb-section-t{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);margin:0 0 .6rem;padding-left:2px}
+.mb-section-n{background:var(--bg2);border-radius:10px;padding:1px 9px;color:var(--tx2);font-size:11px}
+.mb-card{background:var(--card);border:1px solid var(--bdr);border-radius:var(--r2);box-shadow:var(--sh);overflow:hidden;margin-bottom:1.5rem}
+.mb-row{display:flex;align-items:center;gap:10px;padding:.7rem .95rem}
+.mb-row+.mb-row{border-top:1px solid var(--bg)}
+.mb-row-name{flex:1;min-width:0;font-size:13px;font-weight:600;color:var(--tx1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mb-row-sub{font-size:11px;color:var(--tx3);font-weight:400;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mb-row-meta{flex-shrink:0;text-align:right;font-size:12px;font-weight:600;color:var(--tx2);font-family:var(--ff-mono)}
+.mb-row-meta.low{color:var(--red)}
+.mb-badge{flex-shrink:0;font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:20px}
+.mb-badge.red{background:#FDECEA;color:var(--red)}
+.mb-badge.amber{background:#FCEFE2;color:#b5701f}
+.mb-ok{background:#E8F5EE;color:var(--green);border:1px solid #CFE9DA;border-radius:var(--r2);padding:.85rem 1rem;font-size:12.5px;font-weight:600;margin-bottom:1.5rem;text-align:center}
+.mb-search{width:100%;box-sizing:border-box;padding:.7rem .9rem;border:1px solid var(--bdr);border-radius:var(--r2);font-size:16px;font-family:var(--ff-body);color:var(--tx1);background:var(--card);outline:none}
+.mb-search:focus{border-color:var(--amber)}
+.mb-search-wrap{margin-bottom:1.5rem}
+.mb-search-results{margin-top:.55rem}
+.mb-none{font-size:12px;color:var(--tx3);padding:8px 4px}
+.mb-empty{background:var(--card);border:1px solid var(--bdr);border-radius:var(--r2);box-shadow:var(--sh);padding:2.5rem 1.5rem;text-align:center}
+.mb-empty .mb-e-ic{font-size:32px;opacity:.5;margin-bottom:.8rem}
+.mb-empty h3{font-family:var(--ff-head);font-size:19px;font-weight:400;margin-bottom:.5rem;color:var(--tx1)}
+.mb-empty p{font-size:12.5px;color:var(--tx2);line-height:1.6}
+.mb-cost{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--bdr);border-radius:var(--r2);box-shadow:var(--sh);padding:.85rem 1rem}
+.mb-cost-lbl{font-size:12px;color:var(--tx2)}
+.mb-cost-val{margin-left:auto;font-size:16px;font-weight:700;color:var(--tx1);font-family:var(--ff-head)}
+.mb-cost-sub{font-size:11px;color:var(--tx3);text-align:right;margin-top:5px}
 @media(max-width:768px){
+  /* Móvil simplificado: una sola pantalla vertical, sin tablas ni pestañas */
+  #mobile-view{display:block}
+  .page{display:none!important}
+  #tabbar{display:none!important}
+  .tb-row1{display:none!important}     /* el header del shell ya da logo/módulo/Copiloto; "Subir albarán" pasa a la vista */
+  input,select,textarea{font-size:16px!important}   /* evita el auto-zoom de iOS al enfocar */
   .mobile-hide{display:none!important}
   .tb-row1{padding:0 12px;height:auto;min-height:0;justify-content:flex-end}
   .tb-actions{margin-left:0!important;padding:6px 0;width:100%;justify-content:flex-end}
@@ -173,6 +210,8 @@ tr:hover td{background:rgba(26,43,60,.025)}
     <div id="pg-pedidos" class="page"></div>
     <div id="pg-proveedores" class="page"></div>
     <div id="pg-fugas" class="page"></div>
+    <!-- Vista móvil simplificada (se muestra solo en pantallas pequeñas) -->
+    <div id="mobile-view"></div>
   </div>
 </div></div>
 
@@ -342,7 +381,7 @@ let pedEditId=null,pedEditLineas=[];
 function empty(){return{ingredientes:[],movimientos:[],proveedores:[],pedidos:[],platos:[],albaranes:[],lotes:[],recuentos:[],consumosAplicados:[]};}
 function load(){try{const s=localStorage.getItem(KEY);if(s)return{...empty(),...JSON.parse(s)};}catch(e){}return empty();}
 let LOCAL_DIRTY=false;
-function save(){LOCAL_DIRTY=true;E._ts=Date.now();try{localStorage.setItem(KEY,JSON.stringify(E));}catch(e){toast('Error al guardar','r');}try{window.parent.postMessage({type:'restaid_pub',key:KEY,value:JSON.stringify(E)},'*');}catch(e){}sbSetInv();if(typeof pushEscandallo==='function')pushEscandallo();if(typeof pushInvPub==='function')pushInvPub();}
+function save(){LOCAL_DIRTY=true;E._ts=Date.now();try{localStorage.setItem(KEY,JSON.stringify(E));}catch(e){toast('Error al guardar','r');}try{window.parent.postMessage({type:'restaid_pub',key:KEY,value:JSON.stringify(E)},'*');}catch(e){}sbSetInv();if(typeof pushEscandallo==='function')pushEscandallo();if(typeof pushInvPub==='function')pushInvPub();try{renderMobile();}catch(e){}}
 
 /* ── IA: cabeceras con contraseña de sesión (la misma del login) ── */
 // Recibir la contraseña del shell por postMessage (necesario en file://)
@@ -548,7 +587,77 @@ document.querySelectorAll('.tab[data-page]').forEach(tab=>{
     const pg=tab.dataset.page;$('pg-'+pg).classList.add('active');renderPg(pg);
   });
 });
-function renderPg(p){switch(p){case'resumen':rResumen();break;case'ingredientes':rIngs();break;case'movimientos':rMovs();break;case'caducidades':rCaducidades();break;case'recuento':rRecuento();break;case'pedidos':rPeds();break;case'proveedores':rProvs();break;case'fugas':rFugas();break;case'asistente':rAsistente();break;}}
+/* ════════════════════════════════════════════════════════
+   VISTA MÓVIL — operativa: reponer, caducidades, subir albarán,
+   buscar y valor del stock. Solo se muestra en móvil (ver CSS).
+════════════════════════════════════════════════════════ */
+let MB_Q='';
+function renderMobile(){
+  const box=$('mobile-view'); if(!box) return;
+  const ings=E.ingredientes||[];
+  const albBtn=`<button class="mb-alb" onclick="openAlbM()">📷 Subir albarán<small>Foto del albarán → actualiza el stock</small></button>`;
+
+  if(!ings.length){
+    box.innerHTML=albBtn+`<div class="mb-empty"><div class="mb-e-ic">📦</div><h3>Inventario vacío</h3><p>Sube un albarán para empezar, o da de alta los ingredientes desde el ordenador.</p></div>`;
+    return;
+  }
+
+  const fDMA=iso=>{const p=String(iso||'').split('-');return p[2]&&p[1]?p[2]+'/'+p[1]:String(iso||'');};
+
+  // Reponer: por debajo del mínimo (sin stock primero, luego los más agotados)
+  const reponer=ings.filter(i=>(i.stockMin||0)>0&&(i.stock||0)<(i.stockMin||0))
+    .sort((a,b)=>((a.stock||0)/(a.stockMin||1))-((b.stock||0)/(b.stockMin||1)));
+
+  // Caducidades: caducado + lo que caduca en ≤7 días
+  const lotes=(E.lotes||[]).filter(l=>l.caducidad).map(l=>{
+    const ing=ings.find(x=>x.id===l.ingId);
+    return {nombre:ing?ing.nombre:'(eliminado)', unidad:ing?ing.unidad:'', cantidad:l.cantidad, caducidad:l.caducidad, dias:diasHasta(l.caducidad)};
+  }).filter(l=>l.dias<=7).sort((a,b)=>a.dias-b.dias);
+
+  const val=ings.reduce((s,i)=>s+(i.stock||0)*(i.precio||0),0);
+
+  box.innerHTML=albBtn+`
+    <div class="mb-section-t">Reponer ${reponer.length?`<span class="mb-section-n">${reponer.length}</span>`:''}</div>
+    ${reponer.length?`<div class="mb-card">${reponer.map(i=>{
+      const sin=(i.stock||0)===0;
+      return `<div class="mb-row"><span class="mb-row-name">${esc(i.nombre)}<div class="mb-row-sub">mín ${fc(i.stockMin||0,2)} ${esc(i.unidad||'')}</div></span><span class="mb-row-meta low">${fc(i.stock||0,2)} ${esc(i.unidad||'')}</span><span class="mb-badge ${sin?'red':'amber'}">${sin?'Sin stock':'Bajo'}</span></div>`;
+    }).join('')}</div>`:`<div class="mb-ok">✓ Todo por encima del mínimo</div>`}
+
+    <div class="mb-section-t">Caducidades ${lotes.length?`<span class="mb-section-n">${lotes.length}</span>`:''}</div>
+    ${lotes.length?`<div class="mb-card">${lotes.map(l=>{
+      const sev=l.dias<0?'red':l.dias<=3?'amber':'';
+      const dTxt=l.dias<0?`hace ${Math.abs(l.dias)}d`:l.dias===0?'hoy':`en ${l.dias}d`;
+      return `<div class="mb-row"><span class="mb-row-name">${esc(l.nombre)}<div class="mb-row-sub">${fc(l.cantidad||0,2)} ${esc(l.unidad||'')} · caduca ${fDMA(l.caducidad)}</div></span>${sev?`<span class="mb-badge ${sev}">${dTxt}</span>`:`<span class="mb-row-meta">${dTxt}</span>`}</div>`;
+    }).join('')}</div>`:`<div class="mb-ok">✓ Sin caducidades en 7 días</div>`}
+
+    <div class="mb-section-t">Buscar ingrediente</div>
+    <div class="mb-search-wrap">
+      <input id="mb-search" class="mb-search" placeholder="¿Cuánto me queda de…?" oninput="mbSearch()" autocomplete="off">
+      <div id="mb-search-results" class="mb-search-results"></div>
+    </div>
+
+    <div class="mb-cost">
+      <span class="mb-cost-lbl">Valor del stock</span>
+      <span class="mb-cost-val">${fcp(val)}</span>
+    </div>
+    <div class="mb-cost-sub">${ings.length} ingredientes</div>
+  `;
+  if(MB_Q){ const inp=$('mb-search'); if(inp){ inp.value=MB_Q; mbSearch(); } }
+}
+
+function mbSearch(){
+  const inp=$('mb-search'), out=$('mb-search-results'); if(!out) return;
+  const q=(inp?inp.value:'').trim().toLowerCase(); MB_Q=q;
+  if(!q){ out.innerHTML=''; return; }
+  const res=(E.ingredientes||[]).filter(i=>(i.nombre||'').toLowerCase().includes(q)).slice(0,8);
+  if(!res.length){ out.innerHTML='<div class="mb-none">Sin resultados.</div>'; return; }
+  out.innerHTML=`<div class="mb-card">${res.map(i=>{
+    const al=(i.stockMin||0)>0&&(i.stock||0)<(i.stockMin||0);
+    return `<div class="mb-row"><span class="mb-row-name">${esc(i.nombre)}</span><span class="mb-row-meta${al?' low':''}">${fc(i.stock||0,2)} ${esc(i.unidad||'')}</span></div>`;
+  }).join('')}</div>`;
+}
+
+function renderPg(p){switch(p){case'resumen':rResumen();break;case'ingredientes':rIngs();break;case'movimientos':rMovs();break;case'caducidades':rCaducidades();break;case'recuento':rRecuento();break;case'pedidos':rPeds();break;case'proveedores':rProvs();break;case'fugas':rFugas();break;case'asistente':rAsistente();break;}try{renderMobile();}catch(e){}}
 
 // ═══════════ RESUMEN ═══════════
 function calcRes(){
@@ -2290,7 +2399,7 @@ function exportData(){
 function upTopbar(){$('tbSub').textContent=`${E.ingredientes.length} ingredientes · ${E.proveedores.length} proveedores`;}
 
 // ═══════════ INIT ═══════════
-sanitizeE();rResumen();upTopbar();loadFromDB();
+sanitizeE();rResumen();try{renderMobile();}catch(e){}upTopbar();loadFromDB();
 // Publicar food cost real al bus al arrancar (sin esperar a la primera edición)
 if(typeof pushInvPub==='function')pushInvPub();
 </script></body></html>
