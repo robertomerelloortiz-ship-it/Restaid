@@ -781,6 +781,62 @@ nav {
 </head>
 <body>
 
+<!-- ══ LOGIN (acceso) ══ -->
+<div id="login-overlay" style="position:fixed;inset:0;z-index:99999;background:#f4f5f7;display:none;align-items:center;justify-content:center;padding:24px;-webkit-tap-highlight-color:transparent;">
+  <div style="width:100%;max-width:360px;background:#fff;border-radius:18px;box-shadow:0 8px 40px rgba(20,30,50,.10);padding:32px 26px;box-sizing:border-box;">
+    <div style="text-align:center;margin-bottom:22px;">
+      <div style="font-size:26px;font-weight:800;letter-spacing:.5px;color:#1A2B3C;">RESTAID</div>
+      <div style="font-size:13px;color:#8a93a0;margin-top:4px;">Acceso al sistema de gestión</div>
+    </div>
+    <input id="login-user" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" placeholder="Usuario"
+      style="width:100%;box-sizing:border-box;padding:14px 15px;margin-bottom:12px;border:1px solid #e1e5ea;border-radius:11px;font-size:16px;outline:none;background:#fff;color:#1A2B3C;">
+    <input id="login-pass" type="password" autocomplete="current-password" placeholder="Contraseña"
+      style="width:100%;box-sizing:border-box;padding:14px 15px;border:1px solid #e1e5ea;border-radius:11px;font-size:16px;outline:none;background:#fff;color:#1A2B3C;">
+    <div id="login-error" style="display:none;color:#c0392b;font-size:13px;margin-top:12px;text-align:center;"></div>
+    <button id="login-btn" onclick="doLogin()"
+      style="width:100%;margin-top:18px;padding:14px;border:none;border-radius:11px;background:#1A2B3C;color:#fff;font-size:16px;font-weight:600;cursor:pointer;">Entrar</button>
+  </div>
+</div>
+<script>
+(function(){
+  // Gate de acceso. Si no hay sesión válida, mostramos el login y bloqueamos todo.
+  function authed(){ return localStorage.getItem('restaid_authed')==='1' && !!localStorage.getItem('restaid_pass'); }
+  function showLogin(){
+    var o=document.getElementById('login-overlay'); if(o) o.style.display='flex';
+    document.documentElement.style.overflow='hidden';
+  }
+  function hideLogin(){
+    var o=document.getElementById('login-overlay'); if(o) o.style.display='none';
+    document.documentElement.style.overflow='';
+  }
+  window.doLogin = async function(){
+    var u=document.getElementById('login-user').value.trim();
+    var p=document.getElementById('login-pass').value;
+    var err=document.getElementById('login-error'); var btn=document.getElementById('login-btn');
+    err.style.display='none'; btn.disabled=true; btn.textContent='Entrando…';
+    try{
+      var r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user:u,pass:p})});
+      if(r.ok){
+        localStorage.setItem('restaid_authed','1');
+        localStorage.setItem('restaid_pass',p);
+        hideLogin();
+      } else {
+        err.textContent='Usuario o contraseña incorrectos.'; err.style.display='block';
+      }
+    }catch(e){
+      err.textContent='No se pudo conectar. Revisa tu conexión.'; err.style.display='block';
+    }
+    btn.disabled=false; btn.textContent='Entrar';
+  };
+  // Enter en los campos lanza el login
+  ['login-user','login-pass'].forEach(function(id){
+    var el=document.getElementById(id);
+    if(el) el.addEventListener('keydown',function(e){ if(e.key==='Enter') doLogin(); });
+  });
+  if(!authed()) showLogin();
+})();
+</script>
+
 <!-- ══ HEADER MÓVIL (solo móvil) ══ -->
 <div id="mobile-header">
   <button id="hamburger-btn" onclick="toggleSidebar()" aria-label="Menú">
@@ -1284,11 +1340,12 @@ window.addEventListener('message', function(e) {
   }
 });
 
-// Propagar API key al iframe por postMessage (necesario en file://)
-  const _apiKey = localStorage.getItem('restaid_copilot_apikey') || '';
-  if (_apiKey) {
+// Propagar la contraseña de sesión al iframe (por si se usa file://; en Vercel
+// el localStorage ya es compartido al ser el mismo origen)
+  const _pass = localStorage.getItem('restaid_pass') || '';
+  if (_pass) {
     setTimeout(function() {
-      try { frame.contentWindow.postMessage({ type: 'restaid_apikey', key: _apiKey }, '*'); } catch(e) {}
+      try { frame.contentWindow.postMessage({ type: 'restaid_pass', pass: _pass }, '*'); } catch(e) {}
     }, 800);
   }
 }
@@ -1368,11 +1425,7 @@ function saveApiKey() {
 
 /* ── Abrir/cerrar panel ── */
 function openCopilot(navEl) {
-  const key = getApiKey();
-  if (!key) {
-    document.getElementById('apikey-modal').style.display = 'flex';
-    return;
-  }
+  // El acceso ya se validó en el login; el Copiloto no pide clave.
   // Nav active
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   const cpNav = navEl || document.querySelector('[data-module="copiloto"]');
@@ -2577,8 +2630,8 @@ if (window.speechSynthesis) {
 ════════════════════════════════════════════════════════ */
 
 async function callAPI(messages, oneShot = false, systemPrompt = '', maxTokens = 2000) {
-  const key = getApiKey();
-  if (!key) throw new Error('No API key');
+  const pass = localStorage.getItem('restaid_pass') || '';
+  if (!pass) throw new Error('Sesión no iniciada');
 
   let msgs = oneShot ? messages : messages.slice(-16);
   // La API exige que el array empiece por un mensaje 'user'
@@ -2593,13 +2646,11 @@ async function callAPI(messages, oneShot = false, systemPrompt = '', maxTokens =
 
   if (systemPrompt) body.system = systemPrompt;
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const res = await fetch('/api/claude', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true'
+      'x-restaid-pass': pass
     },
     body: JSON.stringify(body)
   });
@@ -2613,12 +2664,12 @@ async function callAPI(messages, oneShot = false, systemPrompt = '', maxTokens =
   return data.content.map(c => c.text || '').join('');
 }
 
-/* ── Resetear clave API ── */
+/* ── Cerrar sesión ── */
 window.resetApiKey = function() {
-  localStorage.removeItem(API_KEY_STORE);
-  document.getElementById('copilot-overlay').classList.remove('open');
-  document.getElementById('copilot-fab').classList.remove('hidden');
-  document.getElementById('apikey-modal').style.display = 'flex';
+  if (!confirm('¿Cerrar sesión en este dispositivo?')) return;
+  localStorage.removeItem('restaid_pass');
+  localStorage.removeItem('restaid_authed');
+  location.reload();
 };
 
 /* ════════════════════════════════════════════════════════

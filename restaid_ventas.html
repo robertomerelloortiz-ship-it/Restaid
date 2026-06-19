@@ -619,14 +619,13 @@ window.RESTAID = window.RESTAID || (function(){
 /* ═══════════════════════════════════════════════════════════════════
    MÓDULO VENTAS
 ═══════════════════════════════════════════════════════════════════ */
-const API_URL='https://api.anthropic.com/v1/messages';
+const API_URL='/api/claude';
 // Modelo de IA — uno de los 4 puntos a editar al cambiar de versión
 // (ventas, rrhh, inventario, shell deben coincidir).
 const MODEL='claude-haiku-4-5';
-const AI_KEY_STORE='restaid_copilot_apikey';
 window.addEventListener('message', function(e) {
-  if (e.data && e.data.type === 'restaid_apikey' && e.data.key) {
-    try { localStorage.setItem(AI_KEY_STORE, e.data.key); } catch(err) {}
+  if (e.data && e.data.type === 'restaid_pass' && e.data.pass) {
+    try { localStorage.setItem('restaid_pass', e.data.pass); } catch(err) {}
   }
   if (e.data && e.data.type === 'restaid_request_pub') {
     try { if (typeof G !== 'undefined' && G && typeof publishPub === 'function') publishPub(G); } catch(err) {}
@@ -634,8 +633,8 @@ window.addEventListener('message', function(e) {
 });
 function aiHeaders() {
   var h = { 'Content-Type': 'application/json' };
-  var k = localStorage.getItem(AI_KEY_STORE) || '';
-  if (k) { h['x-api-key'] = k; h['anthropic-version'] = '2023-06-01'; h['anthropic-dangerous-direct-browser-access'] = 'true'; }
+  var p = localStorage.getItem('restaid_pass') || '';
+  if (p) h['x-restaid-pass'] = p;
   return h;
 }
 const CFG=RESTAID.config;

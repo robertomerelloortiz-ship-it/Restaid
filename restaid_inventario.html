@@ -331,7 +331,7 @@ tr:hover td{background:rgba(26,43,60,.025)}
 </div></div>
 <script>
 // MODEL: uno de los 4 puntos a editar al cambiar de versión de IA (ventas, rrhh, inventario, shell deben coincidir).
-const API='https://api.anthropic.com/v1/messages',MODEL='claude-haiku-4-5',ALB_MODEL='claude-sonnet-4-6',KEY='restaid_inv_v1';
+const API='/api/claude',MODEL='claude-haiku-4-5',ALB_MODEL='claude-sonnet-4-6',KEY='restaid_inv_v1';
 let E=load(),editId=null,albParsed=null,chatH=[],chatBusy=false,movEditId=null;
 let ingSearch='',ingCatF='',ingSort='nombre',ingDir=1;
 let movTipoF='',movSearch='',movD='',movH='';
@@ -344,13 +344,11 @@ function load(){try{const s=localStorage.getItem(KEY);if(s)return{...empty(),...
 let LOCAL_DIRTY=false;
 function save(){LOCAL_DIRTY=true;E._ts=Date.now();try{localStorage.setItem(KEY,JSON.stringify(E));}catch(e){toast('Error al guardar','r');}try{window.parent.postMessage({type:'restaid_pub',key:KEY,value:JSON.stringify(E)},'*');}catch(e){}sbSetInv();if(typeof pushEscandallo==='function')pushEscandallo();if(typeof pushInvPub==='function')pushInvPub();}
 
-/* ── IA: cabeceras con clave API compartida (la misma del Copiloto del shell) ── */
-const AI_KEY_STORE='restaid_copilot_apikey';
-// Recibir API key del shell por postMessage (necesario en file://)
+/* ── IA: cabeceras con contraseña de sesión (la misma del login) ── */
+// Recibir la contraseña del shell por postMessage (necesario en file://)
 window.addEventListener('message', function(e) {
-  if (e.data && e.data.type === 'restaid_apikey' && e.data.key) {
-    try { localStorage.setItem(AI_KEY_STORE, e.data.key); } catch(err) {}
-    console.log('[INV] API key recibida por postMessage');
+  if (e.data && e.data.type === 'restaid_pass' && e.data.pass) {
+    try { localStorage.setItem('restaid_pass', e.data.pass); } catch(err) {}
   }
   if (e.data && e.data.type === 'restaid_request_pub') {
     try { if (typeof E !== 'undefined' && E) window.parent.postMessage({type:'restaid_pub',key:KEY,value:JSON.stringify(E)},'*'); } catch(err) {}
@@ -358,8 +356,8 @@ window.addEventListener('message', function(e) {
 });
 function aiHeaders(){
   const h={'Content-Type':'application/json'};
-  let k='';try{k=localStorage.getItem(AI_KEY_STORE)||'';}catch(e){}
-  if(k){h['x-api-key']=k;h['anthropic-version']='2023-06-01';h['anthropic-dangerous-direct-browser-access']='true';}
+  let p='';try{p=localStorage.getItem('restaid_pass')||'';}catch(e){}
+  if(p){h['x-restaid-pass']=p;}
   return h;
 }
 // Convierte una respuesta de error de la API en un mensaje claro en español.

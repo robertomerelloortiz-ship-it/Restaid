@@ -375,23 +375,20 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
 ═══════════════════════════════════════════════════════════════════ */
 window.RESTAID=window.RESTAID||(function(){const l={};return{version:'3.0',config:{},data:{},ventas:null,modules:{},register(n,m){this.modules[n]=m;return m;},on(e,c){(l[e]=l[e]||[]).push(c);},emit(e,p){(l[e]||[]).forEach(c=>{try{c(p);}catch(x){console.error(x);}});}};})();
 
-const API_URL='https://api.anthropic.com/v1/messages';
+const API_URL='/api/claude';
 // Modelo de IA — uno de los 4 puntos a editar al cambiar de versión
 // (ventas, rrhh, inventario, shell deben coincidir).
 const MODEL='claude-haiku-4-5';
-/* ── IA: cabeceras con clave API compartida (la misma del Copiloto del shell) ──
-   Si hay clave en localStorage, la IA funciona en standalone (Live Server).
-   Sin clave, se mantiene el comportamiento previo (válido dentro de Artifacts). */
-const AI_KEY_STORE='restaid_copilot_apikey';
+/* ── IA: cabeceras con la contraseña de sesión (la misma del login) ── */
 function aiHeaders(){
   const h={'Content-Type':'application/json'};
-  let k='';try{k=localStorage.getItem(AI_KEY_STORE)||'';}catch(e){}
-  if(k){h['x-api-key']=k;h['anthropic-version']='2023-06-01';h['anthropic-dangerous-direct-browser-access']='true';}
+  let p='';try{p=localStorage.getItem('restaid_pass')||'';}catch(e){}
+  if(p){h['x-restaid-pass']=p;}
   return h;
 }
 function aiKeyHint(){
-  let k='';try{k=localStorage.getItem(AI_KEY_STORE)||'';}catch(e){}
-  return k?'Error de conexión con la IA. Reintenta en unos segundos.':'IA no configurada: abre el Copiloto en RESTAID (shell) y guarda tu clave API. Después recarga este módulo.';
+  let p='';try{p=localStorage.getItem('restaid_pass')||'';}catch(e){}
+  return p?'Error de conexión con la IA. Reintenta en unos segundos.':'Sesión no iniciada: vuelve a entrar en RESTAID.';
 }
 
 const DIAS=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
@@ -412,6 +409,9 @@ function toast(msg){const ex=$('rrhh-toast');if(ex)ex.remove();const d=document.
 /* ── Persistencia ──────────────────────────────────── */
 const STORE='restaid_rrhh_v1';
 window.addEventListener('message', function(e) {
+  if (e.data && e.data.type === 'restaid_pass' && e.data.pass) {
+    try { localStorage.setItem('restaid_pass', e.data.pass); } catch(err) {}
+  }
   if (e.data && e.data.type === 'restaid_request_pub') {
     try { if (typeof DB !== 'undefined' && DB) window.parent.postMessage({type:'restaid_pub',key:STORE,value:JSON.stringify(DB)},'*'); } catch(err) {}
   }
