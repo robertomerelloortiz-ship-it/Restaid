@@ -451,13 +451,48 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
 }
 /* ── MÓVIL: el shell ya provee logo/módulo/copiloto en su header ── */
 @media(max-width:768px){
-  .tb-row1{display:none}  /* redundante con el header móvil del shell */
+  /* La fila de logo/módulo se oculta; el header del shell la cubre.
+     Pero recuperamos los botones de acción (Asientos/Datos) en una barra
+     fina que solo aparece cuando hay datos cargados. */
+  .tb-row1{display:none;height:auto;padding:7px 12px;gap:8px;border-bottom:none}
+  body.has-data .tb-row1{display:flex;align-items:center}
+  .tb-logo,.tb-module,.tb-period{display:none}
+  .tb-copilot-btn{display:none}          /* el shell ya ofrece Copiloto */
+  #btnPrint{display:none!important}       /* imprimir no aplica en móvil */
+  .tb-actions{margin-left:0;width:100%;justify-content:flex-end;gap:8px}
+  .tb-row1 .btn-ghost{color:rgba(255,255,255,.88);border-color:rgba(255,255,255,.28);background:transparent}
+  .tb-row1 .btn-ghost:hover{background:rgba(255,255,255,.1)}
+
   #year-tabs{padding:0 12px}
-  #tabbar{padding:0 8px;height:42px}
-  .tab{font-size:13px;padding:0 12px}
+  #tabbar{padding:0 8px;height:44px}
+  .tab{font-size:13px;padding:0 13px;height:34px}
   #content{padding:16px 14px}
-  /* Las tablas con scroll horizontal */
+
+  /* Tablas anchas: scroll horizontal propio (las celdas mandan el ancho) */
+  .tbl,.rp-table,.hm-table{display:block;width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
   .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+  /* KPIs en 2 columnas compactas (estilo Inicio) */
+  .kpi-row-3,.kpi-row-4,.kpi-row-5{grid-template-columns:repeat(2,1fr)}
+  .kpi{padding:.85rem .85rem}
+  .kpi-val{font-size:20px}
+
+  /* Subtabs deslizables si no caben */
+  .subtabs{max-width:100%;overflow-x:auto;scrollbar-width:none}
+  .subtabs::-webkit-scrollbar{display:none}
+
+  /* Filas con etiquetas anchas: más sitio para la barra */
+  .rate-lbl{width:96px}
+  .depth-lbl{width:84px}
+
+  /* Modales cómodos en pantalla pequeña */
+  .modal{padding:1.25rem;width:94%}
+  .modal.wide{max-height:92vh}
+  .seat-inputs{grid-template-columns:1fr 1fr}
+
+  /* Cabecera de página más compacta */
+  .page-hd{margin-bottom:1.1rem;padding-bottom:1rem}
+  .page-hd h2{font-size:20px}
 }
 /* ── Impresión: solo la página activa, sin interfaz ── */
 @media print{
@@ -1031,7 +1066,7 @@ async function runAnalysis(){
 
   $('tbSub').textContent=periodStr;
   $('btnReset').style.display='';$('btnSettings').style.display='';$('btnPrint').style.display='';
-  $('upload-screen').style.display='none';$('pages').style.display='';$('tabbar').style.display='flex';if($('tbSub'))$('tbSub').textContent=G&&G.periodStr?G.periodStr:'';
+  $('upload-screen').style.display='none';$('pages').style.display='';$('tabbar').style.display='flex';if($('tbSub'))$('tbSub').textContent=G&&G.periodStr?G.periodStr:'';document.body.classList.add('has-data');
   renderAll();showPage('resumen');
   // Guardar con el año correcto del análisis actual
   const _añoAnalisis=G.d0?G.d0.slice(0,4):String(new Date().getFullYear());
@@ -1917,7 +1952,7 @@ function resetAll(){
   RESTAID.data={productos:[],ordenes:[],carta:[],columnas:{}};RESTAID.ventas=null;G=null;CARTA_FILTER=false;
   CHARTS.forEach(c=>{try{c.destroy();}catch(e){}});CHARTS=[];
   CHAT_HISTORY=[];const pa=$('pg-asistente');if(pa){pa.dataset.init='';pa.innerHTML='';}
-  $('upload-screen').style.display='';$('pages').style.display='none';$('tabbar').style.display='none';
+  $('upload-screen').style.display='';$('pages').style.display='none';$('tabbar').style.display='none';document.body.classList.remove('has-data');
   ['zone-prod','zone-ord','zone-carta'].forEach(id=>$(id).classList.remove('loaded','drag'));
   $('prod-filelist').textContent='';$('ord-filelist').textContent='';$('carta-filelist').textContent='';$('carta-manual').value='';
   $('btn-analyze').classList.remove('ready');
@@ -2083,7 +2118,7 @@ function cargarAño(año){
   G=normalizarG(AÑOS_DISPONIBLES[año]);
   RESTAID.ventas=G;
   console.log('[RESTAID] Año',año,'cargado, totVen:',G.totVen);
-  $('upload-screen').style.display='none';$('pages').style.display='';$('tabbar').style.display='flex';
+  $('upload-screen').style.display='none';$('pages').style.display='';$('tabbar').style.display='flex';document.body.classList.add('has-data');
   if($('tbSub'))$('tbSub').textContent=G.periodStr||'';
   $('btnReset').style.display='';$('btnSettings').style.display='';$('btnPrint').style.display='';
   // Marcar pestaña activa
