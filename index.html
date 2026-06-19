@@ -820,8 +820,10 @@ nav {
         localStorage.setItem('restaid_authed','1');
         localStorage.setItem('restaid_pass',p);
         hideLogin();
-      } else {
+      } else if(r.status===401){
         err.textContent='Usuario o contraseña incorrectos.'; err.style.display='block';
+      } else {
+        err.textContent='Servidor no disponible (código '+r.status+'). Revisa las funciones /api en Vercel.'; err.style.display='block';
       }
     }catch(e){
       err.textContent='No se pudo conectar. Revisa tu conexión.'; err.style.display='block';
