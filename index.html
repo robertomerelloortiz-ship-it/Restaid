@@ -420,6 +420,13 @@ nav {
 #cp-input-area textarea::placeholder { color: rgba(255,255,255,.3); }
 #cp-input-area textarea:focus { border-color: rgba(232,145,74,.5); }
 
+/* En móvil, iOS hace zoom automático al enfocar un campo con la fuente < 16px,
+   lo que descuadra la página. Forzar 16px en los campos lo evita (sin tocar el
+   zoom manual del usuario). */
+@media (max-width: 768px) {
+  input, select, textarea { font-size: 16px !important; }
+}
+
 #cp-attach-btn, #cp-send-btn {
   width: 44px; height: 44px; border-radius: 50%; border: none; cursor: pointer;
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
