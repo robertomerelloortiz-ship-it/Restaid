@@ -43,7 +43,47 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
 .btn-tb:hover{background:rgba(255,255,255,.16);color:#fff}
 #tabbar{display:flex;align-items:flex-end;padding:0 12px;height:38px;gap:2px;overflow-x:auto;scrollbar-width:none}
 #tabbar::-webkit-scrollbar{display:none}
+/* ── Vista móvil simplificada (contenedor oculto en escritorio) ── */
+#mobile-view{display:none;padding-bottom:1.5rem}
+.mb-week{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--surf);border:1px solid var(--bdr);border-radius:var(--r);padding:.5rem .6rem;margin-bottom:1rem}
+.mb-week button{width:34px;height:34px;border:1px solid var(--bdr-strong);background:var(--surf);border-radius:8px;font-size:17px;color:var(--tx2);cursor:pointer;flex-shrink:0;line-height:1}
+.mb-week button:active{background:var(--bg)}
+.mb-week span{flex:1;text-align:center;font-size:12.5px;font-weight:600;color:var(--tx)}
+.mb-hero{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--rlg);padding:1.4rem 1.25rem;text-align:center;margin-bottom:1rem}
+.mb-hero-lbl{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);margin-bottom:.5rem}
+.mb-hero-val{font-family:'DM Serif Display';font-size:40px;line-height:1;margin-bottom:.5rem}
+.mb-pill{display:inline-block;font-size:12px;font-weight:700;padding:3px 12px;border-radius:20px;margin-bottom:.4rem}
+.mb-pill.ok{background:var(--green-bg);color:var(--green)}
+.mb-pill.warn{background:var(--ylw-bg);color:var(--ylw)}
+.mb-pill.bad{background:var(--red-bg);color:var(--red)}
+.mb-hero-sub{font-size:12px;color:var(--tx3)}
+.mb-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--bdr);border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden;margin-bottom:1.4rem}
+.mb-cell{background:var(--surf);padding:.95rem 1rem;text-align:center}
+.mb-c-lbl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--tx3);margin-bottom:5px}
+.mb-c-val{font-family:'DM Serif Display';font-size:21px;color:var(--tx);line-height:1}
+.mb-section-t{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);margin:0 0 .6rem;padding-left:2px}
+.mb-ins{display:flex;flex-direction:column;gap:8px;margin-bottom:1.4rem}
+.mb-ins-row{background:var(--surf);border:1px solid var(--bdr);border-left:3px solid var(--amber);border-radius:var(--r);padding:.7rem .85rem;font-size:12.5px;line-height:1.5;color:var(--tx2)}
+.mb-ins-row.good{border-left-color:var(--green)}
+.mb-ins-row.warn{border-left-color:var(--ylw)}
+.mb-ins-row b{color:var(--tx);font-weight:600}
+.mb-days{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--r);padding:.85rem 1rem;margin-bottom:1.4rem;display:flex;flex-direction:column;gap:9px}
+.mb-day{display:flex;align-items:center;gap:10px}
+.mb-day-n{width:34px;font-size:12px;font-weight:600;color:var(--tx2);flex-shrink:0}
+.mb-roles .mb-day-n{width:64px}
+.mb-day-bar{flex:1;height:9px;background:var(--bg);border-radius:4px;overflow:hidden}
+.mb-day-bar i{display:block;height:100%;background:var(--navy);border-radius:4px}
+.mb-day-v{width:52px;text-align:right;font-size:11.5px;font-weight:600;color:var(--tx);flex-shrink:0}
+.mb-empty{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--rlg);padding:2.5rem 1.5rem;text-align:center}
+.mb-empty .mb-e-ic{font-size:32px;opacity:.5;margin-bottom:.8rem}
+.mb-empty h3{font-family:'DM Serif Display';font-size:19px;font-weight:400;margin-bottom:.5rem;color:var(--tx)}
+.mb-empty p{font-size:12.5px;color:var(--tx2);line-height:1.6}
 @media(max-width:768px){
+  /* Móvil simplificado: una sola pantalla vertical, sin tablas ni pestañas */
+  #mobile-view{display:block}
+  .page{display:none!important}
+  #tabbar{display:none!important}
+  .tb-row1{display:none!important}     /* el header del shell ya da logo/módulo/Copiloto */
   .mobile-hide{display:none!important}
   .tb-row1{padding:0 12px;height:auto;min-height:0}
   .tb-row1:empty{display:none}
@@ -364,6 +404,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
     <div class="page" id="pg-extras"></div>
     <div class="page" id="pg-personas"></div>
     <div class="page" id="pg-asistente"></div>
+    <!-- Vista móvil simplificada (se muestra solo en pantallas pequeñas) -->
+    <div id="mobile-view"></div>
   </div>
 </div>
 
@@ -574,7 +616,86 @@ function publishCore(){const w=DB.semanas[DB.semanaActual];RESTAID.rrhh={emplead
   }catch(e){}}
 
 /* ── Sidebar metric ────────────────────────────────── */
+/* ════════════════════════════════════════════════════════
+   VISTA MÓVIL — resumen simplificado, vertical, sin tablas
+   Se construye desde DB; solo se muestra en pantallas pequeñas (ver CSS).
+════════════════════════════════════════════════════════ */
+function renderMobile(){
+  const box=$('mobile-view'); if(!box) return;
+
+  // Sin equipo: mensaje claro (el alta se hace desde el ordenador)
+  if(!DB.empleados.length){
+    box.innerHTML=`<div class="mb-empty"><div class="mb-e-ic">👥</div><h3>Aún no hay equipo</h3><p>Da de alta a tu plantilla y monta el cuadrante desde el ordenador. Aquí podrás consultar el coste laboral de un vistazo.</p></div>`;
+    return;
+  }
+
+  const w=curWeek();
+  const ventas=ventasSemana(w), coste=costeSemana(w);
+  const pct=ventas>0?coste/ventas*100:null, cls=pctClass(pct), t=DB.config.targetPct||30;
+  const totHoras=w.asignaciones.reduce((s,a)=>s+asignHoras(a),0);
+  const pasivoTotal=DB.empleados.reduce((s,e)=>s+calcPasivoLaboral(e),0);
+  const extrasPend=Object.values(DB.semanas).flatMap(s=>s.extras||[]).filter(x=>x.estado==='pendiente');
+  const horasExtraPend=extrasPend.reduce((s,x)=>s+(Number(x.horas)||0),0);
+
+  // Hero: coste laboral / ventas, coloreado por estado
+  const heroColor=cls==='ok'?'var(--green)':cls==='warn'?'var(--ylw)':cls==='bad'?'var(--red)':'var(--tx)';
+  const pillTxt=cls==='ok'?'✓ En objetivo':cls==='warn'?'⚠ Ajustado':cls==='bad'?'▲ Por encima':'';
+  const heroVal=pct!=null?fc(pct,1)+'%':'—';
+  const heroSub=pct!=null?`objetivo ${t}% · ${fk(coste)} € de coste`:'Falta prever ventas de la semana';
+  const pillHtml=pct!=null?`<div class="mb-pill ${cls}">${pillTxt}</div>`:'';
+
+  // Claves
+  const ins=[];
+  if(pct==null) ins.push({c:'warn',t:'Introduce las ventas previstas de la semana (desde el ordenador o pidiéndoselo a la IA) para ver el coste laboral.'});
+  else if(cls==='bad') ins.push({c:'warn',t:`Coste laboral en <b>${fc(pct,1)}%</b>, por encima del ${t}%. Revisa el cuadrante o las ventas previstas.`});
+  else if(cls==='ok') ins.push({c:'good',t:`Coste laboral en <b>${fc(pct,1)}%</b>, por debajo del objetivo (${t}%).`});
+  if(horasExtraPend>0) ins.push({c:'warn',t:`<b>${fc(horasExtraPend,1)} h</b> extra pendientes de pagar o compensar.`});
+  const cel=proximasCelebraciones(14);
+  if(cel.length) ins.push({c:'',t:`📅 ${cel[0].txt}.`});
+  if(ins.length>3) ins.length=3;
+
+  // Coste de personal por día (barras)
+  const costesDia=DIAS.map(d=>costeDia(w,d)); const maxCD=Math.max(...costesDia,1);
+
+  // Horas por rol
+  const rolH={}; ROLES.forEach(r=>rolH[r]=0);
+  w.asignaciones.forEach(a=>{const e=emp(a.empId); if(e)rolH[e.rol]=(rolH[e.rol]||0)+asignHoras(a);});
+  const rolKeys=ROLES.filter(r=>rolH[r]>0); const maxRol=Math.max(...rolKeys.map(r=>rolH[r]),1);
+
+  box.innerHTML=`
+    <div class="mb-week">
+      <button onclick="navWeek(-1)" aria-label="Semana anterior">‹</button>
+      <span>${weekLabel(DB.semanaActual)}</span>
+      <button onclick="navWeek(1)" aria-label="Semana siguiente">›</button>
+    </div>
+
+    <div class="mb-hero">
+      <div class="mb-hero-lbl">Coste laboral / ventas</div>
+      <div class="mb-hero-val" style="color:${heroColor}">${heroVal}</div>
+      ${pillHtml}
+      <div class="mb-hero-sub">${heroSub}</div>
+    </div>
+
+    <div class="mb-grid">
+      <div class="mb-cell"><div class="mb-c-lbl">Coste personal</div><div class="mb-c-val">${fk(coste)} €</div></div>
+      <div class="mb-cell"><div class="mb-c-lbl">Horas planif.</div><div class="mb-c-val">${fc(totHoras,0)} h</div></div>
+      <div class="mb-cell"><div class="mb-c-lbl">Plantilla</div><div class="mb-c-val">${DB.empleados.length}</div></div>
+      <div class="mb-cell"><div class="mb-c-lbl">Pasivo laboral</div><div class="mb-c-val">${fk(pasivoTotal)} €</div></div>
+    </div>
+
+    ${ins.length?`<div class="mb-section-t">Claves</div><div class="mb-ins">${ins.map(i=>`<div class="mb-ins-row ${i.c}">${i.t}</div>`).join('')}</div>`:''}
+
+    <div class="mb-section-t">Coste de personal por día</div>
+    <div class="mb-days">
+      ${DIAS.map((d,i)=>`<div class="mb-day"><span class="mb-day-n">${d}</span><span class="mb-day-bar"><i style="width:${Math.round(costesDia[i]/maxCD*100)}%"></i></span><span class="mb-day-v">${fk(costesDia[i])}</span></div>`).join('')}
+    </div>
+
+    ${rolKeys.length?`<div class="mb-section-t">Horas por rol</div><div class="mb-days mb-roles">${rolKeys.map(r=>`<div class="mb-day"><span class="mb-day-n">${r}</span><span class="mb-day-bar"><i style="width:${Math.round(rolH[r]/maxRol*100)}%"></i></span><span class="mb-day-v">${fc(rolH[r],0)} h</span></div>`).join('')}</div>`:''}
+  `;
+}
+
 function updateSidebar(){
+  renderMobile();
   const w=DB.semanas[DB.semanaActual];
   if(!w||!DB.empleados.length){$('sbCostPct').textContent='—';$('sbCostPill').className='sb-metric-pill none';$('sbCostPill').textContent='Sin datos de semana';return;}
   const ventas=ventasSemana(w),coste=costeSemana(w);
