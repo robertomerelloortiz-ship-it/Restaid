@@ -78,6 +78,39 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
 .mb-empty .mb-e-ic{font-size:32px;opacity:.5;margin-bottom:.8rem}
 .mb-empty h3{font-family:'DM Serif Display';font-size:19px;font-weight:400;margin-bottom:.5rem;color:var(--tx)}
 .mb-empty p{font-size:12.5px;color:var(--tx2);line-height:1.6}
+/* Selector de día */
+.mb-daysel{display:flex;gap:5px;margin-bottom:1.1rem}
+.mb-dc{flex:1;height:40px;border:1px solid var(--bdr-strong);background:var(--surf);border-radius:9px;font-size:13px;font-weight:700;color:var(--tx2);cursor:pointer;position:relative;font-family:'DM Sans',sans-serif}
+.mb-dc.sel{background:var(--navy);color:#fff;border-color:var(--navy)}
+.mb-dc.today:not(.sel)::after{content:'';position:absolute;bottom:5px;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%;background:var(--amber)}
+.mb-dc.today.sel{box-shadow:0 0 0 2px var(--amber-lt)}
+/* Turnos del día */
+.mb-turnos{display:flex;flex-direction:column;gap:10px;margin-bottom:1.4rem}
+.mb-turno{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--r);padding:.85rem 1rem}
+.mb-turno-hd{display:flex;align-items:center;justify-content:space-between;font-size:13px;font-weight:700;color:var(--tx);margin-bottom:.5rem;padding-bottom:.5rem;border-bottom:1px solid var(--bg)}
+.mb-turno-n{font-size:11px;font-weight:700;color:var(--tx3);background:var(--bg);border-radius:10px;padding:1px 9px;min-width:24px;text-align:center}
+.mb-shift{display:flex;align-items:center;gap:8px;padding:6px 0}
+.mb-shift+.mb-shift{border-top:1px solid var(--bg)}
+.mb-shift-name{font-size:13px;font-weight:600;color:var(--tx);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mb-shift .emp-role-tag{flex-shrink:0}
+.mb-shift-time{font-size:12px;font-weight:600;color:var(--tx2);flex-shrink:0;font-variant-numeric:tabular-nums}
+.mb-none{font-size:12px;color:var(--tx3);padding:4px 0}
+/* Esta semana */
+.mb-card{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--r);padding:.9rem 1rem;margin-bottom:1.4rem}
+.mb-line-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--tx3);margin-bottom:.45rem}
+.mb-line{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px}
+.mb-line+.mb-line{border-top:1px solid var(--bg)}
+.mb-line-name{font-weight:600;color:var(--tx)}
+.mb-line-meta{margin-left:auto;font-size:12px;color:var(--tx2)}
+.mb-tags{display:flex;flex-wrap:wrap;gap:6px}
+.mb-tag{font-size:12px;font-weight:600;color:var(--tx2);background:var(--bg);border:1px solid var(--bdr);border-radius:14px;padding:3px 11px}
+.mb-ins-ic{margin-right:1px}
+/* Coste al pie */
+.mb-cost{display:flex;align-items:center;gap:8px;background:var(--surf);border:1px solid var(--bdr);border-left-width:3px;border-radius:var(--r);padding:.75rem .95rem}
+.mb-cost-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.mb-cost-lbl{font-size:12px;color:var(--tx2)}
+.mb-cost-val{margin-left:auto;font-size:15px;font-weight:700}
+.mb-cost-obj{font-size:11px;color:var(--tx3)}
 @media(max-width:768px){
   /* Móvil simplificado: una sola pantalla vertical, sin tablas ni pestañas */
   #mobile-view{display:block}
@@ -617,50 +650,60 @@ function publishCore(){const w=DB.semanas[DB.semanaActual];RESTAID.rrhh={emplead
 
 /* ── Sidebar metric ────────────────────────────────── */
 /* ════════════════════════════════════════════════════════
-   VISTA MÓVIL — resumen simplificado, vertical, sin tablas
-   Se construye desde DB; solo se muestra en pantallas pequeñas (ver CSS).
+   VISTA MÓVIL — operativa diaria: turnos del día, ausencias,
+   avisos y coste laboral. Solo se muestra en móvil (ver CSS).
 ════════════════════════════════════════════════════════ */
+let MOB_DAY=null;
+function mobSetDay(d){ if(DIAS.includes(d)) MOB_DAY=d; renderMobile(); }
+
 function renderMobile(){
   const box=$('mobile-view'); if(!box) return;
 
-  // Sin equipo: mensaje claro (el alta se hace desde el ordenador)
   if(!DB.empleados.length){
-    box.innerHTML=`<div class="mb-empty"><div class="mb-e-ic">👥</div><h3>Aún no hay equipo</h3><p>Da de alta a tu plantilla y monta el cuadrante desde el ordenador. Aquí podrás consultar el coste laboral de un vistazo.</p></div>`;
+    box.innerHTML=`<div class="mb-empty"><div class="mb-e-ic">👥</div><h3>Aún no hay equipo</h3><p>Da de alta a tu plantilla y monta el cuadrante desde el ordenador. Aquí podrás consultar los turnos y el coste de un vistazo.</p></div>`;
     return;
   }
 
   const w=curWeek();
+  const todayWid=isoWeekId(new Date());
+  const todayDow=(new Date().getDay()||7)-1;          // 0=Lun .. 6=Dom
+  const isCurWeek=DB.semanaActual===todayWid;
+  if(!MOB_DAY||!DIAS.includes(MOB_DAY)) MOB_DAY=DIAS[todayDow];
+  const selIdx=DIAS.indexOf(MOB_DAY);
+  const esHoy=isCurWeek&&MOB_DAY===DIAS[todayDow];
+  const diaNom=DIAS_FULL[selIdx].toLowerCase();
+  const LETRAS=['L','M','X','J','V','S','D'];
+
+  /* ── Bloque 1: turnos del día seleccionado ── */
+  function turnoHtml(tn){
+    const items=w.asignaciones.filter(a=>a.dia===MOB_DAY&&a.turno===tn)
+      .map(a=>({a,e:emp(a.empId)})).filter(x=>x.e)
+      .sort((x,y)=>(x.a.ini||'').localeCompare(y.a.ini||''));
+    const head=`<div class="mb-turno-hd"><span>${tn==='Comida'?'🍽️ Comida':'🌙 Cena'}</span><span class="mb-turno-n">${items.length||'—'}</span></div>`;
+    if(!items.length) return head+`<div class="mb-none">Sin turnos asignados</div>`;
+    return head+items.map(({a,e})=>`<div class="mb-shift"><span class="mb-shift-name">${esc(e.nombre)}</span><span class="emp-role-tag ${roleClass(e.rol)}">${esc(e.rol)}</span><span class="mb-shift-time">${a.ini}–${a.fin}</span></div>`).join('');
+  }
+  const diaChips=DIAS.map((d,i)=>`<button class="mb-dc${i===selIdx?' sel':''}${isCurWeek&&i===todayDow?' today':''}" onclick="mobSetDay('${d}')">${LETRAS[i]}</button>`).join('');
+
+  /* ── Bloque 3: esta semana — vacaciones + quién libra ── */
+  const monday=weekIdToMonday(DB.semanaActual);
+  const sunday=new Date(monday); sunday.setUTCDate(monday.getUTCDate()+6);
+  const mISO=monday.toISOString().slice(0,10), sISO=sunday.toISOString().slice(0,10);
+  const deVac=[];
+  DB.empleados.forEach(e=>{(e.vacaciones||[]).forEach(v=>{ if(v.inicio&&v.fin&&v.inicio<=sISO&&v.fin>=mISO) deVac.push({e,v}); });});
+  const libran=DB.empleados.filter(e=>e.diaDescanso&&DIAS_FULL[selIdx]===e.diaDescanso);
+
+  /* ── Bloque 4: avisos ── */
+  const avisos=[];
+  proximasCelebraciones(14).slice(0,2).forEach(c=>avisos.push({ic:'🎂',t:c.txt}));
+  const horasExtraPend=Object.values(DB.semanas).flatMap(s=>s.extras||[]).filter(x=>x.estado==='pendiente').reduce((s,x)=>s+(Number(x.horas)||0),0);
+  if(horasExtraPend>0) avisos.push({ic:'⏱️',t:`<b>${fc(horasExtraPend,1)} h</b> extra pendientes de pagar o compensar.`});
+  DB.empleados.forEach(e=>{const h=horasEmpSemana(w,e.id),hc=Number(e.horasContrato)||0; if(hc&&h>hc+0.5) avisos.push({ic:'⚠️',t:`<b>${esc(e.nombre)}</b> planificado ${fc(h,0)} h esta semana (contrato ${hc} h).`});});
+
+  /* ── Bloque 5: coste laboral / ventas ── */
   const ventas=ventasSemana(w), coste=costeSemana(w);
   const pct=ventas>0?coste/ventas*100:null, cls=pctClass(pct), t=DB.config.targetPct||30;
-  const totHoras=w.asignaciones.reduce((s,a)=>s+asignHoras(a),0);
-  const pasivoTotal=DB.empleados.reduce((s,e)=>s+calcPasivoLaboral(e),0);
-  const extrasPend=Object.values(DB.semanas).flatMap(s=>s.extras||[]).filter(x=>x.estado==='pendiente');
-  const horasExtraPend=extrasPend.reduce((s,x)=>s+(Number(x.horas)||0),0);
-
-  // Hero: coste laboral / ventas, coloreado por estado
-  const heroColor=cls==='ok'?'var(--green)':cls==='warn'?'var(--ylw)':cls==='bad'?'var(--red)':'var(--tx)';
-  const pillTxt=cls==='ok'?'✓ En objetivo':cls==='warn'?'⚠ Ajustado':cls==='bad'?'▲ Por encima':'';
-  const heroVal=pct!=null?fc(pct,1)+'%':'—';
-  const heroSub=pct!=null?`objetivo ${t}% · ${fk(coste)} € de coste`:'Falta prever ventas de la semana';
-  const pillHtml=pct!=null?`<div class="mb-pill ${cls}">${pillTxt}</div>`:'';
-
-  // Claves
-  const ins=[];
-  if(pct==null) ins.push({c:'warn',t:'Introduce las ventas previstas de la semana (desde el ordenador o pidiéndoselo a la IA) para ver el coste laboral.'});
-  else if(cls==='bad') ins.push({c:'warn',t:`Coste laboral en <b>${fc(pct,1)}%</b>, por encima del ${t}%. Revisa el cuadrante o las ventas previstas.`});
-  else if(cls==='ok') ins.push({c:'good',t:`Coste laboral en <b>${fc(pct,1)}%</b>, por debajo del objetivo (${t}%).`});
-  if(horasExtraPend>0) ins.push({c:'warn',t:`<b>${fc(horasExtraPend,1)} h</b> extra pendientes de pagar o compensar.`});
-  const cel=proximasCelebraciones(14);
-  if(cel.length) ins.push({c:'',t:`📅 ${cel[0].txt}.`});
-  if(ins.length>3) ins.length=3;
-
-  // Coste de personal por día (barras)
-  const costesDia=DIAS.map(d=>costeDia(w,d)); const maxCD=Math.max(...costesDia,1);
-
-  // Horas por rol
-  const rolH={}; ROLES.forEach(r=>rolH[r]=0);
-  w.asignaciones.forEach(a=>{const e=emp(a.empId); if(e)rolH[e.rol]=(rolH[e.rol]||0)+asignHoras(a);});
-  const rolKeys=ROLES.filter(r=>rolH[r]>0); const maxRol=Math.max(...rolKeys.map(r=>rolH[r]),1);
+  const costColor=cls==='ok'?'var(--green)':cls==='warn'?'var(--ylw)':cls==='bad'?'var(--red)':'var(--tx3)';
 
   box.innerHTML=`
     <div class="mb-week">
@@ -669,28 +712,30 @@ function renderMobile(){
       <button onclick="navWeek(1)" aria-label="Semana siguiente">›</button>
     </div>
 
-    <div class="mb-hero">
-      <div class="mb-hero-lbl">Coste laboral / ventas</div>
-      <div class="mb-hero-val" style="color:${heroColor}">${heroVal}</div>
-      ${pillHtml}
-      <div class="mb-hero-sub">${heroSub}</div>
+    <div class="mb-daysel">${diaChips}</div>
+
+    <div class="mb-section-t">${esHoy?'Turnos de hoy':'Turnos · '+diaNom}</div>
+    <div class="mb-turnos">
+      <div class="mb-turno">${turnoHtml('Comida')}</div>
+      <div class="mb-turno">${turnoHtml('Cena')}</div>
     </div>
 
-    <div class="mb-grid">
-      <div class="mb-cell"><div class="mb-c-lbl">Coste personal</div><div class="mb-c-val">${fk(coste)} €</div></div>
-      <div class="mb-cell"><div class="mb-c-lbl">Horas planif.</div><div class="mb-c-val">${fc(totHoras,0)} h</div></div>
-      <div class="mb-cell"><div class="mb-c-lbl">Plantilla</div><div class="mb-c-val">${DB.empleados.length}</div></div>
-      <div class="mb-cell"><div class="mb-c-lbl">Pasivo laboral</div><div class="mb-c-val">${fk(pasivoTotal)} €</div></div>
+    <div class="mb-section-t">Esta semana</div>
+    <div class="mb-card">
+      <div class="mb-line-lbl">De vacaciones</div>
+      ${deVac.length?deVac.map(({e,v})=>`<div class="mb-line"><span class="mb-line-name">${esc(e.nombre)}</span><span class="mb-line-meta">${fmtDay(v.inicio)} – ${fmtDay(v.fin)}</span></div>`).join(''):`<div class="mb-none">Nadie de vacaciones.</div>`}
+      <div class="mb-line-lbl" style="margin-top:.75rem">Libran ${esHoy?'hoy':'el '+diaNom}</div>
+      ${libran.length?`<div class="mb-tags">${libran.map(e=>`<span class="mb-tag">${esc(e.nombre)}</span>`).join('')}</div>`:`<div class="mb-none">Nadie libra.</div>`}
     </div>
 
-    ${ins.length?`<div class="mb-section-t">Claves</div><div class="mb-ins">${ins.map(i=>`<div class="mb-ins-row ${i.c}">${i.t}</div>`).join('')}</div>`:''}
+    ${avisos.length?`<div class="mb-section-t">Avisos</div><div class="mb-ins">${avisos.map(a=>`<div class="mb-ins-row"><span class="mb-ins-ic">${a.ic}</span> ${a.t}</div>`).join('')}</div>`:''}
 
-    <div class="mb-section-t">Coste de personal por día</div>
-    <div class="mb-days">
-      ${DIAS.map((d,i)=>`<div class="mb-day"><span class="mb-day-n">${d}</span><span class="mb-day-bar"><i style="width:${Math.round(costesDia[i]/maxCD*100)}%"></i></span><span class="mb-day-v">${fk(costesDia[i])}</span></div>`).join('')}
+    <div class="mb-cost" style="border-left-color:${pct!=null?costColor:'var(--bdr)'}">
+      <span class="mb-cost-dot" style="background:${costColor}"></span>
+      <span class="mb-cost-lbl">Coste laboral / ventas</span>
+      <span class="mb-cost-val" style="color:${pct!=null?costColor:'var(--tx3)'}">${pct!=null?fc(pct,1)+'%':'—'}</span>
+      <span class="mb-cost-obj">obj. ${t}%</span>
     </div>
-
-    ${rolKeys.length?`<div class="mb-section-t">Horas por rol</div><div class="mb-days mb-roles">${rolKeys.map(r=>`<div class="mb-day"><span class="mb-day-n">${r}</span><span class="mb-day-bar"><i style="width:${Math.round(rolH[r]/maxRol*100)}%"></i></span><span class="mb-day-v">${fc(rolH[r],0)} h</span></div>`).join('')}</div>`:''}
   `;
 }
 
