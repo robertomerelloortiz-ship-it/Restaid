@@ -1449,7 +1449,7 @@ function openCopilot(navEl) {
   document.getElementById('copilot-overlay').classList.add('open');
   // Pantalla de bienvenida con acciones rápidas si no hay conversación
   if (CHAT_HISTORY.length === 0) showQuickActions();
-  setTimeout(() => { try { document.getElementById('cp-input').focus(); } catch(e){} }, 200);
+  setTimeout(() => { try { if (!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) document.getElementById('cp-input').focus(); } catch(e){} }, 200);
 }
 
 // Tarjetas de acción rápida en la bienvenida
@@ -2568,7 +2568,7 @@ function finalizeStop() {
   const mic = document.getElementById('cp-mic-btn'); if (mic) mic.classList.remove('recording');
   const li = document.getElementById('cp-listening-indicator'); if (li) li.classList.remove('active');
   const inp = document.getElementById('cp-input');
-  if (inp) { inp.placeholder = 'Escribe o pulsa el micro para dictar…'; if (inp.value.trim()) { inp.focus(); autoResize(inp); } }
+  if (inp) { inp.placeholder = 'Escribe o pulsa el micro para dictar…'; if (inp.value.trim()) { if (!VOICE_TOUCH) inp.focus(); autoResize(inp); } }
   const hint = document.getElementById('cp-voice-hint');
   if (hint) { hint.classList.remove('recording'); hint.innerHTML = micHintDefault(); }
 }
