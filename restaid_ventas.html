@@ -434,6 +434,44 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
 .sa-card summary:hover{color:var(--amber)}
 .sa-acc{font-size:12.5px;line-height:1.6;margin:.4rem 0 .4rem 1.2rem;color:var(--tx2)}
 .sa-airesp{margin-top:.6rem;background:var(--ylw-bg);border:1px solid #e8d070;border-radius:8px;padding:.75rem 1rem;font-size:12.5px;line-height:1.6}
+/* ── Vista móvil simplificada (contenedor oculto en escritorio) ── */
+#mobile-view{display:none;padding-bottom:1.5rem}
+.mb-hero{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--rlg);padding:1.4rem 1.25rem;text-align:center;margin-bottom:1rem}
+.mb-hero-lbl{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);margin-bottom:.5rem}
+.mb-hero-val{font-family:'DM Serif Display';font-size:38px;line-height:1;color:var(--navy);margin-bottom:.5rem}
+.mb-yoy{display:inline-block;font-size:13px;font-weight:700;padding:3px 12px;border-radius:20px;margin-bottom:.5rem}
+.mb-yoy.up{background:var(--green-bg);color:var(--green)}
+.mb-yoy.down{background:var(--red-bg);color:var(--red)}
+.mb-hero-sub{font-size:12px;color:var(--tx3)}
+.mb-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--bdr);border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden;margin-bottom:1rem}
+.mb-cell{background:var(--surf);padding:.95rem 1rem;text-align:center}
+.mb-c-lbl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--tx3);margin-bottom:5px}
+.mb-c-val{font-family:'DM Serif Display';font-size:22px;color:var(--tx);line-height:1}
+.mb-split{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--r);padding:1rem 1.1rem;margin-bottom:1.4rem}
+.mb-split-row{display:flex;align-items:center;gap:8px;font-size:13.5px}
+.mb-sp-ic{font-size:16px}
+.mb-sp-name{font-weight:600;color:var(--tx)}
+.mb-sp-pct{margin-left:auto;font-weight:700;color:var(--tx)}
+.mb-sp-eur{color:var(--tx3);font-size:12px;min-width:60px;text-align:right}
+.mb-split-bar{height:6px;background:var(--bg);border-radius:3px;overflow:hidden;margin:5px 0 12px}
+.mb-split-bar:last-child{margin-bottom:0}
+.mb-split-bar i{display:block;height:100%;border-radius:3px}
+.mb-section-t{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);margin:0 0 .6rem;padding-left:2px}
+.mb-ins{display:flex;flex-direction:column;gap:8px;margin-bottom:1.4rem}
+.mb-ins-row{background:var(--surf);border:1px solid var(--bdr);border-left:3px solid var(--amber);border-radius:var(--r);padding:.7rem .85rem;font-size:12.5px;line-height:1.5;color:var(--tx2)}
+.mb-ins-row b{color:var(--tx);font-weight:600}
+.mb-days{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--r);padding:.85rem 1rem;margin-bottom:1.4rem;display:flex;flex-direction:column;gap:9px}
+.mb-day{display:flex;align-items:center;gap:10px}
+.mb-day-n{width:34px;font-size:12px;font-weight:600;color:var(--tx2);flex-shrink:0}
+.mb-day-bar{flex:1;height:9px;background:var(--bg);border-radius:4px;overflow:hidden}
+.mb-day-bar i{display:block;height:100%;background:var(--navy);border-radius:4px}
+.mb-day-v{width:48px;text-align:right;font-size:11.5px;font-weight:600;color:var(--tx);flex-shrink:0}
+.mb-prods{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden;margin-bottom:1.2rem}
+.mb-prod{display:flex;align-items:center;gap:10px;padding:.7rem .95rem;border-bottom:1px solid var(--bg)}
+.mb-prod:last-child{border-bottom:none}
+.mb-prod-n{flex:1;font-size:13px;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mb-prod-v{font-size:13px;font-weight:700;color:var(--tx);flex-shrink:0}
+.mb-note{font-size:10.5px;color:var(--tx3);line-height:1.5;padding:0 2px}
 /* ── Responsive ── */
 @media(max-width:980px){
   .g2,.g3,.visit-grid{grid-template-columns:1fr}
@@ -459,6 +497,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
   .tb-logo,.tb-module,.tb-period{display:none}
   .tb-copilot-btn{display:none}          /* el shell ya ofrece Copiloto */
   #btnPrint{display:none!important}       /* imprimir no aplica en móvil */
+  #btnSettings{display:none!important}     /* asientos: no se usa en la vista móvil simplificada */
   .tb-actions{margin-left:0;width:100%;justify-content:flex-end;gap:8px}
   .tb-row1 .btn-ghost{color:rgba(255,255,255,.88);border-color:rgba(255,255,255,.28);background:transparent}
   .tb-row1 .btn-ghost:hover{background:rgba(255,255,255,.1)}
@@ -467,6 +506,11 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
   #tabbar{padding:0 8px;height:44px}
   .tab{font-size:13px;padding:0 13px;height:34px}
   #content{padding:16px 14px}
+
+  /* Móvil simplificado: una sola pantalla vertical, sin tablas ni pestañas */
+  body.has-data #mobile-view{display:block}
+  body.has-data #pages{display:none}
+  body.has-data #tabbar{display:none!important}
 
   /* Tablas anchas: scroll horizontal propio (las celdas mandan el ancho) */
   .tbl,.rp-table,.hm-table{display:block;width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
@@ -587,6 +631,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
       <div class="page" id="pg-escandallo"></div>
       <div class="page" id="pg-rentabilidad"></div>
     </div>
+    <!-- Vista móvil simplificada (se muestra solo en pantallas pequeñas) -->
+    <div id="mobile-view"></div>
   </div>
 </div>
 
@@ -1203,7 +1249,94 @@ function showPage(id){
   if(id==='rentabilidad')renderRentabilidad();
   if(id==='explorar')renderExplorar();
 }
-function renderAll(){renderResumen();renderCarta();renderComportamiento();renderOperativa();renderTemporal();renderEquipo();renderZonas();renderEscandallo();renderRentabilidad();renderAsistente();}
+/* ════════════════════════════════════════════════════════
+   VISTA MÓVIL — resumen simplificado, vertical, sin tablas
+   Se construye desde G; solo se muestra en pantallas pequeñas (ver CSS).
+════════════════════════════════════════════════════════ */
+function mobYoY(g){
+  // Variación de facturación vs año anterior, recortando el año anterior al
+  // mismo tramo de calendario cuando el año en curso está incompleto (comparación justa).
+  const añoActual=g.d0?g.d0.slice(0,4):null;
+  const añoAnt=añoActual?String(parseInt(añoActual)-1):null;
+  const full=añoAnt&&AÑOS_DISPONIBLES[añoAnt]?AÑOS_DISPONIBLES[añoAnt]:null;
+  if(!full||!full.byDate)return null;
+  const corte=(g.d1||'').slice(5);                 // 'MM-DD' del último día con datos
+  const incompleto=!!corte&&corte<'12-31';
+  let antVen=0;
+  if(incompleto){ Object.keys(full.byDate).forEach(d=>{ if(d.slice(5)<=corte) antVen+=full.byDate[d]||0; }); }
+  else { antVen=Object.values(full.byDate).reduce((s,v)=>s+v,0); }
+  if(!antVen)return null;
+  return { pct:(g.totVen-antVen)/antVen*100, antVen, parcial:incompleto, añoAnt };
+}
+
+function renderMobile(){
+  const box=$('mobile-view'); if(!box||!G) return;
+  const g=G, dayOrd=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+
+  // Variación anual
+  const yoy=mobYoY(g);
+  let yoyHtml='';
+  if(yoy){
+    const up=yoy.pct>=0;
+    yoyHtml=`<div class="mb-yoy ${up?'up':'down'}">${up?'▲':'▼'} ${fc(Math.abs(yoy.pct),1)}% vs ${yoy.añoAnt}${yoy.parcial?'*':''}</div>`;
+  }
+
+  // Claves en lenguaje claro (máx 3)
+  const ins=[];
+  const bestDay=dayOrd.filter(d=>g.byDay[d]).reduce((a,b)=>g.byDay[a]>g.byDay[b]?a:b,'Lun');
+  if(g.byDay[bestDay]) ins.push(`📈 Tu mejor día es el <b>${bestDay}</b> (${fk(g.byDay[bestDay])} €).`);
+  const diasAvg=dayOrd.filter(d=>g.byDayAvg&&g.byDayAvg[d]>0);
+  if(diasAvg.length>=3){
+    const worst=diasAvg.reduce((a,b)=>g.byDayAvg[a]<g.byDayAvg[b]?a:b);
+    const best=Math.max(...diasAvg.map(d=>g.byDayAvg[d]));
+    if(g.byDayAvg[worst]<best*0.55) ins.push(`📉 El <b>${worst}</b> flojea: ${fc(g.byDayAvg[worst],0)} €/día de media.`);
+  }
+  const postRate=g.comidaN>0?g.postresN/g.comidaN*100:0;
+  if(postRate>0&&postRate<20) ins.push(`🍰 Solo el <b>${fc(postRate,0)}%</b> de las comidas llevan postre. Margen fácil.`);
+  if(ins.length>3) ins.length=3;
+
+  // Facturación por día (barras CSS)
+  const dayVals=dayOrd.map(d=>g.byDay[d]||0), maxDay=Math.max(...dayVals,1);
+
+  // Top 5 productos por euros
+  const topProd=Object.keys(g.byPE||{}).sort((a,b)=>g.byPE[b]-g.byPE[a]).slice(0,5);
+
+  box.innerHTML=`
+    <div class="mb-hero">
+      <div class="mb-hero-lbl">Facturación · ${g.periodStr||''}</div>
+      <div class="mb-hero-val">${fc(g.totVen,0)} €</div>
+      ${yoyHtml}
+      <div class="mb-hero-sub">${fc(g.totVen/g.nDays,0)} €/día · ${g.nDays} días</div>
+    </div>
+
+    <div class="mb-grid">
+      <div class="mb-cell"><div class="mb-c-lbl">Tickets</div><div class="mb-c-val">${g.nT}</div></div>
+      <div class="mb-cell"><div class="mb-c-lbl">Ticket medio</div><div class="mb-c-val">${fc(g.tickMed,1)} €</div></div>
+      <div class="mb-cell"><div class="mb-c-lbl">Comensales</div><div class="mb-c-val">${g.allComs}</div></div>
+      <div class="mb-cell"><div class="mb-c-lbl">Per cápita</div><div class="mb-c-val">${fc(g.capGlob,1)} €</div></div>
+    </div>
+
+    <div class="mb-split">
+      <div class="mb-split-row"><span class="mb-sp-ic">🍽️</span><span class="mb-sp-name">Cocina</span><span class="mb-sp-pct">${fc(g.pctCoc,0)}%</span><span class="mb-sp-eur">${fk(g.totCocE)} €</span></div>
+      <div class="mb-split-bar"><i style="width:${Math.min(100,g.pctCoc)}%;background:var(--green)"></i></div>
+      <div class="mb-split-row"><span class="mb-sp-ic">🥤</span><span class="mb-sp-name">Bebida</span><span class="mb-sp-pct">${fc(g.pctBeb,0)}%</span><span class="mb-sp-eur">${fk(g.totBebE)} €</span></div>
+      <div class="mb-split-bar"><i style="width:${Math.min(100,g.pctBeb)}%;background:var(--blue)"></i></div>
+    </div>
+
+    ${ins.length?`<div class="mb-section-t">Claves</div><div class="mb-ins">${ins.map(t=>`<div class="mb-ins-row">${t}</div>`).join('')}</div>`:''}
+
+    <div class="mb-section-t">Facturación por día</div>
+    <div class="mb-days">
+      ${dayOrd.map((d,i)=>`<div class="mb-day"><span class="mb-day-n">${d}</span><span class="mb-day-bar"><i style="width:${Math.round(dayVals[i]/maxDay*100)}%"></i></span><span class="mb-day-v">${fk(dayVals[i])}</span></div>`).join('')}
+    </div>
+
+    ${topProd.length?`<div class="mb-section-t">Top productos</div><div class="mb-prods">${topProd.map((p,i)=>`<div class="mb-prod"><span class="mb-prod-n">${i+1}. ${p}</span><span class="mb-prod-v">${fc(g.byPE[p],0)} €</span></div>`).join('')}</div>`:''}
+
+    ${yoy&&yoy.parcial?`<p class="mb-note">* ${yoy.añoAnt} recortado al mismo tramo del año para que la comparación sea justa.</p>`:''}
+  `;
+}
+
+function renderAll(){renderMobile();renderResumen();renderCarta();renderComportamiento();renderOperativa();renderTemporal();renderEquipo();renderZonas();renderEscandallo();renderRentabilidad();renderAsistente();}
 
 /* ═══════════════════════════════════════════════════════════════════
    ASISTENTE IA — consulta en lenguaje natural sobre los datos
