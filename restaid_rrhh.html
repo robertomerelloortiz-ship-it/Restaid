@@ -397,6 +397,40 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
 .tb-copilot-btn:hover{background:#334155}
 .tb-copilot-btn .pulse-dot{width:7px;height:7px;border-radius:50%;background:#E8914A;animation:pulse-ring 2s ease-in-out infinite}
 @keyframes pulse-ring{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(1.3)}}
+
+/* ── Fichaje / registro de jornada ── */
+.fich-warn{background:#FFF7ED;border:1px solid #FED7AA;color:#9A3412;border-radius:10px;padding:10px 14px;font-size:13px;margin-bottom:14px}
+.fich-grid{display:grid;grid-template-columns:300px 1fr;gap:18px;align-items:start}
+.fich-pad{background:var(--surf);border:1px solid var(--bdr);border-radius:16px;padding:20px;box-shadow:0 2px 10px rgba(0,0,0,.05)}
+.fich-pad-title{text-align:center;font-size:13px;color:var(--tx2);margin-bottom:14px}
+.fich-dots{display:flex;gap:10px;justify-content:center;margin-bottom:6px;min-height:16px}
+.fich-dot{width:13px;height:13px;border-radius:50%;border:2px solid var(--tx3);box-sizing:border-box}
+.fich-dot.on{background:var(--navy);border-color:var(--navy)}
+.fich-err{color:var(--red);text-align:center;font-size:12px;min-height:18px;margin-bottom:6px}
+.fich-err-sp{min-height:18px;margin-bottom:6px}
+.fich-keys{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.fich-key{aspect-ratio:1/1;border:1px solid var(--bdr);background:var(--bg);border-radius:12px;font-size:22px;font-weight:600;color:var(--tx);cursor:pointer;font-family:inherit;transition:transform .08s,background .08s}
+.fich-key:active{transform:scale(.95);background:var(--navy);color:#fff}
+.fich-key-fn{font-size:18px;color:var(--tx2)}
+.fich-key-ok{background:var(--amber);color:#fff;border-color:var(--amber);font-size:24px}
+.fich-done{text-align:center;padding:22px 14px}
+.fich-done-ic{font-size:40px}
+.fich-done-name{font-size:20px;font-weight:700;margin-top:6px;color:var(--tx)}
+.fich-done-tx{font-size:14px;color:var(--tx2);margin-top:4px}
+.fich-done-sub{font-size:13px;color:var(--tx3);margin:6px 0 14px}
+.fich-done.in .fich-done-name{color:#16A34A}
+.fich-done.out .fich-done-name{color:var(--red)}
+.fich-card{background:var(--surf);border:1px solid var(--bdr);border-radius:14px;padding:16px 18px;box-shadow:0 2px 10px rgba(0,0,0,.05)}
+.fich-card-h{font-family:var(--ff-head,inherit);font-weight:600;font-size:15px;margin-bottom:10px;text-transform:capitalize}
+.fich-tag{display:inline-block;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:600}
+.fich-tag.in{background:#DCFCE7;color:#166534}
+.fich-tag.out{background:#F1F5F9;color:#475569}
+.fich-up{color:var(--red);font-weight:600}
+.fich-down{color:#D97706;font-weight:600}
+.fich-empty{color:var(--tx3);font-size:13px;margin:4px 0 0}
+.fich-note{font-size:11.5px;color:var(--tx3);margin:8px 0 0}
+@media(max-width:768px){ .fich-grid{grid-template-columns:1fr} }
+
 </style>
 </head>
 <body>
@@ -420,6 +454,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
       <div class="tab active" data-page="resumen">Resumen</div>
       <div class="tab" data-page="empleados">Empleados</div>
       <div class="tab" data-page="cuadrante">Cuadrante</div>
+      <div class="tab" data-page="fichaje">Fichaje</div>
       <div class="tab-sep"></div>
       <div class="tab" data-page="costes">Costes</div>
       <div class="tab" data-page="extras">Horas extras</div>
@@ -433,6 +468,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
     <div class="page active" id="pg-resumen"></div>
     <div class="page" id="pg-empleados"></div>
     <div class="page" id="pg-cuadrante"></div>
+    <div class="page" id="pg-fichaje"></div>
     <div class="page" id="pg-costes"></div>
     <div class="page" id="pg-extras"></div>
     <div class="page" id="pg-personas"></div>
@@ -491,7 +527,7 @@ window.addEventListener('message', function(e) {
     try { if (typeof DB !== 'undefined' && DB) window.parent.postMessage({type:'restaid_pub',key:STORE,value:JSON.stringify(DB)},'*'); } catch(err) {}
   }
 });
-function defaultDB(){return{empleados:[],semanas:{},config:{targetPct:30,ssMult:1.32,premiumExtra:1.5,ticketMedio:18,ratioSala:25,ratioCocina:30},semanaActual:null};}
+function defaultDB(){return{empleados:[],semanas:{},fichajes:[],config:{targetPct:30,ssMult:1.32,premiumExtra:1.5,ticketMedio:18,ratioSala:25,ratioCocina:30},semanaActual:null};}
 function loadDB(){try{const s=localStorage.getItem(STORE);if(!s)return defaultDB();const d=JSON.parse(s);return{...defaultDB(),...d,config:{...defaultDB().config,...(d.config||{})}};}catch(e){return defaultDB();}}
 let LOCAL_DIRTY=false;
 function saveDB(){LOCAL_DIRTY=true;DB._ts=Date.now();try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(e){console.error('No se pudo guardar',e);}try{window.parent.postMessage({type:'restaid_pub',key:STORE,value:JSON.stringify(DB)},'*');}catch(e){}publishCore();sbSetRRHH();}
@@ -756,7 +792,7 @@ $$('.tab[data-page]').forEach(el=>el.addEventListener('click',()=>showPage(el.da
 function showPage(id){
   $$('.tab[data-page]').forEach(el=>el.classList.toggle('active',el.dataset.page===id));
   $$('.page').forEach(p=>p.classList.remove('active'));$('pg-'+id).classList.add('active');
-  ({resumen:renderResumen,empleados:renderEmpleados,cuadrante:renderCuadrante,costes:renderCostes,extras:renderExtras,personas:renderPersonas,asistente:renderAsistente}[id]||function(){})();
+  ({resumen:renderResumen,empleados:renderEmpleados,cuadrante:renderCuadrante,fichaje:renderFichaje,costes:renderCostes,extras:renderExtras,personas:renderPersonas,asistente:renderAsistente}[id]||function(){})();
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -857,6 +893,9 @@ function openEmpModal(id){
       <div class="field"><label>Fecha de incorporación</label><input id="em-alta" type="date" value="${e.fechaAlta||''}"></div>
       <div class="field"><label>Día de descanso estándar</label><select id="em-descanso"><option value="">Sin definir</option>${DIAS_FULL.map(d=>`<option ${e.diaDescanso===d?'selected':''}>${d}</option>`).join('')}</select></div>
     </div>
+    <div class="field-row">
+      <div class="field"><label>PIN de fichaje (4–6 dígitos)</label><input id="em-pin" type="text" inputmode="numeric" maxlength="6" value="${e.pin||''}" placeholder="Ej. 1234"><div class="field-hint">Cada persona ficha su entrada/salida con este PIN. Debe ser único.</div></div>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-amber btn-sm" onclick="saveEmp('${id||''}')">${id?'Guardar':'Añadir'}</button>
@@ -882,10 +921,13 @@ function empSalaryPreview(){
 function saveEmp(id){
   const nombre=$('em-nombre').value.trim();
   if(!nombre){toast('Pon al menos el nombre');return;}
+  const pin=($('em-pin')?.value||'').trim();
+  if(pin&&!/^\d{4,6}$/.test(pin)){toast('El PIN debe tener entre 4 y 6 dígitos');return;}
+  if(pin&&DB.empleados.some(e=>e.id!==id&&(e.pin||'')===pin)){toast('Ese PIN ya lo usa otra persona');return;}
   const salarioBrutoMes=parseFloat($('em-salario-mes').value)||0;
   const horasContrato=parseFloat($('em-horas').value)||40;
   const salarioHora=salarioBrutoMes>0?salarioBrutoMes/(horasContrato*4.33):0;
-  const obj={nombre,rol:$('em-rol').value,contrato:$('em-contrato').value,salarioBrutoMes,salarioHora,horasContrato,fechaAlta:$('em-alta').value||'',diaDescanso:$('em-descanso').value||''};
+  const obj={nombre,rol:$('em-rol').value,contrato:$('em-contrato').value,salarioBrutoMes,salarioHora,horasContrato,fechaAlta:$('em-alta').value||'',diaDescanso:$('em-descanso').value||'',pin};
   if(id){const e=emp(id);Object.assign(e,obj);}
   else{obj.id=uid();obj.cumple='';obj.prefs='';obj.skills=[];obj.personal={};obj.vacaciones=[];obj.imagen='';DB.empleados.push(obj);}
   saveDB();closeModal();renderEmpleados();updateSidebar();toast(id?'Empleado actualizado':'Empleado añadido');
@@ -1300,6 +1342,142 @@ function toggleVoice(){
 }
 function updMicBtn(){const b=$('btn-mic');if(b)b.classList.toggle('recording',srRecording);}
 function setVoiceHint(t){const h=$('voice-hint');if(h)h.textContent=t||'';}
+
+/* ═══════════════ FICHAJE / REGISTRO DE JORNADA ═══════════════
+   Registro de entrada/salida por empleado mediante PIN (obligatorio en España).
+   Persiste en DB.fichajes y sincroniza a Supabase como el resto del estado.
+   Compara lo planificado (cuadrante) con lo realmente fichado. */
+let FICHAJE_PIN='', FICHAJE_MSG=null;
+function fichajesDia(empId,fechaISO){return (DB.fichajes||[]).filter(f=>f.empId===empId&&f.fecha===fechaISO).sort((a,b)=>a.ts.localeCompare(b.ts));}
+function minFichadosDia(empId,fechaISO){
+  const fs=fichajesDia(empId,fechaISO); let min=0,lastIn=null;
+  fs.forEach(f=>{ if(f.tipo==='entrada')lastIn=f.ts; else if(f.tipo==='salida'&&lastIn){min+=(new Date(f.ts)-new Date(lastIn))/60000;lastIn=null;} });
+  if(lastIn&&fechaISO===new Date().toISOString().slice(0,10)) min+=(Date.now()-new Date(lastIn))/60000;
+  return Math.max(0,min);
+}
+function estadoFichaje(empId){
+  const hoy=new Date().toISOString().slice(0,10); const fs=fichajesDia(empId,hoy);
+  let dentro=false,desde=null;
+  fs.forEach(f=>{ if(f.tipo==='entrada'){dentro=true;desde=f.ts;} else if(f.tipo==='salida'){dentro=false;desde=null;} });
+  return {dentro,desde,min:minFichadosDia(empId,hoy),fichajes:fs};
+}
+function horasFichadasSemana(empId,wid){
+  const m=weekIdToMonday(wid); let min=0;
+  for(let i=0;i<7;i++){ const d=new Date(Date.UTC(m.getUTCFullYear(),m.getUTCMonth(),m.getUTCDate()+i)).toISOString().slice(0,10); min+=minFichadosDia(empId,d); }
+  return min/60;
+}
+function fmtHM(min){ min=Math.round(min); const h=Math.floor(min/60),m=min%60; return h>0?`${h}h ${m}m`:`${m}m`; }
+function fmtHora(ts){ const d=new Date(ts); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+function fpKey(d){ if(FICHAJE_PIN.length<6)FICHAJE_PIN+=d; FICHAJE_MSG=null; renderPad(); }
+function fpDel(){ FICHAJE_PIN=FICHAJE_PIN.slice(0,-1); FICHAJE_MSG=null; renderPad(); }
+function fpClear(){ FICHAJE_PIN=''; FICHAJE_MSG=null; renderPad(); }
+function fpEnter(){
+  if(FICHAJE_PIN.length<4){ FICHAJE_MSG={err:'El PIN tiene al menos 4 dígitos'}; renderPad(); return; }
+  const e=(DB.empleados||[]).find(x=>(x.pin||'')===FICHAJE_PIN);
+  if(!e){ FICHAJE_MSG={err:'PIN no reconocido'}; FICHAJE_PIN=''; renderPad(); return; }
+  ficharAhora(e.id);
+}
+function ficharAhora(empId){
+  const e=emp(empId); if(!e)return;
+  const tipo=estadoFichaje(empId).dentro?'salida':'entrada';
+  const now=new Date();
+  (DB.fichajes=DB.fichajes||[]).push({id:uid(),empId,tipo,ts:now.toISOString(),fecha:now.toISOString().slice(0,10)});
+  saveDB();
+  const st=estadoFichaje(empId);
+  FICHAJE_MSG={ok:true,nombre:e.nombre,tipo,hora:fmtHora(now.toISOString()),min:st.min};
+  FICHAJE_PIN='';
+  renderPad(); renderFichajeRecords();
+  clearTimeout(window._fichTO); window._fichTO=setTimeout(()=>{ FICHAJE_MSG=null; renderPad(); }, 6000);
+}
+function renderPad(){
+  const el=$('fichaje-pad'); if(!el)return;
+  if(FICHAJE_MSG&&FICHAJE_MSG.ok){
+    const m=FICHAJE_MSG, isIn=m.tipo==='entrada';
+    el.innerHTML=`<div class="fich-done ${isIn?'in':'out'}">
+      <div class="fich-done-ic">${isIn?'🟢':'🔴'}</div>
+      <div class="fich-done-name">${esc(m.nombre)}</div>
+      <div class="fich-done-tx">${isIn?'Entrada':'Salida'} registrada · ${m.hora}</div>
+      <div class="fich-done-sub">${isIn?'¡Buen turno!':'Jornada de hoy: '+fmtHM(m.min)}</div>
+      <button class="btn btn-ghost btn-sm" onclick="fpClear()">Fichar otra persona</button>
+    </div>`;
+    return;
+  }
+  const len=FICHAJE_PIN.length, nDots=Math.max(4,len);
+  const dots=Array.from({length:nDots}).map((_,i)=>`<span class="fich-dot ${i<len?'on':''}"></span>`).join('');
+  const keys=['1','2','3','4','5','6','7','8','9'];
+  el.innerHTML=`<div class="fich-pad">
+    <div class="fich-pad-title">Introduce tu PIN para fichar</div>
+    <div class="fich-dots">${dots}</div>
+    ${FICHAJE_MSG&&FICHAJE_MSG.err?`<div class="fich-err">⚠ ${esc(FICHAJE_MSG.err)}</div>`:'<div class="fich-err-sp"></div>'}
+    <div class="fich-keys">
+      ${keys.map(k=>`<button class="fich-key" onclick="fpKey('${k}')">${k}</button>`).join('')}
+      <button class="fich-key fich-key-fn" onclick="fpDel()">⌫</button>
+      <button class="fich-key" onclick="fpKey('0')">0</button>
+      <button class="fich-key fich-key-ok" onclick="fpEnter()">✓</button>
+    </div>
+  </div>`;
+}
+function renderFichaje(){
+  const pg=$('pg-fichaje');
+  const conPin=(DB.empleados||[]).filter(e=>e.pin).length;
+  pg.innerHTML=`<div class="page-hd"><h2>Fichaje</h2><p>Registro de jornada · entrada y salida por PIN</p></div>
+  ${!DB.empleados.length?`<div class="empty"><div class="empty-icon">🧑‍🍳</div><h3>Primero da de alta a tu equipo</h3><p>Añade empleados y asígnales un PIN para que puedan fichar.</p><button class="btn btn-amber" onclick="showPage('empleados')">Ir a Empleados →</button></div>`:
+  `${conPin===0?`<div class="fich-warn">Ningún empleado tiene PIN todavía. Asígnalo en <b>Empleados → editar</b> para poder fichar.</div>`:''}
+  <div class="fich-grid">
+    <div><div id="fichaje-pad"></div></div>
+    <div id="fichaje-records"></div>
+  </div>`}`;
+  if(DB.empleados.length){ renderPad(); renderFichajeRecords(); }
+}
+function renderFichajeRecords(){
+  const box=$('fichaje-records'); if(!box)return;
+  const wid=DB.semanaActual||isoWeekId(new Date());
+  const hoyRows=(DB.empleados||[]).map(e=>{
+    const st=estadoFichaje(e.id); if(!st.fichajes.length) return null;
+    return `<tr>
+      <td><b>${esc(e.nombre)}</b></td>
+      <td><span class="fich-tag ${st.dentro?'in':'out'}">${st.dentro?'Dentro':'Fuera'}</span></td>
+      <td style="font-size:12px;color:var(--tx3)">${st.fichajes.map(f=>(f.tipo==='entrada'?'▸':'◂')+fmtHora(f.ts)).join('&nbsp; ')}</td>
+      <td class="td-num">${fmtHM(st.min)}</td>
+    </tr>`;
+  }).filter(Boolean).join('');
+  const w=DB.semanas[wid];
+  const semRows=(DB.empleados||[]).map(e=>{
+    const plan=w?horasEmpSemana(w,e.id):0; const real=horasFichadasSemana(e.id,wid);
+    if(plan===0&&real===0) return null;
+    const dif=real-plan;
+    return `<tr>
+      <td><b>${esc(e.nombre)}</b></td>
+      <td class="td-num">${fc(plan,1)} h</td>
+      <td class="td-num">${fc(real,1)} h</td>
+      <td class="td-num"><span class="${Math.abs(dif)<0.25?'':dif>0?'fich-up':'fich-down'}">${dif>0?'+':''}${fc(dif,1)} h</span></td>
+    </tr>`;
+  }).filter(Boolean).join('');
+  box.innerHTML=`
+    <div class="fich-card">
+      <div class="fich-card-h">Hoy · ${new Date().toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'})}</div>
+      ${hoyRows?`<div class="tbl-wrap"><table><thead><tr><th>Empleado</th><th>Estado</th><th>Fichajes</th><th class="td-num">Trabajado</th></tr></thead><tbody>${hoyRows}</tbody></table></div>`:`<p class="fich-empty">Aún nadie ha fichado hoy.</p>`}
+    </div>
+    <div class="fich-card" style="margin-top:14px">
+      <div class="fich-card-h" style="display:flex;justify-content:space-between;align-items:baseline">Esta semana · planificado vs fichado
+        <span style="font-size:11.5px;color:var(--tx3);font-weight:400">${weekLabel(wid)}</span></div>
+      ${semRows?`<div class="tbl-wrap"><table><thead><tr><th>Empleado</th><th class="td-num">Planificado</th><th class="td-num">Fichado</th><th class="td-num">Desvío</th></tr></thead><tbody>${semRows}</tbody></table></div>
+      <p class="fich-note">Planificado = horas del cuadrante. Fichado = horas reales registradas. El desvío te avisa de horas de más o de menos.</p>`:`<p class="fich-empty">Sin horas planificadas ni fichadas esta semana.</p>`}
+      <div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="exportFichajesCSV()">⬇ Exportar registro (CSV)</button></div>
+    </div>`;
+}
+function exportFichajesCSV(){
+  const fs=(DB.fichajes||[]).slice().sort((a,b)=>a.ts.localeCompare(b.ts));
+  if(!fs.length){ toast('No hay fichajes que exportar'); return; }
+  const nombre=id=>{const e=emp(id);return e?e.nombre:id;};
+  const rows=[['Empleado','Tipo','Fecha','Hora','Timestamp ISO']];
+  fs.forEach(f=>rows.push([nombre(f.empId),f.tipo,f.fecha,fmtHora(f.ts),f.ts]));
+  const csv=rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(';')).join('\n');
+  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='fichajes_'+new Date().toISOString().slice(0,10)+'.csv'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000); toast('Registro exportado');
+}
 
 function renderAsistente(){
   const pg=$('pg-asistente');if(ASIST_INIT)return;ASIST_INIT=true;const hasMic=!!SR;
