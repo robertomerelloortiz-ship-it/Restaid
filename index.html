@@ -781,6 +781,36 @@ nav {
 }
 .revo-fijos:hover { background: var(--surface); border-color: var(--tx3); }
 
+/* Copiloto proactivo: severidad de avisos */
+.revo-alert-tx { flex: 1; }
+.revo-alert { border-left-width: 3px; }
+.revo-alert.sev-0 { border-left-color: #dc2626; }
+.revo-alert.sev-1 { border-left-color: var(--amber); }
+.revo-alert.sev-2 { border-left-color: #ca8a04; }
+.revo-alert.sev-3 { border-left-color: var(--tx3); }
+.revo-alert.sev-4 { border-left-color: #16a34a; }
+.revo-alert.sev-0:hover { border-color: #dc2626; background: #fef2f2; }
+.revo-section-row { display: flex; align-items: center; justify-content: space-between; margin: 30px 0 12px; }
+.revo-section-row .revo-section-lbl { margin: 0; }
+.revo-brief {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: linear-gradient(135deg, var(--amber), #e8832a); color: #fff;
+  border: none; border-radius: 20px; padding: 6px 13px; cursor: pointer;
+  font-size: 12px; font-weight: 600; font-family: inherit; flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(232,131,42,.28);
+}
+.revo-brief:active { transform: scale(.97); }
+/* Badge de avisos en el botón de Copiloto */
+.nav-item[data-module="copiloto"], #mobile-copilot-btn { position: relative; }
+.cp-badge {
+  position: absolute; top: -3px; right: -3px;
+  min-width: 18px; height: 18px; padding: 0 4px;
+  background: #dc2626; color: #fff; border-radius: 9px;
+  font-size: 11px; font-weight: 700; line-height: 1;
+  display: none; align-items: center; justify-content: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,.35);
+}
+
 /* Ajuste fino en móvil */
 @media (max-width: 768px) {
   .revo-hero-val { font-size: 48px; }
@@ -1124,6 +1154,25 @@ function setHomePeriod(p){
   renderHome();
 }
 
+/* ── Copiloto proactivo: parte del día con IA (una sola llamada, contexto completo) ── */
+function briefingDelDia(){
+  openCopilot();
+  setTimeout(()=>{ if(typeof sendMessage==='function') sendMessage('Dame el parte del día: las 3-4 cosas más importantes que debo atender ahora mismo, ordenadas por impacto (€ o urgencia), en lenguaje claro y muy breve (una línea cada una). Prioriza lo crítico (sin stock, caducidades, coste por encima de objetivo). Termina con una sola recomendación de "lo primero que haría hoy".'); }, 350);
+}
+
+/* ── Badge de avisos urgentes en el botón de Copiloto ── */
+function updateCopilotBadge(n){
+  const targets=[document.getElementById('mobile-copilot-btn'), document.querySelector('.nav-item[data-module="copiloto"]')];
+  targets.forEach(btn=>{
+    if(!btn) return;
+    let b=btn.querySelector('.cp-badge');
+    if(n>0){
+      if(!b){ b=document.createElement('span'); b.className='cp-badge'; btn.appendChild(b); }
+      b.textContent=n>9?'9+':String(n); b.style.display='flex';
+    } else if(b){ b.style.display='none'; }
+  });
+}
+
 function renderHomeRevo(box,r,v,pub){
   // ── DATOS POR PERÍODO ──
   // Hoy: previsión del día (estimado, hasta conectar Revo). Semana/Mes/Año: datos reales del análisis.
@@ -1214,23 +1263,40 @@ function renderHomeRevo(box,r,v,pub){
 
   // ── AVISOS (bandeja) ──
   const db=readAllData();
+  // ── COPILOTO PROACTIVO: motor de alertas (umbral → aviso → drill-down) ──
+  // sev: 0=crítico (rojo) · 1=atención (ámbar) · 2=gestionar (amarillo) · 3=info · 4=positivo
   const chips=[];
+  const _today=new Date(), todayS=_today.toISOString().slice(0,10);
+  const diasH=iso=>Math.ceil((new Date(iso+'T00:00:00')-new Date(todayS+'T00:00:00'))/86400000);
+
   if(db.inventario){
-    const al=(db.inventario.ingredientes||[]).filter(i=>(i.stock||0)<(i.stockMin||0));
-    if(al.length)chips.push({ic:'⚠',txt:al.length+' ingrediente'+(al.length>1?'s':'')+' bajo mínimo',mod:'inventario'});
-    const hoyS=new Date().toISOString().slice(0,10);
-    const cad=(db.inventario.lotes||[]).filter(l=>l.caducidad&&l.caducidad<=hoyS);
-    if(cad.length)chips.push({ic:'🔴',txt:cad.length+' lote'+(cad.length>1?'s':'')+' caducado'+(cad.length>1?'s':''),mod:'inventario'});
+    const ings=db.inventario.ingredientes||[];
+    const sinStock=ings.filter(i=>(i.stock||0)===0&&(i.stockMin||0)>0);
+    const bajoMin=ings.filter(i=>(i.stock||0)>0&&(i.stock||0)<(i.stockMin||0));
+    if(sinStock.length)chips.push({sev:0,ic:'🛑',txt:sinStock.length+' sin stock: '+sinStock.slice(0,3).map(i=>i.nombre).join(', ')+(sinStock.length>3?'…':''),mod:'inventario'});
+    if(bajoMin.length)chips.push({sev:1,ic:'⚠',txt:bajoMin.length+' ingrediente'+(bajoMin.length>1?'s':'')+' bajo mínimo',mod:'inventario'});
+    const lotes=(db.inventario.lotes||[]).filter(l=>l.caducidad).map(l=>({d:diasH(l.caducidad)}));
+    const cad=lotes.filter(l=>l.d<0), urge=lotes.filter(l=>l.d>=0&&l.d<=3);
+    if(cad.length)chips.push({sev:0,ic:'🔴',txt:cad.length+' lote'+(cad.length>1?'s':'')+' caducado'+(cad.length>1?'s':''),mod:'inventario'});
+    if(urge.length)chips.push({sev:1,ic:'📅',txt:urge.length+' lote'+(urge.length>1?'s':'')+' caduca'+(urge.length>1?'n':'')+' en ≤3 días',mod:'inventario'});
     const ped=(db.inventario.pedidos||[]).filter(p=>p.estado==='pendiente').length;
-    if(ped)chips.push({ic:'📦',txt:ped+' pedido'+(ped>1?'s':'')+' pendiente'+(ped>1?'s':''),mod:'inventario'});
+    if(ped)chips.push({sev:3,ic:'📦',txt:ped+' pedido'+(ped>1?'s':'')+' pendiente'+(ped>1?'s':''),mod:'inventario'});
   }
+
+  // KPIs por umbral (coste laboral, materia prima, prime cost)
+  const targetLab=(db.rrhh&&db.rrhh.config&&db.rrhh.config.targetPct)||30;
+  if(lab!=null&&lab>targetLab) chips.push({sev:lab>targetLab+8?0:1,ic:'📉',txt:`Coste laboral ${lab}% (objetivo ${targetLab}%)`,mod:'rrhh'});
+  if(foodc!=null&&foodc>35) chips.push({sev:foodc>40?0:1,ic:'🍽️',txt:`Materia prima ${foodc}%${foodc>40?' (alto)':' (revisar)'}`,mod:'ventas'});
+  if(prime!=null&&prime>65) chips.push({sev:1,ic:'📊',txt:`Prime cost ${prime}% (alto)`,mod:'ventas'});
+
   if(db.rrhh){
     const ext=Object.values(db.rrhh.semanas||{}).flatMap(w=>w.extras||[]).filter(x=>x.estado==='pendiente');
-    if(ext.length)chips.push({ic:'⏱',txt:ext.length+' hora'+(ext.length>1?'s':'')+' extra sin gestionar',mod:'rrhh'});
-    const mmdd=new Date().toISOString().slice(5,10);
-    const cum=(db.rrhh.empleados||[]).filter(e=>e.cumple&&e.cumple.slice(5)===mmdd);
-    cum.forEach(e=>chips.push({ic:'🎂',txt:'Hoy cumple '+e.nombre,mod:'rrhh'}));
+    if(ext.length)chips.push({sev:2,ic:'⏱',txt:ext.length+' hora'+(ext.length>1?'s':'')+' extra sin gestionar',mod:'rrhh'});
+    const cum=(db.rrhh.empleados||[]).filter(e=>e.cumple&&e.cumple.slice(5)===todayS.slice(5));
+    cum.forEach(e=>chips.push({sev:4,ic:'🎂',txt:'Hoy cumple '+e.nombre,mod:'rrhh'}));
   }
+
+  chips.sort((a,b)=>a.sev-b.sev);   // lo más urgente, primero
 
   const estado=prime==null?null:prime<60?{txt:'Prime cost sano',col:'#16a34a'}:prime<65?{txt:'Prime cost ajustado',col:'#d97706'}:{txt:'Prime cost alto',col:'#dc2626'};
 
@@ -1291,18 +1357,22 @@ function renderHomeRevo(box,r,v,pub){
         <span>Analiza un período en Ventas y configura el cuadrante en Personal para ver tu prime cost y resultado.</span>
       </div>`}
 
-      <!-- Bandeja de avisos -->
-      <div class="revo-section-lbl">Requiere tu atención</div>
+      <!-- Bandeja de avisos (Copiloto proactivo) -->
+      <div class="revo-section-row">
+        <div class="revo-section-lbl">Requiere tu atención</div>
+        <button class="revo-brief" onclick="briefingDelDia()">✦ Resumen del día</button>
+      </div>
       ${chips.length?`<div class="revo-alerts">${chips.map(ch=>`
-        <div class="revo-alert" onclick="loadModule('${ch.mod}',document.querySelector('[data-module=${ch.mod}]'))">
+        <div class="revo-alert sev-${ch.sev}" onclick="loadModule('${ch.mod}',document.querySelector('[data-module=${ch.mod}]'))">
           <span class="revo-alert-ic">${ch.ic}</span>
-          <span>${ch.txt}</span>
+          <span class="revo-alert-tx">${ch.txt}</span>
           <span class="revo-alert-arrow">›</span>
         </div>`).join('')}</div>`
       :`<div class="revo-allclear">✓ Todo en orden. Sin avisos pendientes.</div>`}
 
       <button class="revo-fijos" onclick="abrirFijos()">⚙ Configurar costes fijos</button>
     </div>`;
+  updateCopilotBadge(chips.filter(c=>c.sev<=1).length);
 }
 
 
