@@ -827,6 +827,21 @@ nav {
 .revo-fc-bar > span { width: 58%; background: var(--amber); border-radius: 3px 3px 0 0; min-height: 2px; display: block; opacity: .85; }
 .revo-fc-note { font-size: 11px; color: var(--tx3); margin-top: 8px; line-height: 1.4; }
 
+/* Cuenta de resultados (P&L) */
+.revo-pnl { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 4px 16px; }
+.revo-pnl-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; font-size: 14px; border-bottom: 1px solid var(--border); }
+.revo-pnl-row:last-child { border-bottom: none; }
+.revo-pnl-row i { font-style: normal; color: var(--tx3); font-size: 11.5px; margin-left: 6px; }
+.revo-pnl-row span { color: var(--tx1); }
+.revo-pnl-row b { font-variant-numeric: tabular-nums; }
+.revo-pnl-row.neg span { color: var(--tx2); }
+.revo-pnl-row.neg b { color: var(--tx2); font-weight: 600; }
+.revo-pnl-row.sub span, .revo-pnl-row.sub b { font-weight: 700; }
+.revo-pnl-row.result { padding-top: 11px; font-weight: 700; font-size: 15px; border-top: 2px solid var(--border); }
+.revo-pnl-row.result.pos b { color: #16a34a; }
+.revo-pnl-row.result.negv b { color: #dc2626; }
+.revo-pnl-note { font-size: 11.5px; color: var(--tx3); margin: 8px 2px 0; line-height: 1.45; }
+
 /* Ajuste fino en móvil */
 @media (max-width: 768px) {
   .revo-hero-val { font-size: 48px; }
@@ -958,6 +973,13 @@ nav {
       </svg>
       Inventario
     </div>
+    <div class="nav-item" data-module="appcc" onclick="loadModule('appcc', this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        <polyline points="9 12 11 14 15 10"/>
+      </svg>
+      APPCC
+    </div>
 
   </nav>
 
@@ -1001,6 +1023,7 @@ nav {
     <iframe id="frame-ventas"     class="module-frame" src="" title="Ventas"></iframe>
     <iframe id="frame-rrhh"       class="module-frame" src="" title="Personal"></iframe>
     <iframe id="frame-inventario" class="module-frame" src="" title="Inventario"></iframe>
+    <iframe id="frame-appcc"      class="module-frame" src="" title="APPCC"></iframe>
 
 <!-- ══ COPILOTO PANTALLA COMPLETA ══ -->
 <div id="copilot-overlay">
@@ -1082,13 +1105,15 @@ nav {
 const MODULE_FILES = {
   ventas:     'restaid_ventas.html',
   rrhh:       'restaid_rrhh.html',
-  inventario: 'restaid_inventario.html'
+  inventario: 'restaid_inventario.html',
+  appcc:      'restaid_appcc.html'
 };
 
 const MODULE_LABELS = {
   ventas: 'Ventas',
   rrhh: 'Personal',
-  inventario: 'Inventario'
+  inventario: 'Inventario',
+  appcc: 'APPCC'
 };
 
 const loadedModules = new Set();
@@ -1268,6 +1293,25 @@ function renderHomeRevo(box,r,v,pub){
   const capRef=v.perCapita||null;
   const fc=computeForecast(v);
   const fcMax=fc?Math.max(1,...fc.dias.map(d=>d.eur||0)):1;
+  // ── Cuenta de resultados (P&L) mensual estimada ──
+  let pnl=null;
+  try{
+    const em=(v&&v.evolucionMensual)||{}; const meses=Object.keys(em).sort();
+    if(meses.length&&foodc!=null){
+      const mes=meses[meses.length-1], R=em[mes];
+      if(R>0){
+        const foodE=R*foodc/100;
+        const laborE=(r&&r.costeSemana)?r.costeSemana*4.33:(lab!=null?R*lab/100:0);
+        const fijE=fijosMes();
+        const result=R-foodE-laborE-fijE;
+        const MA=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+        const pm=mes.split('-');
+        pnl={mesLbl:MA[(+pm[1])-1]+' '+pm[0], R, foodE, laborE, fijE, result,
+          foodPct:Math.round(foodE/R*100), laborPct:Math.round(laborE/R*100),
+          fijPct:Math.round(fijE/R*100), resPct:Math.round(result/R*100)};
+      }
+    }
+  }catch(e){}
   if(HOME_PERIOD==='hoy'){
     // Previsión de hoy desde el motor de previsión (estimado)
     estimado=true;
@@ -1364,6 +1408,17 @@ function renderHomeRevo(box,r,v,pub){
     cum.forEach(e=>chips.push({sev:4,ic:'🎂',txt:'Hoy cumple '+e.nombre,mod:'rrhh'}));
   }
 
+  // APPCC (seguridad alimentaria) — pendientes y fuera de rango de hoy
+  if(db.appcc&&db.appcc.config){
+    const A=db.appcc, eqs=A.config.equipos||[], tomas=A.config.tomas||[], tareas=A.config.tareas||[];
+    let pendT=0,fuera=0;
+    eqs.forEach(eq=>tomas.forEach(tm=>{ const r=(A.temp||[]).find(t=>t.equipoId===eq.id&&t.toma===tm&&t.fecha===todayS); if(!r)pendT++; else if(r.ok===false)fuera++; }));
+    const pendTar=tareas.filter(t=>(t.frec||'diaria')==='diaria'&&!(A.tareasLog||[]).some(l=>l.tareaId===t.id&&l.fecha===todayS)).length;
+    if(fuera)chips.push({sev:0,ic:'🌡️',txt:fuera+' temperatura'+(fuera>1?'s':'')+' fuera de rango hoy',mod:'appcc'});
+    if(pendT)chips.push({sev:1,ic:'🌡️',txt:pendT+' temperatura'+(pendT>1?'s':'')+' sin registrar hoy',mod:'appcc'});
+    if(pendTar)chips.push({sev:2,ic:'🧼',txt:pendTar+' tarea'+(pendTar>1?'s':'')+' de APPCC pendiente'+(pendTar>1?'s':''),mod:'appcc'});
+  }
+
   chips.sort((a,b)=>a.sev-b.sev);   // lo más urgente, primero
 
   const estado=prime==null?null:prime<60?{txt:'Prime cost sano',col:'#16a34a'}:prime<65?{txt:'Prime cost ajustado',col:'#d97706'}:{txt:'Prime cost alto',col:'#dc2626'};
@@ -1454,6 +1509,21 @@ function renderHomeRevo(box,r,v,pub){
         </div>`).join('')}
       </div>
       <div class="revo-fc-note">Estimación desde tu histórico (media por día de la semana${fc.trend!==1?', tendencia ×'+fc.trend:''}). «Afinar con IA» añade festivos, puentes y eventos.</div>`:''}
+
+      ${pnl?`
+      <div class="revo-section-row">
+        <div class="revo-section-lbl">Cuenta de resultados</div>
+        <span style="font-size:11.5px;color:var(--tx3)">${pnl.mesLbl} · estimado</span>
+      </div>
+      <div class="revo-pnl">
+        <div class="revo-pnl-row"><span>Ingresos</span><b>${fmtE(pnl.R)}</b></div>
+        <div class="revo-pnl-row neg"><span>− Materia prima<i>${pnl.foodPct}%</i></span><b>−${fmtE(pnl.foodE)}</b></div>
+        <div class="revo-pnl-row neg"><span>− Personal<i>${pnl.laborPct}%</i></span><b>−${fmtE(pnl.laborE)}</b></div>
+        <div class="revo-pnl-row sub"><span>Margen bruto</span><b>${fmtE(pnl.R-pnl.foodE-pnl.laborE)}</b></div>
+        <div class="revo-pnl-row neg"><span>− Costes fijos<i>${pnl.fijPct}%</i></span><b>−${fmtE(pnl.fijE)}</b></div>
+        <div class="revo-pnl-row result ${pnl.result>=0?'pos':'negv'}"><span>Resultado<i>${pnl.resPct}%</i></span><b>${pnl.result<0?'−':''}${fmtE(Math.abs(pnl.result))}</b></div>
+      </div>
+      ${pnl.fijE===0?`<div class="revo-pnl-note">Sin costes fijos configurados: el resultado solo refleja materia prima y personal. <span onclick="abrirFijos()" style="color:var(--amber);cursor:pointer;text-decoration:underline">Configúralos →</span></div>`:`<div class="revo-pnl-note">Estimación: materia prima sobre las ventas del mes, personal del cuadrante (×4,33 sem.) y tus costes fijos.</div>`}`:''}
 
       <button class="revo-fijos" onclick="abrirFijos()">⚙ Configurar costes fijos</button>
     </div>`;
@@ -1682,6 +1752,7 @@ function readAllData() {
     inventario: parse('restaid_inv_v1'),
     rrhh:       parse('restaid_rrhh_v1'),
     escandallo: parse('restaid_escandallo_int_v1'),
+    appcc:      parse('restaid_appcc_v1'),
     ventas:     pub.ventas || null
   };
 }
