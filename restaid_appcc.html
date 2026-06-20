@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>APPCC · RESTAID</title>
+<style>
+:root{
+  --navy:#1A2B3C;--navy-mid:#243547;--navy-lt:#2E4259;
+  --amber:#E8914A;--amber-dk:#C8712A;--amber-lt:#F5C49A;
+  --bg:#F5F4F0;--surf:#FFFFFF;--surf-alt:#FAFAF8;
+  --bdr:#E6E4DF;--bdr-strong:#CCC9C0;
+  --tx:#1C2428;--tx2:#596570;--tx3:#98A3AC;
+  --green:#1D7A4A;--green-bg:#E6F5EE;
+  --red:#C03020;--red-bg:#FAECEA;
+  --ylw:#B07010;--ylw-bg:#FBF5E0;
+  --ff:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  --ff-head:'Inter',sans-serif;
+  --sh:0 2px 10px rgba(20,30,40,.05);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--ff);background:var(--bg);color:var(--tx);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1100px;margin:0 auto;padding:22px 22px 60px}
+.page-hd{margin-bottom:18px}
+.page-hd h2{font-family:var(--ff-head);font-size:24px;font-weight:700;letter-spacing:-.01em}
+.page-hd p{color:var(--tx2);font-size:13px;margin-top:2px}
+/* Tabs */
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--bdr);margin-bottom:20px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tab{padding:10px 16px;font-size:14px;font-weight:600;color:var(--tx2);cursor:pointer;white-space:nowrap;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab:hover{color:var(--tx)}
+.tab.active{color:var(--navy);border-bottom-color:var(--amber)}
+.page{display:none}.page.active{display:block}
+/* Cards */
+.card{background:var(--surf);border:1px solid var(--bdr);border-radius:14px;padding:16px 18px;box-shadow:var(--sh);margin-bottom:16px}
+.card-h{font-family:var(--ff-head);font-weight:600;font-size:15px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.card-h .sub{font-size:11.5px;color:var(--tx3);font-weight:400}
+.cat-lbl{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--tx3);margin:14px 0 8px}
+.cat-lbl:first-child{margin-top:0}
+/* Temp rows */
+.trow{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--bdr)}
+.trow:last-child{border-bottom:none}
+.trow-main{flex:1;min-width:0}
+.trow-name{font-weight:600}
+.trow-meta{font-size:11.5px;color:var(--tx3)}
+.trow-in{width:78px;padding:7px 8px;border:1px solid var(--bdr);border-radius:8px;text-align:right;font-size:16px;font-variant-numeric:tabular-nums}
+.trow-in:focus{outline:none;border-color:var(--amber)}
+.trow-toma{font-size:11px;color:var(--tx2);background:var(--surf-alt);border:1px solid var(--bdr);border-radius:8px;padding:3px 8px;white-space:nowrap}
+.tval{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tval.bad{color:var(--red)}.tval.ok{color:var(--green)}
+.taccion{width:100%;margin-top:8px;padding:8px 10px;border:1px solid var(--red);border-radius:8px;font-size:13px;font-family:inherit;background:var(--red-bg)}
+.taccion:focus{outline:none}
+.badge{display:inline-block;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:600}
+.badge.ok{background:var(--green-bg);color:var(--green)}
+.badge.bad{background:var(--red-bg);color:var(--red)}
+.badge.pend{background:var(--ylw-bg);color:var(--ylw)}
+/* Checklist */
+.chk{display:flex;align-items:center;gap:11px;padding:9px 0;border-bottom:1px solid var(--bdr);cursor:pointer;user-select:none}
+.chk:last-child{border-bottom:none}
+.chk-box{width:22px;height:22px;border:2px solid var(--bdr-strong);border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .12s}
+.chk.done .chk-box{background:var(--green);border-color:var(--green)}
+.chk-box svg{width:13px;height:13px;stroke:#fff;stroke-width:3;fill:none;opacity:0}
+.chk.done .chk-box svg{opacity:1}
+.chk-tx{flex:1}
+.chk.done .chk-tx{color:var(--tx3);text-decoration:line-through}
+.chk-frec{font-size:10px;color:var(--tx3);background:var(--surf-alt);border-radius:8px;padding:2px 7px}
+/* Tables */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--bdr);border-radius:10px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:9px 12px;background:var(--surf-alt);color:var(--tx2);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.02em;border-bottom:1px solid var(--bdr);white-space:nowrap}
+td{padding:9px 12px;border-bottom:1px solid var(--bdr)}
+tr:last-child td{border-bottom:none}
+.td-num{text-align:right;font-variant-numeric:tabular-nums}
+/* Forms / buttons */
+.field{margin-bottom:12px}
+.field label{display:block;font-size:12.5px;font-weight:600;color:var(--tx2);margin-bottom:5px}
+.field input,.field select{width:100%;padding:9px 11px;border:1px solid var(--bdr);border-radius:9px;font-size:16px;font-family:inherit;background:var(--surf)}
+.field input:focus,.field select:focus{outline:none;border-color:var(--amber)}
+.field-hint{font-size:11.5px;color:var(--tx3);margin-top:4px}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.row .field{flex:1;min-width:120px}
+.btn{border:none;border-radius:9px;padding:9px 15px;font-size:13.5px;font-weight:600;font-family:inherit;cursor:pointer;transition:transform .08s,filter .12s}
+.btn:active{transform:scale(.97)}
+.btn-amber{background:var(--amber);color:#fff}
+.btn-amber:hover{filter:brightness(1.04)}
+.btn-navy{background:var(--navy);color:#fff}
+.btn-ghost{background:var(--surf);color:var(--tx2);border:1px solid var(--bdr)}
+.btn-sm{padding:6px 11px;font-size:12.5px}
+.btn-xs{padding:4px 9px;font-size:11.5px}
+.btn-red{color:var(--red);background:var(--surf);border:1px solid var(--bdr)}
+.ico-del{color:var(--red);background:none;border:none;cursor:pointer;font-size:15px;padding:4px 6px}
+.empty{text-align:center;padding:34px 18px;color:var(--tx2)}
+.empty-ic{font-size:40px;margin-bottom:8px}
+.note{font-size:11.5px;color:var(--tx3);margin-top:8px;line-height:1.45}
+.allclear{display:flex;align-items:center;gap:8px;color:var(--green);font-size:13.5px;font-weight:600;padding:6px 0}
+.inc-form{display:flex;flex-direction:column;gap:8px}
+.inc-item{padding:10px 0;border-bottom:1px solid var(--bdr)}
+.inc-item:last-child{border-bottom:none}
+.inc-desc{font-weight:600}
+.inc-acc{font-size:12.5px;color:var(--tx2);margin-top:2px}
+.inc-meta{font-size:11px;color:var(--tx3);margin-top:3px}
+.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+.sm-card{background:var(--surf);border:1px solid var(--bdr);border-radius:12px;padding:12px 14px;box-shadow:var(--sh)}
+.sm-val{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
+.sm-lbl{font-size:11.5px;color:var(--tx3);margin-top:2px}
+.sm-card.alert .sm-val{color:var(--red)}
+.sm-card.good .sm-val{color:var(--green)}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:11px 20px;border-radius:10px;font-size:13.5px;font-weight:500;box-shadow:0 6px 24px rgba(0,0,0,.2);z-index:999}
+@media(max-width:600px){
+  .wrap{padding:16px 14px 50px}
+  .page-hd h2{font-size:21px}
+  .summary{grid-template-columns:1fr 1fr}
+  .trow{flex-wrap:wrap}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="page-hd"><h2>APPCC · Seguridad alimentaria</h2><p>Temperaturas, limpieza y checklists de apertura y cierre</p></div>
+  <div class="tabs">
+    <div class="tab active" data-page="hoy" onclick="showTab('hoy')">Hoy</div>
+    <div class="tab" data-page="registros" onclick="showTab('registros')">Registros</div>
+    <div class="tab" data-page="config" onclick="showTab('config')">Configuración</div>
+  </div>
+  <div class="page active" id="pg-hoy"></div>
+  <div class="page" id="pg-registros"></div>
+  <div class="page" id="pg-config"></div>
+</div>
+
+<script>
+/* ════════════ Helpers ════════════ */
+const $=id=>document.getElementById(id);
+const uid=()=>Math.random().toString(36).slice(2,9);
+const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const hoyISO=()=>new Date().toISOString().slice(0,10);
+function isoWeek(d){const t=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));const day=t.getUTCDay()||7;t.setUTCDate(t.getUTCDate()+4-day);const y=new Date(Date.UTC(t.getUTCFullYear(),0,1));return t.getUTCFullYear()+'-W'+String(Math.ceil((((t-y)/864e5)+1)/7)).padStart(2,'0');}
+const weekOf=iso=>isoWeek(new Date(iso+'T00:00:00'));
+const monthOf=iso=>iso.slice(0,7);
+const fmtHora=ts=>{const d=new Date(ts);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');};
+const fmtFecha=iso=>{const[y,m,d]=iso.split('-');return d+'/'+m+'/'+y;};
+const FREC_LBL={diaria:'Diaria',semanal:'Semanal',mensual:'Mensual'};
+let TOAST_T=null;
+function toast(msg){const ex=$('appcc-toast');if(ex)ex.remove();const d=document.createElement('div');d.className='toast';d.id='appcc-toast';d.textContent=msg;document.body.appendChild(d);clearTimeout(TOAST_T);TOAST_T=setTimeout(()=>d.remove(),2600);}
+
+/* ════════════ Persistencia ════════════ */
+const STORE='restaid_appcc_v1';
+function defaultDB(){
+  return {
+    config:{
+      equipos:[
+        {id:uid(),nombre:'Cámara de refrigeración',min:0,max:4},
+        {id:uid(),nombre:'Congelador',min:-22,max:-18},
+        {id:uid(),nombre:'Vitrina expositora',min:0,max:4}
+      ],
+      tareas:[
+        {id:uid(),nombre:'Comprobar temperaturas de las cámaras',cat:'Apertura',frec:'diaria'},
+        {id:uid(),nombre:'Encender y revisar equipos',cat:'Apertura',frec:'diaria'},
+        {id:uid(),nombre:'Revisar caducidades del día',cat:'Apertura',frec:'diaria'},
+        {id:uid(),nombre:'Limpiar y apagar plancha / fogones',cat:'Cierre',frec:'diaria'},
+        {id:uid(),nombre:'Guardar y tapar el género',cat:'Cierre',frec:'diaria'},
+        {id:uid(),nombre:'Sacar basuras y reciclaje',cat:'Cierre',frec:'diaria'},
+        {id:uid(),nombre:'Limpieza de superficies de trabajo',cat:'Limpieza',frec:'diaria'},
+        {id:uid(),nombre:'Limpieza de suelos de cocina',cat:'Limpieza',frec:'diaria'},
+        {id:uid(),nombre:'Limpieza a fondo de cámaras',cat:'Limpieza',frec:'semanal'}
+      ],
+      tomas:['Mañana','Tarde']
+    },
+    temp:[], tareasLog:[], incidencias:[]
+  };
+}
+function loadDB(){try{const s=localStorage.getItem(STORE);if(!s)return defaultDB();const d=JSON.parse(s);return{...defaultDB(),...d,config:{...defaultDB().config,...(d.config||{})}};}catch(e){return defaultDB();}}
+function save(){DB._ts=Date.now();try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(e){}try{window.parent.postMessage({type:'restaid_pub',key:STORE,value:JSON.stringify(DB)},'*');}catch(e){}sbSet();}
+
+window.addEventListener('message',function(e){
+  if(e.data&&e.data.type==='restaid_pass'&&e.data.pass){try{localStorage.setItem('restaid_pass',e.data.pass);}catch(err){}}
+  if(e.data&&e.data.type==='restaid_request_pub'){try{if(typeof DB!=='undefined'&&DB)window.parent.postMessage({type:'restaid_pub',key:STORE,value:JSON.stringify(DB)},'*');}catch(err){}}
+});
+
+/* ════════════ Supabase (tabla: appcc — crear como rrhh: restaurante text, datos jsonb) ════════════ */
+const SB_URL='https://gtdsqvebuhdndfaiqoyj.supabase.co';
+const SB_KEY='sb_publishable_cu53L_4O6Rz-RlGurDI3Kg_CJHqaa8U';
+const SB_RESTAURANTE='default';
+const SB_TABLE='appcc';
+async function sbGet(){
+  try{
+    const r=await fetch(`${SB_URL}/rest/v1/${SB_TABLE}?restaurante=eq.${SB_RESTAURANTE}&select=datos`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}});
+    if(!r.ok)return null;const d=await r.json();return d&&d[0]?d[0].datos:null;
+  }catch(e){return null;}
+}
+let SB_TIMER=null;
+function sbSet(){clearTimeout(SB_TIMER);SB_TIMER=setTimeout(sbWriteNow,1500);}
+async function sbWriteNow(){
+  try{
+    const rPatch=await fetch(`${SB_URL}/rest/v1/${SB_TABLE}?restaurante=eq.${SB_RESTAURANTE}`,{
+      method:'PATCH',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=representation'},
+      body:JSON.stringify({datos:DB})});
+    const txt=await rPatch.text().catch(()=>'');let patched=[];try{patched=JSON.parse(txt);}catch(e){}
+    if(Array.isArray(patched)&&patched.length===0){
+      await fetch(`${SB_URL}/rest/v1/${SB_TABLE}`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+        body:JSON.stringify({restaurante:SB_RESTAURANTE,datos:DB})});
+    }
+  }catch(e){}
+}
+
+let DB=loadDB();
+(async()=>{
+  const remote=await sbGet();
+  if(remote&&(!DB._ts||(remote._ts||0)>DB._ts)){
+    DB={...defaultDB(),...remote,config:{...defaultDB().config,...(remote.config||{})}};
+    try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(e){}
+    render();
+  }
+})();
+
+/* ════════════ Lógica de registros ════════════ */
+function tempDe(equipoId,toma,fecha){return DB.temp.find(t=>t.equipoId===equipoId&&t.toma===toma&&t.fecha===fecha);}
+function tareaHecha(tareaId,frec){
+  const hoy=hoyISO();const logs=DB.tareasLog.filter(l=>l.tareaId===tareaId);
+  if(frec==='semanal')return logs.some(l=>weekOf(l.fecha)===weekOf(hoy));
+  if(frec==='mensual')return logs.some(l=>monthOf(l.fecha)===monthOf(hoy));
+  return logs.some(l=>l.fecha===hoy);
+}
+function pendientesHoy(){
+  const hoy=hoyISO();let pendT=0,fuera=0;
+  (DB.config.equipos||[]).forEach(eq=>(DB.config.tomas||[]).forEach(tm=>{const r=tempDe(eq.id,tm,hoy);if(!r)pendT++;else if(!r.ok)fuera++;}));
+  const pendTareas=(DB.config.tareas||[]).filter(t=>!tareaHecha(t.id,t.frec||'diaria')).length;
+  return {pendT,fuera,pendTareas};
+}
+
+function saveTemp(equipoId,tomaIdx){
+  const toma=DB.config.tomas[tomaIdx];
+  const inp=$('t-'+equipoId+'-'+tomaIdx);if(!inp)return;
+  const val=parseFloat((inp.value||'').replace(',','.'));
+  if(isNaN(val)){toast('Introduce la temperatura');inp.focus();return;}
+  const eq=DB.config.equipos.find(e=>e.id===equipoId);if(!eq)return;
+  const ok=val>=Number(eq.min)&&val<=Number(eq.max);
+  const ex=tempDe(equipoId,toma,hoyISO());
+  if(ex){ex.valor=val;ex.ok=ok;ex.ts=Date.now();}
+  else DB.temp.push({id:uid(),fecha:hoyISO(),equipoId,toma,valor:val,ok,accion:'',ts:Date.now()});
+  save();renderHoy();
+  if(!ok)toast('⚠ Fuera de rango: registra la acción correctora');
+}
+function updAccion(id,v){const r=DB.temp.find(t=>t.id===id);if(r){r.accion=v;save();}}
+function borrarTemp(id){DB.temp=DB.temp.filter(t=>t.id!==id);save();renderHoy();}
+
+function toggleTarea(tareaId,frec){
+  const hoy=hoyISO();
+  if(tareaHecha(tareaId,frec)){
+    DB.tareasLog=DB.tareasLog.filter(l=>{
+      if(l.tareaId!==tareaId)return true;
+      if(frec==='semanal')return weekOf(l.fecha)!==weekOf(hoy);
+      if(frec==='mensual')return monthOf(l.fecha)!==monthOf(hoy);
+      return l.fecha!==hoy;
+    });
+  }else DB.tareasLog.push({id:uid(),tareaId,fecha:hoy,ts:Date.now()});
+  save();renderHoy();
+}
+
+function addIncidencia(){
+  const desc=($('inc-desc').value||'').trim();const acc=($('inc-acc').value||'').trim();
+  if(!desc){toast('Describe la incidencia');return;}
+  DB.incidencias.unshift({id:uid(),fecha:hoyISO(),desc,accion:acc,ts:Date.now()});
+  save();renderHoy();toast('Incidencia registrada');
+}
+function delIncidencia(id){if(!confirm('¿Eliminar esta incidencia del registro?'))return;DB.incidencias=DB.incidencias.filter(x=>x.id!==id);save();render();}
+
+/* ════════════ Vista: HOY ════════════ */
+function showTab(id){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.page===id));
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  $('pg-'+id).classList.add('active');
+  ({hoy:renderHoy,registros:renderRegistros,config:renderConfig}[id]||function(){})();
+}
+
+function renderHoy(){
+  const pg=$('pg-hoy');const hoy=hoyISO();
+  const eqs=DB.config.equipos||[],tomas=DB.config.tomas||[],tareas=DB.config.tareas||[];
+  const p=pendientesHoy();
+  // Temperaturas
+  let tempHTML='';
+  if(!eqs.length){tempHTML=`<p class="note">No hay equipos configurados. Añádelos en <b>Configuración</b>.</p>`;}
+  else{
+    tomas.forEach((tm,ti)=>{
+      const rows=eqs.map(eq=>{
+        const r=tempDe(eq.id,tm,hoy);
+        const rango=`${eq.min}° a ${eq.max}°C`;
+        if(r){
+          return `<div class="trow">
+            <div class="trow-main"><div class="trow-name">${esc(eq.nombre)}</div><div class="trow-meta">Rango ${rango}</div>
+              ${!r.ok?`<input class="taccion" placeholder="Acción correctora (obligatoria): ¿qué hiciste?" value="${esc(r.accion||'')}" onchange="updAccion('${r.id}',this.value)">`:''}
+            </div>
+            <span class="tval ${r.ok?'ok':'bad'}">${r.valor}°C</span>
+            <span class="badge ${r.ok?'ok':'bad'}">${r.ok?'OK':'Fuera'}</span>
+            <button class="ico-del" title="Rehacer" onclick="borrarTemp('${r.id}')">↺</button>
+          </div>`;
+        }
+        return `<div class="trow">
+          <div class="trow-main"><div class="trow-name">${esc(eq.nombre)}</div><div class="trow-meta">Rango ${rango}</div></div>
+          <input class="trow-in" id="t-${eq.id}-${ti}" type="number" step="0.1" inputmode="decimal" placeholder="°C">
+          <button class="btn btn-amber btn-sm" onclick="saveTemp('${eq.id}',${ti})">Guardar</button>
+        </div>`;
+      }).join('');
+      tempHTML+=`<div class="cat-lbl">Toma · ${esc(tm)}</div>${rows}`;
+    });
+  }
+  // Checklist por categoría
+  const cats=['Apertura','Cierre','Limpieza'];
+  let chkHTML='';
+  cats.forEach(cat=>{
+    const ts=tareas.filter(t=>t.cat===cat);if(!ts.length)return;
+    chkHTML+=`<div class="cat-lbl">${cat}</div>`+ts.map(t=>{
+      const frec=t.frec||'diaria';const done=tareaHecha(t.id,frec);
+      return `<div class="chk ${done?'done':''}" onclick="toggleTarea('${t.id}','${frec}')">
+        <div class="chk-box"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <div class="chk-tx">${esc(t.nombre)}</div>
+        ${frec!=='diaria'?`<span class="chk-frec">${FREC_LBL[frec]}</span>`:''}
+      </div>`;
+    }).join('');
+  });
+  if(!chkHTML)chkHTML=`<p class="note">No hay tareas configuradas. Añádelas en <b>Configuración</b>.</p>`;
+  // Incidencias de hoy
+  const incHoy=DB.incidencias.filter(i=>i.fecha===hoy);
+  const incHTML=incHoy.map(i=>`<div class="inc-item">
+    <div class="inc-desc">${esc(i.desc)}</div>
+    ${i.accion?`<div class="inc-acc">↳ ${esc(i.accion)}</div>`:''}
+    <div class="inc-meta">${fmtHora(i.ts)} · <span style="color:var(--red);cursor:pointer" onclick="delIncidencia('${i.id}')">eliminar</span></div>
+  </div>`).join('');
+
+  pg.innerHTML=`
+    <div class="summary">
+      <div class="sm-card ${p.pendT?'alert':'good'}"><div class="sm-val">${p.pendT}</div><div class="sm-lbl">Temperaturas pendientes</div></div>
+      <div class="sm-card ${p.fuera?'alert':'good'}"><div class="sm-val">${p.fuera}</div><div class="sm-lbl">Fuera de rango hoy</div></div>
+      <div class="sm-card ${p.pendTareas?'alert':'good'}"><div class="sm-val">${p.pendTareas}</div><div class="sm-lbl">Tareas pendientes</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">🌡️ Control de temperaturas <span class="sub">${new Date().toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'})}</span></div>
+      ${tempHTML}
+    </div>
+
+    <div class="card">
+      <div class="card-h">✅ Apertura, cierre y limpieza</div>
+      ${chkHTML}
+    </div>
+
+    <div class="card">
+      <div class="card-h">⚠️ Incidencias de hoy</div>
+      ${incHTML||'<div class="allclear">✓ Sin incidencias registradas hoy.</div>'}
+      <div class="inc-form" style="margin-top:14px">
+        <input class="trow-in" style="width:100%;text-align:left;font-size:16px;padding:9px 11px;border-radius:9px" id="inc-desc" placeholder="¿Qué ha pasado? (ej. avería de la cámara, producto en mal estado…)">
+        <input class="trow-in" style="width:100%;text-align:left;font-size:16px;padding:9px 11px;border-radius:9px" id="inc-acc" placeholder="Acción correctora tomada">
+        <div><button class="btn btn-navy btn-sm" onclick="addIncidencia()">+ Registrar incidencia</button></div>
+      </div>
+    </div>`;
+  publishedHoy();
+}
+function publishedHoy(){/* el shell lee restaid_appcc_v1 directamente; este hook queda por si se requiere refresco */}
+
+/* ════════════ Vista: REGISTROS ════════════ */
+let REG_DIAS=14;
+function setRegDias(n){REG_DIAS=n;renderRegistros();}
+function enRango(iso){const lim=new Date();lim.setDate(lim.getDate()-REG_DIAS);return new Date(iso+'T00:00:00')>=new Date(lim.toISOString().slice(0,10)+'T00:00:00');}
+function nombreEquipo(id){const e=(DB.config.equipos||[]).find(x=>x.id===id);return e?e.nombre:'(equipo eliminado)';}
+function nombreTarea(id){const t=(DB.config.tareas||[]).find(x=>x.id===id);return t?t.nombre:'(tarea eliminada)';}
+function catTarea(id){const t=(DB.config.tareas||[]).find(x=>x.id===id);return t?t.cat:'';}
+
+function renderRegistros(){
+  const pg=$('pg-registros');
+  const temps=DB.temp.filter(t=>enRango(t.fecha)).sort((a,b)=>b.ts-a.ts);
+  const tlog=DB.tareasLog.filter(t=>enRango(t.fecha)).sort((a,b)=>b.ts-a.ts);
+  const incs=DB.incidencias.filter(i=>enRango(i.fecha)).sort((a,b)=>b.ts-a.ts);
+  const sel=d=>`<button class="btn btn-xs ${REG_DIAS===d?'btn-amber':'btn-ghost'}" onclick="setRegDias(${d})">${d} días</button>`;
+
+  const tempRows=temps.map(t=>`<tr>
+    <td>${fmtFecha(t.fecha)}</td><td>${fmtHora(t.ts)}</td><td>${esc(nombreEquipo(t.equipoId))}</td><td>${esc(t.toma)}</td>
+    <td class="td-num">${t.valor}°C</td><td><span class="badge ${t.ok?'ok':'bad'}">${t.ok?'OK':'Fuera'}</span></td>
+    <td>${t.ok?'—':esc(t.accion||'—')}</td></tr>`).join('');
+  const taskRows=tlog.map(t=>`<tr>
+    <td>${fmtFecha(t.fecha)}</td><td>${fmtHora(t.ts)}</td><td>${esc(nombreTarea(t.tareaId))}</td><td>${esc(catTarea(t.tareaId))}</td></tr>`).join('');
+  const incRows=incs.map(i=>`<tr>
+    <td>${fmtFecha(i.fecha)}</td><td>${fmtHora(i.ts)}</td><td>${esc(i.desc)}</td><td>${esc(i.accion||'—')}</td></tr>`).join('');
+
+  pg.innerHTML=`
+    <div class="card">
+      <div class="card-h">Registros para inspección <span class="sub">${sel(7)} ${sel(14)} ${sel(30)}</span></div>
+      <p class="note">El registro de temperaturas, limpieza e incidencias debe conservarse y poder mostrarse en inspección. Expórtalo periódicamente.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-h">🌡️ Temperaturas <span class="sub"><button class="btn btn-ghost btn-xs" onclick="exportCSV('temp')">⬇ CSV</button></span></div>
+      ${temps.length?`<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Hora</th><th>Equipo</th><th>Toma</th><th class="td-num">Valor</th><th>Estado</th><th>Acción correctora</th></tr></thead><tbody>${tempRows}</tbody></table></div>`:'<p class="note">Sin registros de temperatura en el periodo.</p>'}
+    </div>
+
+    <div class="card">
+      <div class="card-h">✅ Tareas y limpieza <span class="sub"><button class="btn btn-ghost btn-xs" onclick="exportCSV('tareas')">⬇ CSV</button></span></div>
+      ${tlog.length?`<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Hora</th><th>Tarea</th><th>Categoría</th></tr></thead><tbody>${taskRows}</tbody></table></div>`:'<p class="note">Sin tareas registradas en el periodo.</p>'}
+    </div>
+
+    <div class="card">
+      <div class="card-h">⚠️ Incidencias <span class="sub"><button class="btn btn-ghost btn-xs" onclick="exportCSV('incidencias')">⬇ CSV</button></span></div>
+      ${incs.length?`<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Hora</th><th>Incidencia</th><th>Acción correctora</th></tr></thead><tbody>${incRows}</tbody></table></div>`:'<p class="note">Sin incidencias en el periodo.</p>'}
+    </div>`;
+}
+
+function exportCSV(tipo){
+  let rows,nombre;
+  if(tipo==='temp'){
+    rows=[['Fecha','Hora','Equipo','Toma','Valor (°C)','Estado','Accion correctora']];
+    DB.temp.slice().sort((a,b)=>a.ts-b.ts).forEach(t=>rows.push([t.fecha,fmtHora(t.ts),nombreEquipo(t.equipoId),t.toma,t.valor,t.ok?'OK':'Fuera de rango',t.accion||'']));
+    nombre='appcc_temperaturas';
+  }else if(tipo==='tareas'){
+    rows=[['Fecha','Hora','Tarea','Categoria']];
+    DB.tareasLog.slice().sort((a,b)=>a.ts-b.ts).forEach(t=>rows.push([t.fecha,fmtHora(t.ts),nombreTarea(t.tareaId),catTarea(t.tareaId)]));
+    nombre='appcc_tareas';
+  }else{
+    rows=[['Fecha','Hora','Incidencia','Accion correctora']];
+    DB.incidencias.slice().sort((a,b)=>a.ts-b.ts).forEach(i=>rows.push([i.fecha,fmtHora(i.ts),i.desc,i.accion||'']));
+    nombre='appcc_incidencias';
+  }
+  if(rows.length<=1){toast('No hay datos que exportar');return;}
+  const csv=rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(';')).join('\n');
+  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=nombre+'_'+hoyISO()+'.csv';a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast('Exportado');
+}
+
+/* ════════════ Vista: CONFIGURACIÓN ════════════ */
+function renderConfig(){
+  const pg=$('pg-config');
+  const eqRows=(DB.config.equipos||[]).map(e=>`<tr>
+    <td><b>${esc(e.nombre)}</b></td><td class="td-num">${e.min}°C</td><td class="td-num">${e.max}°C</td>
+    <td style="text-align:right"><button class="ico-del" onclick="delEquipo('${e.id}')">🗑</button></td></tr>`).join('');
+  const cats=['Apertura','Cierre','Limpieza'];
+  let tareasHTML='';
+  cats.forEach(cat=>{
+    const ts=(DB.config.tareas||[]).filter(t=>t.cat===cat);if(!ts.length)return;
+    tareasHTML+=`<div class="cat-lbl">${cat}</div>`+ts.map(t=>`<div class="trow">
+      <div class="trow-main"><div class="trow-name">${esc(t.nombre)}</div><div class="trow-meta">${FREC_LBL[t.frec||'diaria']}</div></div>
+      <button class="ico-del" onclick="delTarea('${t.id}')">🗑</button></div>`).join('');
+  });
+  if(!tareasHTML)tareasHTML='<p class="note">Aún no hay tareas. Añade alguna abajo.</p>';
+  const tomasHTML=(DB.config.tomas||[]).map((tm,i)=>`<span class="trow-toma" style="margin-right:6px">${esc(tm)} <span style="color:var(--red);cursor:pointer" onclick="delToma(${i})">×</span></span>`).join('');
+
+  pg.innerHTML=`
+    <div class="card">
+      <div class="card-h">🌡️ Equipos con control de temperatura</div>
+      ${(DB.config.equipos||[]).length?`<div class="tbl-wrap" style="margin-bottom:14px"><table><thead><tr><th>Equipo</th><th class="td-num">Mín</th><th class="td-num">Máx</th><th></th></tr></thead><tbody>${eqRows}</tbody></table></div>`:''}
+      <div class="row">
+        <div class="field" style="flex:2"><label>Nombre del equipo</label><input id="eq-nom" placeholder="Ej. Cámara de pescado"></div>
+        <div class="field"><label>Mín °C</label><input id="eq-min" type="number" step="0.1" placeholder="0"></div>
+        <div class="field"><label>Máx °C</label><input id="eq-max" type="number" step="0.1" placeholder="4"></div>
+      </div>
+      <button class="btn btn-amber btn-sm" onclick="addEquipo()">+ Añadir equipo</button>
+    </div>
+
+    <div class="card">
+      <div class="card-h">⏱️ Tomas de temperatura al día</div>
+      <div style="margin-bottom:12px">${tomasHTML||'<span class="note">Sin tomas definidas</span>'}</div>
+      <div class="row">
+        <div class="field" style="flex:2"><label>Nueva toma</label><input id="toma-nom" placeholder="Ej. Mediodía, Noche…"></div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="addToma()">+ Añadir toma</button>
+      <p class="note">Cada toma genera una comprobación por equipo en la pestaña «Hoy».</p>
+    </div>
+
+    <div class="card">
+      <div class="card-h">✅ Tareas de apertura, cierre y limpieza</div>
+      ${tareasHTML}
+      <div class="row" style="margin-top:14px">
+        <div class="field" style="flex:2"><label>Nueva tarea</label><input id="ta-nom" placeholder="Ej. Comprobar cierre de gas"></div>
+        <div class="field"><label>Categoría</label><select id="ta-cat"><option>Apertura</option><option>Cierre</option><option>Limpieza</option></select></div>
+        <div class="field"><label>Frecuencia</label><select id="ta-frec"><option value="diaria">Diaria</option><option value="semanal">Semanal</option><option value="mensual">Mensual</option></select></div>
+      </div>
+      <button class="btn btn-amber btn-sm" onclick="addTarea()">+ Añadir tarea</button>
+    </div>`;
+}
+function addEquipo(){
+  const nom=($('eq-nom').value||'').trim();const min=parseFloat($('eq-min').value);const max=parseFloat($('eq-max').value);
+  if(!nom){toast('Pon el nombre del equipo');return;}
+  if(isNaN(min)||isNaN(max)){toast('Indica el rango mín/máx');return;}
+  if(min>max){toast('El mínimo no puede ser mayor que el máximo');return;}
+  DB.config.equipos.push({id:uid(),nombre:nom,min,max});save();renderConfig();toast('Equipo añadido');
+}
+function delEquipo(id){if(!confirm('¿Eliminar este equipo? Sus registros históricos se conservan.'))return;DB.config.equipos=DB.config.equipos.filter(e=>e.id!==id);save();renderConfig();}
+function addToma(){const v=($('toma-nom').value||'').trim();if(!v){toast('Escribe el nombre de la toma');return;}if(DB.config.tomas.includes(v)){toast('Esa toma ya existe');return;}DB.config.tomas.push(v);save();renderConfig();}
+function delToma(i){DB.config.tomas.splice(i,1);save();renderConfig();}
+function addTarea(){
+  const nom=($('ta-nom').value||'').trim();if(!nom){toast('Pon el nombre de la tarea');return;}
+  DB.config.tareas.push({id:uid(),nombre:nom,cat:$('ta-cat').value,frec:$('ta-frec').value});save();renderConfig();toast('Tarea añadida');
+}
+function delTarea(id){if(!confirm('¿Eliminar esta tarea?'))return;DB.config.tareas=DB.config.tareas.filter(t=>t.id!==id);save();renderConfig();}
+
+/* ════════════ Init ════════════ */
+function render(){
+  const active=document.querySelector('.tab.active');
+  showTab(active?active.dataset.page:'hoy');
+}
+render();
+</script>
+</body>
+</html>
