@@ -811,6 +811,22 @@ nav {
   box-shadow: 0 1px 3px rgba(0,0,0,.35);
 }
 
+/* Motor de previsión: tira semanal */
+.revo-fc { display: flex; gap: 6px; }
+.revo-fc-day {
+  flex: 1 1 0; min-width: 0; text-align: center;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 8px 3px 7px;
+}
+.revo-fc-day.hoy { border-color: var(--amber); background: #fffaf5; }
+.revo-fc-dow { font-size: 10px; font-weight: 700; color: var(--tx2); text-transform: uppercase; }
+.revo-fc-date { font-size: 9px; color: var(--tx3); margin-bottom: 4px; }
+.revo-fc-eur { font-size: 12px; font-weight: 700; color: var(--tx1); white-space: nowrap; }
+.revo-fc-pax { font-size: 9px; color: var(--tx3); margin-top: 1px; }
+.revo-fc-bar { height: 24px; display: flex; align-items: flex-end; justify-content: center; margin-top: 5px; }
+.revo-fc-bar > span { width: 58%; background: var(--amber); border-radius: 3px 3px 0 0; min-height: 2px; display: block; opacity: .85; }
+.revo-fc-note { font-size: 11px; color: var(--tx3); margin-top: 8px; line-height: 1.4; }
+
 /* Ajuste fino en móvil */
 @media (max-width: 768px) {
   .revo-hero-val { font-size: 48px; }
@@ -1173,6 +1189,60 @@ function updateCopilotBadge(n){
   });
 }
 
+/* ── Motor de previsión de ventas ──────────────────────────
+   Base = media histórica por día de la semana (prevSemana, ya separada en Comida/Cena),
+   con un ajuste suave de tendencia (meses recientes vs media). El calendario/eventos
+   se incorporan con "Afinar con IA". Devuelve los próximos 7 días desde hoy. */
+function computeForecast(v){
+  if(!v||!v.prevSemana||!Object.keys(v.prevSemana).length) return null;
+  const DOW=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+  // Tendencia suave desde la evolución mensual (recientes vs media global)
+  let trend=1;
+  try{
+    const em=v.evolucionMensual||{};
+    const vals=Object.keys(em).sort().map(m=>em[m]).filter(x=>x>0);
+    if(vals.length>=4){
+      const overall=vals.reduce((s,x)=>s+x,0)/vals.length;
+      const rec=vals.slice(-3); const recent=rec.reduce((s,x)=>s+x,0)/rec.length;
+      if(overall>0) trend=Math.max(0.85,Math.min(1.2,recent/overall));
+    }
+  }catch(e){}
+  const cap=v.perCapita||null;
+  const ceur=n=>n>=1000?(n/1000).toFixed(1).replace('.',',')+'k':(n?n+'€':'—');
+  const out=[]; const base=new Date(); base.setHours(0,0,0,0);
+  for(let i=0;i<7;i++){
+    const d=new Date(base.getTime()+i*86400000);
+    const dow=DOW[(d.getDay()+6)%7];
+    const ps=v.prevSemana[dow];
+    const comida=ps?Math.round((Number(ps.Comida)||0)*trend):0;
+    const cena=ps?Math.round((Number(ps.Cena)||0)*trend):0;
+    const eur=comida+cena;
+    out.push({
+      iso:d.toISOString().slice(0,10), dow,
+      dd:String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0'),
+      comida, cena, eur, eurTxt:ceur(eur),
+      comensales:(eur&&cap)?Math.round(eur/cap):null,
+      hoy:i===0
+    });
+  }
+  return {dias:out, trend:Math.round(trend*100)/100};
+}
+
+/* ── Afinar la previsión con IA: el Copiloto incorpora calendario, festivos y eventos ── */
+function afinarPrevisionIA(){
+  const v=(readPub().ventas)||{};
+  const fc=computeForecast(v);
+  openCopilot();
+  if(!fc){
+    setTimeout(()=>sendMessage('Quiero una previsión de ventas para los próximos 7 días. Para calcularla necesito mi histórico cargado en el módulo Ventas. ¿Qué datos necesitas de mí?'),350);
+    return;
+  }
+  const tabla=fc.dias.map(d=>`${d.dow} ${d.dd}: ${d.eur}€${d.comensales!=null?' (~'+d.comensales+' comensales)':''}`).join('\n');
+  setTimeout(()=>sendMessage(
+`Esta es mi previsión BASE para los próximos 7 días, calculada como la media histórica por día de la semana${fc.trend!==1?' ajustada por tendencia (×'+fc.trend+')':''}:\n\n${tabla}\n\nAfínala teniendo en cuenta el calendario (festivos nacionales y de Madrid, puentes, temporada/estacionalidad) y cualquier patrón de mi histórico. Dame la previsión ajustada día a día (€ y comensales), indica en una línea qué días cambias y por qué, y termina con una recomendación breve de personal y de compras para la semana.`
+  ),350);
+}
+
 function renderHomeRevo(box,r,v,pub){
   // ── DATOS POR PERÍODO ──
   // Hoy: previsión del día (estimado, hasta conectar Revo). Semana/Mes/Año: datos reales del análisis.
@@ -1196,14 +1266,12 @@ function renderHomeRevo(box,r,v,pub){
   const DOW=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
   // Per cápita de referencia del restaurante (ratio estable del histórico)
   const capRef=v.perCapita||null;
+  const fc=computeForecast(v);
+  const fcMax=fc?Math.max(1,...fc.dias.map(d=>d.eur||0)):1;
   if(HOME_PERIOD==='hoy'){
-    // Previsión de hoy desde el cuadrante (estimado)
+    // Previsión de hoy desde el motor de previsión (estimado)
     estimado=true;
-    const hoyIdx=(new Date().getDay()+6)%7; // Lun=0
-    const pv=v.prevSemana;
-    if(pv){const x=pv[DOW[hoyIdx]]||{};ventas=(Number(x.Comida)||0)+(Number(x.Cena)||0);}
-    // Comensales estimados con el per cápita real (no con el ticket medio)
-    if(ventas&&capRef)comensales=Math.round(ventas/capRef);
+    if(fc&&fc.dias[0]){ ventas=fc.dias[0].eur||null; comensales=fc.dias[0].comensales; }
     perComensal=capRef;
     periodoLbl='Previsión de hoy';
   } else if(HOME_PERIOD==='semana'){
@@ -1369,6 +1437,23 @@ function renderHomeRevo(box,r,v,pub){
           <span class="revo-alert-arrow">›</span>
         </div>`).join('')}</div>`
       :`<div class="revo-allclear">✓ Todo en orden. Sin avisos pendientes.</div>`}
+
+      ${fc?`
+      <div class="revo-section-row">
+        <div class="revo-section-lbl">Previsión de la semana</div>
+        <button class="revo-brief" onclick="afinarPrevisionIA()">✦ Afinar con IA</button>
+      </div>
+      <div class="revo-fc">
+        ${fc.dias.map(d=>`
+        <div class="revo-fc-day ${d.hoy?'hoy':''}">
+          <div class="revo-fc-dow">${d.dow}</div>
+          <div class="revo-fc-date">${d.hoy?'hoy':d.dd}</div>
+          <div class="revo-fc-eur">${d.eurTxt}</div>
+          <div class="revo-fc-pax">${d.comensales!=null?d.comensales+' pax':'·'}</div>
+          <div class="revo-fc-bar"><span style="height:${Math.round((d.eur||0)/fcMax*100)}%"></span></div>
+        </div>`).join('')}
+      </div>
+      <div class="revo-fc-note">Estimación desde tu histórico (media por día de la semana${fc.trend!==1?', tendencia ×'+fc.trend:''}). «Afinar con IA» añade festivos, puentes y eventos.</div>`:''}
 
       <button class="revo-fijos" onclick="abrirFijos()">⚙ Configurar costes fijos</button>
     </div>`;
