@@ -16,578 +16,218 @@
   --green:#1D7A4A;--green-bg:#E6F5EE;
   --red:#C03020;--red-bg:#FAECEA;
   --ylw:#B07010;--ylw-bg:#FBF5E0;
+  --blue:#1A4A8A;--blue-bg:#EEF3FB;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html{font-size:16px}
-body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);min-height:100vh;display:flex}
-
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ PIN GATE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-#pin-gate{position:fixed;top:0;left:0;width:100%;height:100%;background:var(--navy);display:flex;align-items:center;justify-content:center;z-index:9999;flex-direction:column}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);min-height:100vh}
+#pin-gate{position:fixed;inset:0;background:var(--navy);display:flex;align-items:center;justify-content:center;flex-direction:column;z-index:9999}
 .pin-header{text-align:center;margin-bottom:2rem}
-.pin-logo{font-family:'DM Serif Display';font-size:2.5rem;color:var(--amber);margin-bottom:0.5rem}
+.pin-logo{font-family:'DM Serif Display';font-size:2.5rem;color:var(--amber);margin-bottom:.5rem}
 .pin-title{font-size:1.2rem;color:#fff;font-weight:600}
-.pin-form{background:var(--surf);border-radius:12px;padding:2rem;width:90%;max-width:320px;box-shadow:0 8px 32px rgba(0,0,0,.15)}
-.pin-input{width:100%;font-size:1.8rem;letter-spacing:0.5rem;text-align:center;padding:1rem;border:2px solid var(--bdr);border-radius:8px;margin-bottom:1rem;font-weight:600;font-family:monospace}
-.pin-input:focus{outline:none;border-color:var(--amber);box-shadow:0 0 0 3px rgba(232,145,74,.1)}
-.pin-error{color:var(--red);font-size:0.85rem;margin-bottom:0.5rem;text-align:center;min-height:20px}
-.pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:1rem}
-.pin-btn{background:var(--navy);color:#fff;border:none;padding:1rem;border-radius:8px;font-size:1.2rem;font-weight:600;cursor:pointer;transition:all 150ms}
-.pin-btn:active{transform:scale(0.95);background:var(--navy-mid)}
-.pin-btn.del{background:var(--red);font-size:1rem}
-.pin-btn.del:active{background:#A01F18}
-.pin-submit{width:100%;background:var(--amber);color:#fff;border:none;padding:1rem;border-radius:8px;font-size:1rem;font-weight:700;cursor:pointer;margin-top:0.5rem}
-.pin-submit:active{background:var(--amber-dk)}
-
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ APP MAIN ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-#app{display:none;width:100%;height:100vh;flex-direction:column}
-#toolbar{background:var(--navy);padding:1rem;color:#fff;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
-.tb-brand{display:flex;align-items:center;gap:0.5rem}
+.pin-form{background:var(--surf);border-radius:12px;padding:2rem;width:90%;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.15)}
+.pin-msg{font-size:.9rem;margin-bottom:.6rem;text-align:center;min-height:22px;font-weight:600}
+.pin-msg.err{color:var(--red)}
+.pin-msg.ok{color:var(--green)}
+.pin-dots{display:flex;justify-content:center;gap:14px;height:46px;align-items:center;margin-bottom:1.2rem;border:2px solid var(--bdr);border-radius:8px}
+.pin-dot{width:14px;height:14px;border-radius:50%;background:var(--bdr-strong)}
+.pin-dot.on{background:var(--navy)}
+.pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.pin-btn{background:var(--navy);color:#fff;border:none;padding:1.1rem;border-radius:10px;font-size:1.3rem;font-weight:600;cursor:pointer}
+.pin-btn:active{transform:scale(.95);background:var(--navy-mid)}
+.pin-btn.del{background:var(--red)}
+.pin-btn.ok{background:var(--amber)}
+#app{display:none;min-height:100vh;flex-direction:column}
+#toolbar{background:var(--navy);padding:1rem;color:#fff;display:flex;align-items:center;justify-content:space-between}
 .tb-logo{font-family:'DM Serif Display';font-size:1.4rem;color:var(--amber)}
-.tb-user{font-size:0.9rem;opacity:0.8}
-.tb-logout{background:rgba(255,255,255,.1);border:none;color:#fff;padding:0.5rem 1rem;border-radius:6px;cursor:pointer;font-size:0.85rem;font-weight:600}
+.tb-user{font-size:1rem;font-weight:600;margin-left:.6rem}
+.tb-logout{background:rgba(255,255,255,.1);border:none;color:#fff;padding:.6rem 1.1rem;border-radius:8px;cursor:pointer;font-size:.9rem;font-weight:600}
 .tb-logout:active{background:rgba(255,255,255,.2)}
-
-#content{flex:1;display:flex;overflow:hidden}
-
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ TABS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-#tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:0.5rem;background:var(--bg);flex-shrink:0;border-bottom:1px solid var(--bdr)}
-.tab-btn{background:var(--surf);border:1px solid var(--bdr);padding:0.75rem;border-radius:8px;font-size:1rem;font-weight:600;color:var(--tx2);cursor:pointer;transition:all 150ms}
+#tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:.6rem;background:var(--bg);border-bottom:1px solid var(--bdr)}
+.tab-btn{background:var(--surf);border:1px solid var(--bdr);padding:.85rem;border-radius:10px;font-size:1.05rem;font-weight:600;color:var(--tx2);cursor:pointer}
 .tab-btn.active{background:var(--amber);color:#fff;border-color:var(--amber)}
-
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ PANELS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-.panel{display:none;overflow-y:auto;flex:1;padding:1.5rem}
-.panel.active{display:flex;flex-direction:column}
-.panel-center{align-items:center;justify-content:center}
-
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ FICHAJE PANEL ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-#panel-fichaje{flex-direction:column;gap:1rem}
-.fichaje-status{background:var(--surf);border:2px solid var(--bdr);border-radius:12px;padding:2rem;text-align:center;margin-bottom:1rem}
-.fs-lbl{font-size:0.85rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--tx3);margin-bottom:0.5rem;font-weight:600}
-.fs-val{font-family:'DM Serif Display';font-size:2.5rem;color:var(--tx);margin-bottom:0.5rem}
-.fs-sub{font-size:0.9rem;color:var(--tx2)}
-.fs-historial{background:var(--surf);border:1px solid var(--bdr);border-radius:8px;padding:1rem;margin-top:1rem}
-.fs-h-lbl{font-size:0.85rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--tx3);margin-bottom:0.5rem}
-.fs-h-item{display:flex;justify-content:space-between;padding:0.5rem 0;font-size:0.95rem;border-bottom:1px solid var(--bg)}
+.panel{display:none;padding:1.4rem}
+.panel.active{display:block}
+.fichaje-status{background:var(--surf);border:2px solid var(--bdr);border-radius:12px;padding:1.8rem;text-align:center;margin-bottom:1rem}
+.fs-lbl{font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;color:var(--tx3);margin-bottom:.5rem;font-weight:600}
+.fs-val{font-family:'DM Serif Display';font-size:2.2rem;margin-bottom:.4rem}
+.fs-sub{font-size:1rem;color:var(--tx2)}
+.big-btn{width:100%;padding:1.8rem;font-size:1.6rem;font-weight:700;border:none;border-radius:12px;cursor:pointer;margin:.5rem 0;color:#fff}
+.btn-entrada{background:var(--green)}
+.btn-salida{background:var(--red)}
+.big-btn:active{opacity:.85;transform:scale(.98)}
+.fs-hist{background:var(--surf);border:1px solid var(--bdr);border-radius:10px;padding:1rem;margin-top:1rem}
+.fs-h-lbl{font-size:.85rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--tx3);margin-bottom:.6rem}
+.fs-h-item{display:flex;justify-content:space-between;padding:.5rem 0;font-size:1rem;border-bottom:1px solid var(--bg)}
 .fs-h-item:last-child{border-bottom:none}
 .fs-h-time{font-weight:600;color:var(--amber)}
-.fs-h-type{color:var(--tx2)}
-
-.big-btn{width:100%;padding:2rem;font-size:1.8rem;font-weight:700;border:none;border-radius:12px;cursor:pointer;transition:all 150ms;margin:0.5rem 0}
-.btn-entrada{background:var(--green);color:#fff}
-.btn-entrada:active{opacity:0.85;transform:scale(0.98)}
-.btn-salida{background:var(--red);color:#fff}
-.btn-salida:active{opacity:0.85;transform:scale(0.98)}
-
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ALBARANES PANEL ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-#panel-albaran{flex-direction:column;gap:1rem}
-.btn-camera{width:100%;padding:1.5rem;font-size:1.4rem;font-weight:700;background:var(--amber);color:#fff;border:none;border-radius:12px;cursor:pointer;transition:all 150ms}
-.btn-camera:active{background:var(--amber-dk);transform:scale(0.98)}
-
-#camera-input{display:none}
-
-.alb-preview{background:var(--surf);border:2px dashed var(--bdr);border-radius:12px;padding:1.5rem;text-align:center;min-height:200px;display:flex;align-items:center;justify-content:center;margin-bottom:1rem}
-.alb-preview.has-image{border-style:solid;padding:0}
-.alb-preview img{max-width:100%;max-height:300px;border-radius:12px}
-
-.alb-form{background:var(--surf);border:1px solid var(--bdr);border-radius:8px;padding:1rem;margin-bottom:1rem}
-.form-group{margin-bottom:1rem}
-.form-label{display:block;font-size:0.85rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--tx3);margin-bottom:0.3rem}
-.form-input,.form-select{width:100%;padding:0.7rem;border:1px solid var(--bdr);border-radius:6px;font-size:1rem;font-family:inherit}
-.form-input:focus,.form-select:focus{outline:none;border-color:var(--amber);box-shadow:0 0 0 2px rgba(232,145,74,.1)}
-
-.form-products{background:var(--bg);border-radius:8px;max-height:300px;overflow-y:auto}
-.form-product{padding:0.8rem;border-bottom:1px solid var(--bdr);display:flex;justify-content:space-between;align-items:center}
-.form-product:last-child{border-bottom:none}
-.fp-name{font-weight:600;color:var(--tx)}
-.fp-qty{font-size:0.9rem;color:var(--tx2)}
-
-.btn-aplicar{width:100%;padding:1rem;background:var(--green);color:#fff;border:none;border-radius:8px;font-size:1rem;font-weight:700;cursor:pointer}
-.btn-aplicar:active{opacity:0.85;transform:scale(0.98)}
-.btn-aplicar:disabled{opacity:0.5;cursor:not-allowed}
-
-.spinner{display:inline-block;width:20px;height:20px;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin 0.8s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-
-.msg{padding:1rem;border-radius:8px;margin-bottom:1rem;font-weight:600}
-.msg.success{background:var(--green-bg);color:var(--green)}
-.msg.error{background:var(--red-bg);color:var(--red)}
-.msg.info{background:var(--blue-bg);color:#1A4A8A}
-
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ RESPONSIVE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-@media (max-width:600px){
-  html{font-size:14px}
-  #toolbar{padding:0.75rem}
-  #tabs{padding:0.3rem;gap:2px}
-  #content{padding:0.75rem}
-  .pin-form{width:95%}
-  .fichaje-status{padding:1.5rem}
-  .fs-val{font-size:2rem}
-  .big-btn{padding:1.5rem;font-size:1.4rem}
-}
+.btn-camera{width:100%;padding:1.4rem;font-size:1.3rem;font-weight:700;background:var(--amber);color:#fff;border:none;border-radius:12px;cursor:pointer}
+.btn-camera:active{background:var(--amber-dk)}
+#cam-input{display:none}
+.alb-result{margin-top:1rem}
+.alb-prov-row{display:none;margin-top:1rem;background:var(--surf);border:1px solid var(--bdr);border-radius:10px;padding:1rem}
+.form-group{margin-bottom:.9rem}
+.form-group label{display:block;font-size:.8rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--tx3);margin-bottom:.3rem}
+.form-group select,.form-group input{width:100%;padding:.7rem;border:1px solid var(--bdr);border-radius:8px;font-size:1rem;font-family:inherit}
+.btn-aplicar{width:100%;padding:1rem;background:var(--green);color:#fff;border:none;border-radius:10px;font-size:1.05rem;font-weight:700;cursor:pointer;margin-top:.5rem}
+.btn-aplicar:disabled{opacity:.5}
+table.alb-tbl{width:100%;border-collapse:collapse;font-size:.85rem;margin-top:.8rem}
+table.alb-tbl th,table.alb-tbl td{padding:.5rem;border:1px solid var(--bdr);text-align:left}
+table.alb-tbl th{background:var(--bg);font-weight:600;font-size:.75rem;text-transform:uppercase}
+table.alb-tbl input{width:100%;border:none;background:transparent;font-size:.85rem;font-family:inherit}
+table.alb-tbl input:focus{outline:1px solid var(--amber);border-radius:3px}
+.conv-chip{font-size:.7rem;color:var(--blue);background:var(--blue-bg);padding:1px 6px;border-radius:8px;white-space:nowrap}
+.alert{padding:1rem;border-radius:10px;font-weight:600;margin-top:.8rem}
+.alert-red{background:var(--red-bg);color:var(--red)}
+.alert-green{background:var(--green-bg);color:var(--green)}
+.alert-info{background:var(--blue-bg);color:var(--blue)}
+.spin{display:inline-block;width:18px;height:18px;border:3px solid rgba(0,0,0,.15);border-top-color:var(--amber);border-radius:50%;animation:sp .8s linear infinite;vertical-align:middle}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media(max-width:600px){html{font-size:14px}.fs-val{font-size:1.9rem}.big-btn{padding:1.5rem;font-size:1.4rem}}
 </style>
 </head>
 <body>
-
-<!-- ━━━━━━━━━━━━━━━━ PIN GATE ━━━━━━━━━━━━━━━━ -->
 <div id="pin-gate">
-  <div class="pin-header">
-    <div class="pin-logo">ⓡ</div>
-    <div class="pin-title">RESTAID Personal</div>
-  </div>
-  <form class="pin-form" onsubmit="verificarPin(event)">
-    <div class="pin-error" id="pin-error"></div>
-    <input type="password" id="pin-input" class="pin-input" placeholder="••••" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" autofocus>
+  <div class="pin-header"><div class="pin-logo">&#9415;</div><div class="pin-title">RESTAID Personal</div></div>
+  <div class="pin-form">
+    <div class="pin-msg" id="pin-msg"></div>
+    <div class="pin-dots" id="pin-dots"></div>
     <div class="pin-pad">
-      <button type="button" class="pin-btn" onclick="agregarPin('1')">1</button>
-      <button type="button" class="pin-btn" onclick="agregarPin('2')">2</button>
-      <button type="button" class="pin-btn" onclick="agregarPin('3')">3</button>
-      <button type="button" class="pin-btn" onclick="agregarPin('4')">4</button>
-      <button type="button" class="pin-btn" onclick="agregarPin('5')">5</button>
-      <button type="button" class="pin-btn" onclick="agregarPin('6')">6</button>
-      <button type="button" class="pin-btn" onclick="agregarPin('7')">7</button>
-      <button type="button" class="pin-btn" onclick="agregarPin('8')">8</button>
-      <button type="button" class="pin-btn" onclick="agregarPin('9')">9</button>
-      <button type="button" class="pin-btn" onclick="agregarPin('0')">0</button>
-      <button type="button" class="pin-btn del" onclick="borrarPin()">←</button>
-      <button type="submit" class="pin-btn" style="background:var(--amber);font-weight:700">✓</button>
+      <button class="pin-btn" onclick="fpKey('1')">1</button>
+      <button class="pin-btn" onclick="fpKey('2')">2</button>
+      <button class="pin-btn" onclick="fpKey('3')">3</button>
+      <button class="pin-btn" onclick="fpKey('4')">4</button>
+      <button class="pin-btn" onclick="fpKey('5')">5</button>
+      <button class="pin-btn" onclick="fpKey('6')">6</button>
+      <button class="pin-btn" onclick="fpKey('7')">7</button>
+      <button class="pin-btn" onclick="fpKey('8')">8</button>
+      <button class="pin-btn" onclick="fpKey('9')">9</button>
+      <button class="pin-btn del" onclick="fpDel()">&larr;</button>
+      <button class="pin-btn" onclick="fpKey('0')">0</button>
+      <button class="pin-btn ok" onclick="fpEnter()">&#10003;</button>
     </div>
-  </form>
+  </div>
 </div>
-
-<!-- ━━━━━━━━━━━━━━━━ APP MAIN ━━━━━━━━━━━━━━━━ -->
 <div id="app">
   <div id="toolbar">
-    <div class="tb-brand">
-      <div class="tb-logo">ⓡ</div>
-      <span class="tb-user" id="tb-user-name">Personal</span>
-    </div>
+    <div><span class="tb-logo">&#9415;</span><span class="tb-user" id="tb-user"></span></div>
     <button class="tb-logout" onclick="logout()">Salir</button>
   </div>
-
   <div id="tabs">
-    <button class="tab-btn active" onclick="mostrarTab('fichaje')">📋 Fichaje</button>
-    <button class="tab-btn" onclick="mostrarTab('albaran')">📷 Albaranes</button>
+    <button class="tab-btn active" onclick="showTab('fichaje',event)">&#128203; Fichaje</button>
+    <button class="tab-btn" onclick="showTab('albaran',event)">&#128247; Albaranes</button>
   </div>
-
-  <div id="content">
-    <!-- FICHAJE PANEL -->
-    <div id="panel-fichaje" class="panel active panel-center">
-      <div class="fichaje-status">
-        <div class="fs-lbl">Estado hoy</div>
-        <div class="fs-val" id="fichaje-estado">—</div>
-        <div class="fs-sub" id="fichaje-hora"></div>
-      </div>
-      <button class="big-btn btn-entrada" onclick="fichar('entrada')">📥 ENTRADA</button>
-      <button class="big-btn btn-salida" onclick="fichar('salida')">📤 SALIDA</button>
-      <div class="fs-historial">
-        <div class="fs-h-lbl">Fichajes hoy</div>
-        <div id="fichaje-historial"></div>
-      </div>
+  <div id="panel-fichaje" class="panel active">
+    <div class="fichaje-status">
+      <div class="fs-lbl">Estado hoy</div>
+      <div class="fs-val" id="f-estado">&mdash;</div>
+      <div class="fs-sub" id="f-sub"></div>
     </div>
-
-    <!-- ALBARANES PANEL -->
-    <div id="panel-albaran" class="panel">
-      <button class="btn-camera" onclick="abrirCamara()">📷 Escanear albarán</button>
-      <div class="alb-preview" id="alb-preview">
-        <span style="color:var(--tx3)">Sin imagen</span>
-      </div>
-      <input type="file" id="camera-input" accept="image/*" capture="environment" onchange="procesarFoto(event)">
-      
-      <div id="alb-messages"></div>
-      <div id="alb-form" style="display:none">
-        <div class="alb-form">
-          <div class="form-group">
-            <label class="form-label">Proveedor</label>
-            <select id="alb-proveedor" class="form-select"></select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Fecha</label>
-            <input type="date" id="alb-fecha" class="form-input">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Productos</label>
-            <div class="form-products" id="alb-productos"></div>
-          </div>
-        </div>
-        <button class="btn-aplicar" id="btn-aplicar" onclick="aplicarAlbaran()">Guardar albarán</button>
-      </div>
+    <button class="big-btn btn-entrada" onclick="ficharBtn('entrada')">&#128229; ENTRADA</button>
+    <button class="big-btn btn-salida" onclick="ficharBtn('salida')">&#128228; SALIDA</button>
+    <div class="fs-hist"><div class="fs-h-lbl">Fichajes de hoy</div><div id="f-hist"></div></div>
+  </div>
+  <div id="panel-albaran" class="panel">
+    <button class="btn-camera" onclick="document.getElementById('cam-input').click()">&#128247; Escanear albar&aacute;n</button>
+    <input type="file" id="cam-input" accept="image/*,application/pdf" capture="environment" onchange="handleAlbaran(this)">
+    <div class="alb-result" id="alb-result"></div>
+    <div class="alb-prov-row" id="alb-prov-row">
+      <div class="form-group"><label>Proveedor</label><select id="alb-prov"><option value="">&mdash; Seleccionar &mdash;</option></select></div>
+      <div class="form-group"><label>Fecha</label><input id="alb-fecha" type="date"></div>
+      <button class="btn-aplicar" id="btn-alb-aplicar" onclick="aplicarAlbaran()">Aplicar a stock</button>
     </div>
   </div>
 </div>
-
 <script>
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ STATE & DB ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-let STATE={empId:null,empNombre:null,pin:null};
-let DB={empleados:[],fichajes:[],albaranes:[],proveedores:[]};
-let currentAlbaran=null;
-let procesando=false;
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ INIT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const SB_URL='https://gtdsqvebuhdndfaiqoyj.supabase.co';
+const SB_KEY='sb_publishable_cu53L_4O6Rz-RlGurDI3Kg_CJHqaa8U';
+const SB_RESTAURANTE='default';
+const API='/api/claude', ALB_MODEL='claude-sonnet-4-6';
+let _uidc=0;
+const uid=()=>Date.now().toString(36)+(_uidc++).toString(36)+Math.random().toString(36).slice(2,6);
+const hoy=()=>new Date().toISOString().slice(0,10);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const $=id=>document.getElementById(id);
+let RRHH=null, INV=null, USER=null, albParsed=null;
+function aiHeaders(){return {'Content-Type':'application/json','x-restaid-pass':'personal'};}
+async function aiCheck(r){if(r.ok)return;let det='';try{const e=await r.json();det=e&&e.error&&e.error.message?': '+e.error.message:'';}catch(_){}const m={401:'clave de API no v\u00e1lida',429:'l\u00edmite de uso alcanzado',529:'IA saturada, reint\u00e9ntalo',400:'petici\u00f3n rechazada',500:'error interno IA'}[r.status]||('error '+r.status);throw new Error(m+det);}
+async function sbGet(table){try{const r=await fetch(`${SB_URL}/rest/v1/${table}?restaurante=eq.${SB_RESTAURANTE}&select=datos`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}});if(!r.ok)return null;const d=await r.json();return d&&d[0]?d[0].datos:null;}catch(e){console.error('sbGet '+table,e);return null;}}
+async function sbWrite(table,datos){try{datos._ts=Date.now();const rP=await fetch(`${SB_URL}/rest/v1/${table}?restaurante=eq.${SB_RESTAURANTE}`,{method:'PATCH',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=representation'},body:JSON.stringify({datos})});const txt=await rP.text().catch(()=>'');let patched=[];try{patched=JSON.parse(txt);}catch(e){}if(Array.isArray(patched)&&patched.length===0){await fetch(`${SB_URL}/rest/v1/${table}`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({restaurante:SB_RESTAURANTE,datos})});}return true;}catch(e){console.error('sbWrite '+table,e);return false;}}
 async function init(){
-  const pinGate=document.getElementById('pin-gate');
-  const pinError=document.getElementById('pin-error');
-  
-  try{
-    const res=await fetch('/api/login?mode=personal');
-    if(!res.ok){
-      pinError.textContent='Error del servidor ('+res.status+'). Avisa al encargado.';
-      console.error('HTTP error:',res.status);
-      return;
-    }
-    const data=await res.json();
-    console.log('Init response:',data);
-    
-    DB=data.db||{empleados:[],fichajes:[],albaranes:[],proveedores:[]};
-    console.log('Empleados cargados:',DB.empleados.length);
-    
-    if(DB.empleados.length===0){
-      pinError.textContent='Sin empleados en BD. Avisa al encargado.';
-      console.warn('No hay empleados en la BD');
-    }
-    
-    llenarProveedores();
-    document.getElementById('alb-fecha').valueAsDate=new Date();
-    
-  }catch(e){
-    pinError.textContent='Error de conexión. Comprueba la red.';
-    console.error('Init error:',e);
-  }
+  const msg=$('pin-msg');msg.className='pin-msg';msg.textContent='Cargando\u2026';
+  RRHH=await sbGet('rrhh');INV=await sbGet('inventario');
+  if(!RRHH){msg.className='pin-msg err';msg.textContent='No se pudo cargar RRHH';return;}
+  RRHH.empleados=RRHH.empleados||[];RRHH.fichajes=RRHH.fichajes||[];
+  if(INV){INV.proveedores=INV.proveedores||[];INV.ingredientes=INV.ingredientes||[];INV.movimientos=INV.movimientos||[];INV.albaranes=INV.albaranes||[];INV.lotes=INV.lotes||[];}
+  const conPin=RRHH.empleados.filter(e=>e.pin).length;
+  msg.textContent='';
+  console.log('Empleados:',RRHH.empleados.length,'con PIN:',conPin,'\u00b7 Proveedores:',INV?INV.proveedores.length:0);
+  if(conPin===0){msg.className='pin-msg err';msg.textContent='Ning\u00fan empleado tiene PIN. Asígnalos en RESTAID.';}
+  renderDots();
 }
+let PIN='';
+function renderDots(){const d=$('pin-dots');d.innerHTML='';for(let i=0;i<6;i++){const s=document.createElement('div');s.className='pin-dot'+(i<PIN.length?' on':'');d.appendChild(s);}}
+function fpKey(n){if(PIN.length<6){PIN+=n;$('pin-msg').textContent='';renderDots();}}
+function fpDel(){PIN=PIN.slice(0,-1);renderDots();}
+function fpEnter(){
+  const msg=$('pin-msg');
+  if(PIN.length<4){msg.className='pin-msg err';msg.textContent='El PIN tiene al menos 4 d\u00edgitos';return;}
+  const e=(RRHH.empleados||[]).find(x=>(x.pin||'')===PIN);
+  if(!e){msg.className='pin-msg err';msg.textContent='PIN no reconocido';PIN='';renderDots();return;}
+  USER=e;PIN='';renderDots();
+  $('tb-user').textContent=e.nombre;
+  $('pin-gate').style.display='none';$('app').style.display='flex';
+  llenarProveedores();$('alb-fecha').value=hoy();renderFichaje();
+}
+function logout(){USER=null;PIN='';albParsed=null;$('alb-result').innerHTML='';$('alb-prov-row').style.display='none';$('pin-msg').textContent='';renderDots();$('pin-gate').style.display='flex';$('app').style.display='none';}
+function showTab(t,ev){document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));$('panel-'+t).classList.add('active');ev.target.classList.add('active');}
+function fichajesDia(empId,fechaISO){return(RRHH.fichajes||[]).filter(f=>f.empId===empId&&f.fecha===fechaISO).sort((a,b)=>a.ts.localeCompare(b.ts));}
+function minFichadosDia(empId,fechaISO){const fs=fichajesDia(empId,fechaISO);let min=0,lastIn=null;fs.forEach(f=>{if(f.tipo==='entrada')lastIn=f.ts;else if(f.tipo==='salida'&&lastIn){min+=(new Date(f.ts)-new Date(lastIn))/60000;lastIn=null;}});if(lastIn&&fechaISO===hoy())min+=(Date.now()-new Date(lastIn))/60000;return Math.max(0,min);}
+function estadoFichaje(empId){const h=hoy(),fs=fichajesDia(empId,h);let dentro=false,desde=null;fs.forEach(f=>{if(f.tipo==='entrada'){dentro=true;desde=f.ts;}else if(f.tipo==='salida'){dentro=false;desde=null;}});return {dentro,desde,min:minFichadosDia(empId,h),fichajes:fs};}
+function fmtHM(min){min=Math.round(min);const h=Math.floor(min/60),m=min%60;return h>0?`${h}h ${m}m`:`${m}m`;}
+function fmtHora(ts){const d=new Date(ts);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');}
+async function ficharBtn(forzar){const st=estadoFichaje(USER.id);let tipo=st.dentro?'salida':'entrada';const now=new Date();(RRHH.fichajes=RRHH.fichajes||[]).push({id:uid(),empId:USER.id,tipo,ts:now.toISOString(),fecha:hoy()});await sbWrite('rrhh',RRHH);renderFichaje();}
+function renderFichaje(){const st=estadoFichaje(USER.id);const est=$('f-estado'),sub=$('f-sub'),hist=$('f-hist');if(st.fichajes.length===0){est.textContent='Sin fichar';est.style.color='var(--tx3)';sub.textContent='';}else if(st.dentro){est.textContent='Trabajando';est.style.color='var(--green)';sub.textContent='Desde '+fmtHora(st.desde)+' \u00b7 '+fmtHM(st.min);}else{est.textContent='Jornada cerrada';est.style.color='var(--amber)';sub.textContent='Total hoy: '+fmtHM(st.min);}hist.innerHTML=st.fichajes.map(f=>`<div class="fs-h-item"><span>${f.tipo==='entrada'?'\ud83d\udce5':'\ud83d\udce4'} ${f.tipo}</span><span class="fs-h-time">${fmtHora(f.ts)}</span></div>`).join('')||'<div style="color:var(--tx3);font-size:.9rem">A\u00fan no has fichado hoy</div>';}
+function llenarProveedores(){if(!INV)return;$('alb-prov').innerHTML='<option value="">\u2014 Seleccionar \u2014</option>'+(INV.proveedores||[]).map(p=>`<option value="${p.id}">${esc(p.nombre)}</option>`).join('');}
+function f2b64(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.onerror=()=>rej(new Error('Error lectura'));r.readAsDataURL(file);});}
+function _albSysPrompt(){return `Eres un experto en digitalizar albaranes y facturas de proveedores de hosteleria espanola, y ademas RAZONAS sobre los productos como lo haria un jefe de cocina experto. No solo transcribes: interpretas formatos, conviertes unidades y deduces categorias. Devuelve UNICAMENTE un JSON valido, sin texto adicional ni bloques markdown.
+
+ESTRUCTURA DEL JSON A DEVOLVER:
+{"documento":{"tipo":"albaran|factura|ticket","numero":"string o null","fecha":"YYYY-MM-DD o null","forma_pago":"string o null"},"proveedor":{"nombre":"string o null","cif":"string o null","telefono":"string o null","categoria_sugerida":"string"},"cliente":{"nombre":"string o null","nif":"string o null"},"lineas":[{"descripcion":"NOMBRE COMERCIAL LIMPIO","cantidad_compra":0.000,"unidad_compra":"lata|barril|caja|botella|saco|ud|kg|l","formato":"texto del formato detectado o null","cantidad_base":0.000,"unidad_base":"kg|l|ud","factor":0.000,"precio_unitario":0.00,"iva_pct":10,"importe":0.00,"lote":"string o null","categoria":"string","razonamiento":"breve explicacion de la conversion"}],"totales":{"base_10":0.00,"iva_10":0.00,"base_21":0.00,"iva_21":0.00,"total":0.00},"alertas":[]}
+
+REGLAS CRITICAS:
+
+1. NUMERO DE DOCUMENTO: Es el numero oficial impreso en la cabecera junto a "NUMERO", "N\u00ba", "FACTURA" o "ALBARAN" (formato tipo "23A/76010199").
+   NUNCA uses el numero interno que aparece dentro de la descripcion de un articulo (ej: "Albaran 26015650").
+
+2. FECHA: La del campo FECHA en la cabecera. Formato YYYY-MM-DD. NUNCA la de dentro de la descripcion de articulos.
+
+3. DESCRIPCION \u2014 SOLO el nombre comercial limpio. La celda suele tener varias lineas: ignora la referencia interna y el lote, usa el nombre del producto. El lote va en su campo.
+
+4. INTERPRETACION DE FORMATO Y CONVERSION (lo mas importante):
+   Los albaranes indican cantidades en UNIDAD DE COMPRA (latas, barriles, cajas...), pero para el escandallo necesitamos la UNIDAD BASE usable (kg, l, ud). Debes razonar y rellenar AMBAS.
+   - "cantidad_compra" + "unidad_compra": lo que literalmente pone el albaran (ej: 5 latas, 1 barril).
+   - Detecta el FORMATO en el nombre del producto: numeros como "750", "50L", "1L", "5kg", "x12", "70cl" indican el contenido por unidad.
+   - "factor": contenido de cada unidad de compra en unidad base. Ej: lata de 750g -> factor 0.75 (kg). Barril 50L -> factor 50 (l).
+   - "cantidad_base" = cantidad_compra x factor. "unidad_base" = kg o l o ud.
+   - "razonamiento": explica brevemente (ej: "5 latas x 750g = 3.75 kg").
+   EJEMPLOS:
+   - "ATUN CALVO ACT.GRL RO. 750" cantidad 5 -> cantidad_compra:5, unidad_compra:"lata", formato:"750 g/lata", factor:0.75, cantidad_base:3.75, unidad_base:"kg"
+   - "CRUZCAMPO Especial Barril 50L Grundy LS" cantidad 1 -> cantidad_compra:1, unidad_compra:"barril", formato:"50 L/barril", factor:50, cantidad_base:50, unidad_base:"l"
+   - "MOJAMA DE ATUN" cantidad 1.358 unidad kg -> factor:1, cantidad_base:1.358, unidad_base:"kg"
+   Si NO hay formato detectable y la unidad ya es base (kg, l, ud), factor:1 y cantidad_base=cantidad_compra.
+   Copia las cantidades EXACTAS con decimales (punto decimal en JSON, nunca redondees).
+
+5. CATEGORIA del producto: deduce la categoria (Pescado, Carne, Verdura, Fruta, Pan, Bebida, Lacteo, Aceite, Conserva, Limpieza, Otros).
+
+6. CATEGORIA SUGERIDA DEL PROVEEDOR: deduce a que se dedica por los productos. Ej: teleras -> "Panaderia"; mojama y pulpo -> "Pescaderia". Rellena "categoria_sugerida".
+
+7. ALERTAS: anota manuscritos (DEVO, firmas), tachaduras, sellos, devoluciones, y avisa si tienes BAJA CONFIANZA en alguna conversion.`;}
+async function extraerAlbaranDeFile(file){const b64=await f2b64(file);const isPDF=file.type==='application/pdf';const body={model:ALB_MODEL,max_tokens:2500,system:_albSysPrompt(),messages:[{role:'user',content:[isPDF?{type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}}:{type:'image',source:{type:'base64',media_type:file.type,data:b64}},{type:'text',text:'Digitaliza este albaran o factura. RAZONA sobre el formato de cada producto y convierte a unidad base. Devuelve SOLO el JSON, sin texto adicional.'}]}]};const r=await fetch(API,{method:'POST',headers:aiHeaders(),body:JSON.stringify(body)});if(!r.ok)await aiCheck(r);const d=await r.json();return JSON.parse((d.content?.find(c=>c.type==='text')?.text||'').replace(/```json|```/g,'').trim());}
+async function handleAlbaran(input){const files=Array.from(input.files||[]);input.value='';if(!files.length)return;$('alb-prov-row').style.display='none';$('alb-result').innerHTML='<div style="padding:20px;text-align:center;color:var(--tx3)"><span class="spin"></span> Analizando con IA\u2026</div>';try{albParsed=await extraerAlbaranDeFile(files[0]);renderAlbPreview();}catch(e){$('alb-result').innerHTML=`<div class="alert alert-red">Error: ${esc(e.message)}</div>`;}}
+function renderAlbPreview(){const p=albParsed;if(!p||!p.lineas){$('alb-result').innerHTML='<div class="alert alert-red">No se detectaron l\u00edneas</div>';return;}const _pNom=p.proveedor&&(typeof p.proveedor==='object'?p.proveedor.nombre:p.proveedor);const _fecha=p.documento&&p.documento.fecha;$('alb-prov-row').style.display='block';if(_pNom){const pv=(INV.proveedores||[]).find(x=>x.nombre.toLowerCase().includes((_pNom||'').toLowerCase().slice(0,8)));if(pv)$('alb-prov').value=pv.id;}if(_fecha)$('alb-fecha').value=_fecha;let html='';if(_pNom)html+=`<div class="alert alert-info">Proveedor detectado: <b>${esc(_pNom)}</b></div>`;html+='<table class="alb-tbl"><tr><th>Producto</th><th>Compra</th><th>Conv.</th><th>Base</th></tr>';p.lineas.forEach((l,i)=>{const cc=l.cantidad_compra!=null?l.cantidad_compra:(l.cantidad||0);const uc=l.unidad_compra||'ud';const f=l.factor!=null?l.factor:1;const cb=l.cantidad_base!=null?l.cantidad_base:(cc*f);const ub=l.unidad_base||uc;const conv=(f!==1)?`<span class="conv-chip">\u21c4 \u00d7${f}</span>`:'';html+=`<tr><td><input id="an-${i}" value="${esc(l.descripcion||l.nombre||'')}"></td><td><input id="aq-${i}" type="number" step="0.001" value="${cc}" style="width:48px">${esc(uc)}</td><td><input id="af-${i}" type="number" step="0.001" value="${f}" style="width:48px"> ${conv}</td><td><input id="ab-${i}" type="number" step="0.001" value="${cb}" style="width:54px">${esc(ub)}</td></tr>`;html+=`<tr style="display:none"><td colspan="4"><input id="au-${i}" value="${esc(uc)}"><input id="aub-${i}" value="${esc(ub)}"><input id="ap-${i}" value="${l.precio_unitario!=null?l.precio_unitario:''}"><input id="av-${i}" value="${l.iva_pct!=null?l.iva_pct:''}"><input id="ac-${i}" value=""></td></tr>`;});html+='</table>';$('alb-result').innerHTML=html;}
+async function aplicarAlbaran(){const btn=$('btn-alb-aplicar');let provId=$('alb-prov').value;const fecha=$('alb-fecha').value||hoy(),p=albParsed;if(!p||!p.lineas)return;btn.disabled=true;btn.innerHTML='<span class="spin"></span>';try{if(!provId&&p.proveedor){const _pNom=typeof p.proveedor==='object'?p.proveedor.nombre:p.proveedor;const _pCif=typeof p.proveedor==='object'?p.proveedor.cif:null;const _pTel=typeof p.proveedor==='object'?p.proveedor.telefono:null;const _pCat=typeof p.proveedor==='object'?p.proveedor.categoria_sugerida:null;if(_pNom){let pv=INV.proveedores.find(x=>x.nombre.toLowerCase().includes(_pNom.toLowerCase().slice(0,8)));if(!pv&&_pCif)pv=INV.proveedores.find(x=>x.cif&&x.cif===_pCif);if(!pv){pv={id:uid(),nombre:_pNom,cif:_pCif||'',tel:_pTel||'',email:'',categoria:_pCat||'',dias:'',pago:'',notas:'Creado desde app personal'};INV.proveedores.push(pv);}provId=pv.id;}}const _ref=(p.documento&&p.documento.numero)||null;const lf=p.lineas.map((l,i)=>{const cantCompra=parseFloat($('aq-'+i)?.value)||0;const factor=parseFloat($('af-'+i)?.value)||1;const cantBase=parseFloat($('ab-'+i)?.value)||(cantCompra*factor);const precioCompra=parseFloat($('ap-'+i)?.value)||null;return {nombre:$('an-'+i)?.value||l.descripcion||l.nombre,cantidadCompra:cantCompra,unidadCompra:$('au-'+i)?.value||l.unidad_compra||'ud',factor,cantidad:Math.round(cantBase*1000)/1000,unidad:$('aub-'+i)?.value||l.unidad_base||'ud',precioCompra,precio:(precioCompra!=null&&factor>0)?Math.round(precioCompra/factor*1e4)/1e4:precioCompra,iva:parseFloat($('av-'+i)?.value)||l.iva_pct||null,lote:l.lote||null,categoria:l.categoria||null,caducidad:$('ac-'+i)?.value||null};}).filter(l=>l.cantidad>0);lf.forEach(l=>{let ing=INV.ingredientes.find(x=>x.nombre.toLowerCase().includes(l.nombre.toLowerCase())||l.nombre.toLowerCase().includes(x.nombre.toLowerCase().split(' ')[0]));if(!ing){ing={id:uid(),nombre:l.nombre,categoria:l.categoria||'Otros',unidad:l.unidad||'ud',precio:l.precio||0,ivaPct:l.iva||null,stock:0,stockMin:0,proveedorId:provId||null,notas:'',creadoEn:fecha,historialPrecios:[],formatoCompra:l.unidadCompra!==l.unidad?{unidad:l.unidadCompra,factor:l.factor}:null};INV.ingredientes.push(ing);}if(l.precio&&l.precio>0){ing.precio=l.precio;if(provId)ing.proveedorId=provId;ing.historialPrecios=ing.historialPrecios||[];ing.historialPrecios.push({fecha,precio:l.precio,proveedorId:provId||ing.proveedorId,fuente:'albaran'});}if(l.iva!=null&&ing.ivaPct==null)ing.ivaPct=l.iva;if(l.categoria&&(!ing.categoria||ing.categoria==='Otros'))ing.categoria=l.categoria;if(l.unidadCompra!==l.unidad)ing.formatoCompra={unidad:l.unidadCompra,factor:l.factor};if(provId&&!ing.proveedorId)ing.proveedorId=provId;ing.stock=(ing.stock||0)+l.cantidad;INV.movimientos.push({id:uid(),ingId:ing.id,tipo:'entrada',cantidad:l.cantidad,unidad:l.unidad,cantidadCompra:l.cantidadCompra,unidadCompra:l.unidadCompra,factor:l.factor,fecha,coste:l.cantidadCompra*(l.precioCompra||0),motivo:'Albar\u00e1n '+(_ref||fecha),iva:l.iva||null,caducidad:l.caducidad});if(l.lote||l.caducidad){INV.lotes=INV.lotes||[];INV.lotes.push({id:uid(),ingId:ing.id,cantidad:l.cantidad,lote:l.lote||null,caducidad:l.caducidad||null,fecha});}});INV.albaranes.push({id:uid(),proveedorId:provId||null,fecha,ref:_ref,lineas:lf,totales:p.totales||null});await sbWrite('inventario',INV);llenarProveedores();$('alb-result').innerHTML='<div class="alert alert-green">\u2713 Albar\u00e1n aplicado a stock ('+lf.length+' productos)</div>';$('alb-prov-row').style.display='none';albParsed=null;}catch(e){$('alb-result').innerHTML='<div class="alert alert-red">Error: '+esc(e.message)+'</div>';}finally{btn.disabled=false;btn.innerHTML='Aplicar a stock';}}
 init();
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ PIN GATE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-function agregarPin(digit){
-  const inp=document.getElementById('pin-input');
-  if(inp.value.length<6)inp.value+=digit;
-}
-function borrarPin(){
-  const inp=document.getElementById('pin-input');
-  inp.value=inp.value.slice(0,-1);
-}
-function verificarPin(e){
-  e.preventDefault();
-  const pin=document.getElementById('pin-input').value.trim();
-  if(!pin){
-    mostrarPinError('Ingresa tu PIN');
-    return;
-  }
-  const emp=DB.empleados.find(e=>e.pin===pin);
-  if(!emp){
-    mostrarPinError('PIN incorrecto');
-    document.getElementById('pin-input').value='';
-    return;
-  }
-  STATE={empId:emp.id,empNombre:emp.nombre,pin:emp.pin};
-  document.getElementById('tb-user-name').textContent=emp.nombre;
-  document.getElementById('pin-gate').style.display='none';
-  document.getElementById('app').style.display='flex';
-  actualizarFichaje();
-}
-function mostrarPinError(msg){
-  const err=document.getElementById('pin-error');
-  err.textContent=msg;
-  setTimeout(()=>err.textContent='',3000);
-}
-function logout(){
-  STATE={empId:null,empNombre:null,pin:null};
-  currentAlbaran=null;
-  document.getElementById('pin-input').value='';
-  document.getElementById('pin-error').textContent='';
-  document.getElementById('pin-gate').style.display='flex';
-  document.getElementById('app').style.display='none';
-  document.getElementById('pin-input').focus();
-}
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ TABS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-function mostrarTab(tab){
-  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
-  document.getElementById('panel-'+tab).classList.add('active');
-  event.target.classList.add('active');
-}
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ FICHAJE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-function fichajesDia(empId,fechaISO){
-  return (DB.fichajes||[]).filter(f=>f.empId===empId&&f.fecha===fechaISO).sort((a,b)=>a.ts.localeCompare(b.ts));
-}
-function fichar(tipo){
-  const now=new Date();
-  const ts=now.toISOString();
-  const fecha=ts.slice(0,10);
-  const uid=()=>''+Date.now()+'_'+Math.random().toString(36).substr(2,9);
-  (DB.fichajes=DB.fichajes||[]).push({id:uid(),empId:STATE.empId,tipo,ts,fecha});
-  sincronizar();
-  actualizarFichaje();
-}
-function actualizarFichaje(){
-  const now=new Date();
-  const fecha=now.toISOString().slice(0,10);
-  const fs=fichajesDia(STATE.empId,fecha);
-  const estado=document.getElementById('fichaje-estado');
-  const hora=document.getElementById('fichaje-hora');
-  const hist=document.getElementById('fichaje-historial');
-  
-  if(fs.length===0){
-    estado.textContent='No fichado';
-    estado.style.color='var(--tx3)';
-    hora.textContent='';
-  }else{
-    const ult=fs[fs.length-1];
-    const ultHora=new Date(ult.ts).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
-    if(ult.tipo==='entrada'){
-      estado.textContent='Trabajando';
-      estado.style.color='var(--green)';
-      hora.textContent='Entrada: '+ultHora;
-    }else{
-      estado.textContent='Salida registrada';
-      estado.style.color='var(--amber)';
-      const entrada=fs.find(f=>f.tipo==='entrada');
-      if(entrada){
-        const horaEnt=new Date(entrada.ts);
-        const horaSal=new Date(ult.ts);
-        const durMs=horaSal-horaEnt;
-        const horas=Math.floor(durMs/3600000);
-        const mins=Math.floor((durMs%3600000)/60000);
-        hora.textContent=`${horas}h ${mins}m trabajados`;
-      }
-    }
-  }
-  
-  hist.innerHTML='';
-  fs.forEach(f=>{
-    const t=new Date(f.ts);
-    const hms=t.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
-    const icon=f.tipo==='entrada'?'📥':'📤';
-    const item=document.createElement('div');
-    item.className='fs-h-item';
-    item.innerHTML=`<span class="fs-h-type">${icon} ${f.tipo}</span><span class="fs-h-time">${hms}</span>`;
-    hist.appendChild(item);
-  });
-}
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ALBARANES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-function llenarProveedores(){
-  const sel=document.getElementById('alb-proveedor');
-  sel.innerHTML='<option value="">Selecciona proveedor...</option>';
-  (DB.proveedores||[]).forEach(p=>{
-    const opt=document.createElement('option');
-    opt.value=p.id;
-    opt.textContent=p.nombre;
-    sel.appendChild(opt);
-  });
-}
-function abrirCamara(){
-  document.getElementById('camera-input').click();
-}
-async function procesarFoto(e){
-  const file=e.target.files[0];
-  if(!file)return;
-  
-  procesando=true;
-  const preview=document.getElementById('alb-preview');
-  const reader=new FileReader();
-  reader.onload=(evt)=>{
-    preview.classList.add('has-image');
-    preview.innerHTML=`<img src="${evt.target.result}" style="cursor:pointer" onclick="abrirCamara()">`;
-  };
-  reader.readAsDataURL(file);
-  
-  // Leer como base64
-  const base64=await new Promise(res=>{
-    const r=new FileReader();
-    r.onload=()=>res(r.result.split(',')[1]);
-    r.readAsDataURL(file);
-  });
-  
-  try{
-    mostrarMsg('Procesando imagen...','info','alb-messages');
-    
-    // Prompt de Copiloto para OCR de albarán
-    const sysPrompt=`Eres un experto en digitalización de albaranes de proveedores de restaurantes.
-Analiza la imagen del albarán y extrae:
-- Nombre del proveedor
-- Fecha del albarán
-- Lista de productos con cantidad y unidad de compra
-
-DEBES responder SOLO con JSON válido, sin comentarios, en este formato:
-{
-  "proveedor_nombre": "nombre",
-  "fecha": "YYYY-MM-DD",
-  "productos": [
-    {"nombre": "Aceite oliva 5L", "cantidad": 2, "unidad": "bidones", "codigo": "ACE001"},
-    {"nombre": "Sal fina", "cantidad": 25, "unidad": "kg", "codigo": "SAL002"}
-  ]
-}
-
-Si la imagen no es un albarán, responde: {"error": "No es un albarán"}`;
-
-    const userPrompt=`Digitaliza este albarán de proveedor.`;
-
-    const messages=[
-      {
-        role:'user',
-        content:[
-          {type:'image',source:{type:'base64',media_type:'image/jpeg',data:base64}},
-          {type:'text',text:userPrompt}
-        ]
-      }
-    ];
-
-    const res=await fetch('/api/claude',{
-      method:'POST',
-      headers:{
-        'Content-Type':'application/json',
-        'x-restaid-pass':'personal'
-      },
-      body:JSON.stringify({
-        model:'claude-sonnet-4-6',
-        max_tokens:1000,
-        system:sysPrompt,
-        messages
-      })
-    });
-    
-    const data=await res.json();
-    if(!res.ok){
-      mostrarMsg('Error API: '+(data.error?.message||'Unknown'),'error','alb-messages');
-      procesando=false;
-      e.target.value='';
-      return;
-    }
-
-    // Extraer JSON de respuesta
-    let jsonText='';
-    if(data.content && data.content[0]){
-      jsonText=data.content[0].text||'';
-    }
-    
-    const jsonMatch=jsonText.match(/\{[\s\S]*\}/);
-    if(!jsonMatch){
-      mostrarMsg('No se pudo extraer datos del albarán','error','alb-messages');
-      procesando=false;
-      e.target.value='';
-      return;
-    }
-
-    const parsed=JSON.parse(jsonMatch[0]);
-    if(parsed.error){
-      mostrarMsg(parsed.error,'error','alb-messages');
-      procesando=false;
-      e.target.value='';
-      return;
-    }
-
-    // Buscar proveedor por nombre
-    let provId=null;
-    const prov=DB.proveedores.find(p=>p.nombre.toLowerCase().includes(parsed.proveedor_nombre.toLowerCase()));
-    if(prov)provId=prov.id;
-
-    // Armar albarán
-    currentAlbaran={
-      proveedor_nombre:parsed.proveedor_nombre,
-      proveedor_id:provId,
-      fecha:parsed.fecha||new Date().toISOString().slice(0,10),
-      productos:(parsed.productos||[]).map(p=>({
-        nombre:p.nombre,
-        cantidad:p.cantidad||1,
-        unidad:p.unidad||'unidad',
-        codigo:p.codigo||'',
-        conversion_factor:1
-      }))
-    };
-
-    mostrarFormAlbaran(currentAlbaran);
-    mostrarMsg('Albarán procesado ✓','success','alb-messages');
-  }catch(err){
-    mostrarMsg('Error: '+err.message,'error','alb-messages');
-  }finally{
-    procesando=false;
-    e.target.value=''; // Reset input
-  }
-}
-function mostrarFormAlbaran(alb){
-  document.getElementById('alb-form').style.display='block';
-  if(alb.proveedor_id)document.getElementById('alb-proveedor').value=alb.proveedor_id;
-  if(alb.fecha)document.getElementById('alb-fecha').value=alb.fecha;
-  
-  const prod=document.getElementById('alb-productos');
-  prod.innerHTML='';
-  (alb.productos||[]).forEach(p=>{
-    const item=document.createElement('div');
-    item.className='form-product';
-    item.innerHTML=`
-      <div>
-        <div class="fp-name">${p.nombre}</div>
-        <div class="fp-qty">${p.cantidad} x ${p.unidad}</div>
-      </div>
-    `;
-    prod.appendChild(item);
-  });
-}
-async function aplicarAlbaran(){
-  if(!currentAlbaran)return;
-  const provId=document.getElementById('alb-proveedor').value;
-  const fecha=document.getElementById('alb-fecha').value;
-  
-  if(!provId){
-    mostrarMsg('Selecciona proveedor','error','alb-messages');
-    return;
-  }
-  
-  const btn=document.getElementById('btn-aplicar');
-  btn.disabled=true;
-  btn.innerHTML='<span class="spinner"></span>';
-  
-  try{
-    const res=await fetch('/api/login?mode=personal&action=aplicar_albaran',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        albaran:currentAlbaran,
-        provId,
-        fecha:fecha||new Date().toISOString().slice(0,10)
-      })
-    });
-    const data=await res.json();
-    if(data.ok){
-      mostrarMsg('Albarán guardado ✓','success','alb-messages');
-      currentAlbaran=null;
-      document.getElementById('alb-form').style.display='none';
-      document.getElementById('alb-preview').classList.remove('has-image');
-      document.getElementById('alb-preview').innerHTML='<span style="color:var(--tx3)">Sin imagen</span>';
-      DB=data.db||DB;
-    }else{
-      mostrarMsg('Error: '+data.msg,'error','alb-messages');
-    }
-  }catch(e){
-    mostrarMsg('Error: '+e.message,'error','alb-messages');
-  }finally{
-    btn.disabled=false;
-    btn.innerHTML='Guardar albarán';
-  }
-}
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ UTILS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-function mostrarMsg(text,tipo,containerId){
-  const cont=document.getElementById(containerId||'alb-messages');
-  const msg=document.createElement('div');
-  msg.className='msg '+tipo;
-  msg.textContent=text;
-  cont.innerHTML='';
-  cont.appendChild(msg);
-  setTimeout(()=>msg.style.opacity='0.5',3000);
-}
-async function sincronizar(){
-  try{
-    await fetch('/api/login?mode=personal&action=sync',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({db:DB})
-    });
-  }catch(e){
-    console.error('Sync error:',e);
-  }
-}
 </script>
 </body>
 </html>
