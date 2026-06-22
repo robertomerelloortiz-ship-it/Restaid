@@ -253,6 +253,9 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
 .cuad-now-pill{display:inline-flex;align-items:center;gap:5px;background:var(--surf);border:1px solid rgba(29,122,74,.25);border-radius:14px;padding:3px 10px;font-size:11px;font-weight:600;color:var(--tx)}
 .cuad-now-pill .cuad-live-dot{width:6px;height:6px}
 .cuad-now-pill small{color:var(--tx3);font-weight:500}
+.cuad-total-real{font-size:9.5px;font-weight:700;color:var(--green);margin-top:2px}
+.cuad-extra-tag{display:inline-block;background:var(--ylw-bg);color:var(--ylw);font-weight:700;padding:0 5px;border-radius:7px;font-size:9px}
+.extra-auto-tag{display:inline-block;background:var(--blue-bg);color:var(--blue);font-weight:700;padding:1px 6px;border-radius:7px;font-size:9px;margin-left:6px;vertical-align:middle;letter-spacing:.03em}
 .cuad-total-cell{background:var(--surf-alt);font-size:11.5px;min-width:92px;padding:9px 8px!important}
 .cuad-total-h{font-weight:700;font-size:13px}
 .cuad-total-sub{font-size:10px;color:var(--tx3);margin-top:1px}
@@ -1045,7 +1048,11 @@ function startCuadLive(){
       if(typeof sbGetRRHH==='function'){sbGetRRHH().then(remote=>{
         if(remote&&Array.isArray(remote.fichajes)){
           const localN=(DB.fichajes||[]).length, remoteN=remote.fichajes.length;
-          if(remoteN!==localN&&!LOCAL_DIRTY){DB.fichajes=remote.fichajes;}
+          if(remoteN!==localN&&!LOCAL_DIRTY){
+            DB.fichajes=remote.fichajes;
+            // Llegaron fichajes nuevos (p.ej. desde la tablet): derivar extras automáticas
+            if(recalcExtrasAuto(DB.semanaActual)){saveDB();}
+          }
         }
         renderCuadrante();
       }).catch(()=>renderCuadrante());}
@@ -1061,6 +1068,10 @@ function renderCuadRows(label,emps,rolKey,w,isCurWeek,todayDow){
     const hSem=horasEmpSemana(w,e.id),cSem=w.asignaciones.filter(a=>a.empId===e.id).reduce((s,a)=>s+asignCoste(a),0);
     const over=e.horasContrato&&hSem>e.horasContrato;
     const isDescanso=d=>e.diaDescanso&&DIAS_FULL[DIAS.indexOf(d)]===e.diaDescanso;
+    const hReal=horasFichadasSemana(e.id,DB.semanaActual);
+    const hCerr=horasCerradasSemana(e.id,DB.semanaActual);
+    const hcE=Number(e.horasContrato)||0;
+    const extraAuto=hcE?Math.round((hCerr-hcE)*100)/100:0;
     html+=`<tr>
       <td class="cuad-emp-cell"><div class="cuad-emp-name">${esc(e.nombre)}</div><div class="cuad-emp-sub"><span class="emp-role-tag ${roleClass(e.rol)}">${esc(e.rol)}</span> ${fc(calcSalarioHora(e),1)}€/h${e.diaDescanso?` · lib. ${e.diaDescanso.slice(0,3)}`:''}</div></td>
       ${DIAS.map((d,di)=>{
@@ -1075,7 +1086,7 @@ function renderCuadRows(label,emps,rolKey,w,isCurWeek,todayDow){
         }
         return `<td class="cuad-cell" style="${bg}" onclick="openTurno('${e.id}','${d}')">${cells.length?cells.map(a=>`<span class="cuad-chip ${a.turno.toLowerCase()}">${esc(a.turno[0])} ${esc(a.ini)}-${esc(a.fin)}</span>`).join(''):(liveHtml?'':'<span class="cuad-chip-empty">+</span>')}${liveHtml}</td>`;
       }).join('')}
-      <td class="cuad-total-cell ${over?'cuad-over':''}"><div class="cuad-total-h">${fc(hSem,1)} h</div><div class="cuad-total-sub">${fk(cSem)}€${e.horasContrato?` / ${fc(e.horasContrato,0)}h`:''}</div></td>
+      <td class="cuad-total-cell ${over?'cuad-over':''}"><div class="cuad-total-h">${fc(hSem,1)} h</div><div class="cuad-total-sub">${fk(cSem)}€${e.horasContrato?` / ${fc(e.horasContrato,0)}h`:''}</div>${hReal>0.05?`<div class="cuad-total-real">Real ${fc(hReal,1)} h${extraAuto>0.05?` <span class="cuad-extra-tag">+${fc(extraAuto,1)} extra</span>`:''}</div>`:''}</td>
     </tr>`;
   });
   TURNOS.forEach(tn=>{
@@ -1169,6 +1180,8 @@ function renderCostes(){
 function renderExtras(){
   const pg=$('pg-extras');
   if(!DB.empleados.length){pg.innerHTML=`<div class="page-hd"><h2>Horas extras</h2></div><div class="empty"><div class="empty-icon">⏱️</div><h3>Sin equipo</h3><p>Da de alta a tus empleados primero.</p><button class="btn btn-amber" onclick="showPage('empleados')">Añadir equipo →</button></div>`;return;}
+  // Recalcular extras automáticas de todas las semanas con fichajes antes de mostrar
+  let cambio=false;Object.keys(DB.semanas).forEach(wid=>{if(recalcExtrasAuto(wid))cambio=true;});if(cambio)saveDB();
   const all=[];Object.keys(DB.semanas).forEach(wid=>{(DB.semanas[wid].extras||[]).forEach(x=>all.push({...x,wid}));});all.sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
   const acc={};all.forEach(x=>{if(!acc[x.empId])acc[x.empId]={pend:0,comp:0,pag:0};acc[x.empId][x.estado==='pendiente'?'pend':x.estado==='compensada'?'comp':'pag']+=Number(x.horas)||0;});
   const pendTotal=all.filter(x=>x.estado==='pendiente').reduce((s,x)=>s+(Number(x.horas)||0),0);
@@ -1182,7 +1195,7 @@ function renderExtras(){
   </div>
   ${Object.keys(acc).length?`<div class="panel"><p class="panel-title">Acumulado por empleado</p><table class="ct-table"><thead><tr><th>Empleado</th><th>Pend.</th><th>Comp.</th><th>Pag.</th></tr></thead><tbody>${Object.keys(acc).map(eid=>{const e=emp(eid);if(!e)return'';const a=acc[eid];return`<tr><td>${esc(e.nombre)}</td><td>${a.pend?`<span class="ct-pct warn">${fc(a.pend,1)} h</span>`:'—'}</td><td>${fc(a.comp,1)} h</td><td>${fc(a.pag,1)} h</td></tr>`;}).join('')}</tbody></table></div>`:''}
   <div class="panel"><p class="panel-title">Registro</p>
-    ${all.length?all.map(x=>{const e=emp(x.empId);if(!e)return'';return`<div class="extra-row"><div class="extra-av" style="background:${empColor(x.empId)}">${esc(initials(e.nombre))}</div><div class="extra-info"><div class="extra-name">${esc(e.nombre)}</div><div class="extra-meta">${x.fecha?fmtDate(x.fecha):''}${x.motivo?' · '+esc(x.motivo):''}</div></div><div class="extra-hours">${fc(x.horas,1)}<span style="font-size:11px;color:var(--tx3)"> h</span></div><div class="extra-state state-${x.estado}" onclick="cycleExtra('${x.wid}','${x.id}')" title="Clic para cambiar">${x.estado}</div><button class="btn btn-danger btn-sm" onclick="delExtra('${x.wid}','${x.id}')">✕</button></div>`;}).join(''):'<p style="font-size:12.5px;color:var(--tx3);text-align:center;padding:1.5rem">Sin horas extra registradas.</p>'}
+    ${all.length?all.map(x=>{const e=emp(x.empId);if(!e)return'';return`<div class="extra-row"><div class="extra-av" style="background:${empColor(x.empId)}">${esc(initials(e.nombre))}</div><div class="extra-info"><div class="extra-name">${esc(e.nombre)}${x.auto?'<span class="extra-auto-tag">AUTO</span>':''}</div><div class="extra-meta">${x.fecha?fmtDate(x.fecha):''}${x.motivo?' · '+esc(x.motivo):''}</div></div><div class="extra-hours">${fc(x.horas,1)}<span style="font-size:11px;color:var(--tx3)"> h</span></div><div class="extra-state state-${x.estado}" onclick="cycleExtra('${x.wid}','${x.id}')" title="Clic para cambiar">${x.estado}</div>${x.auto?'<span class="btn btn-ghost btn-sm" style="opacity:.4;cursor:default" title="Se recalcula sola desde el fichaje">↻</span>':`<button class="btn btn-danger btn-sm" onclick="delExtra('${x.wid}','${x.id}')">✕</button>`}</div>`;}).join(''):'<p style="font-size:12.5px;color:var(--tx3);text-align:center;padding:1.5rem">Sin horas extra registradas.</p>'}
   </div>`;
 }
 function openExtraModal(){
@@ -1448,6 +1461,50 @@ function horasFichadasSemana(empId,wid){
   for(let i=0;i<7;i++){ const d=new Date(Date.UTC(m.getUTCFullYear(),m.getUTCMonth(),m.getUTCDate()+i)).toISOString().slice(0,10); min+=minFichadosDia(empId,d); }
   return min/60;
 }
+/* Horas reales de jornadas CERRADAS en la semana (ignora turnos aún abiertos).
+   Sirve para derivar horas extra sin contar a quien sigue fichado dentro. */
+function horasCerradasSemana(empId,wid){
+  const m=weekIdToMonday(wid); let min=0;
+  for(let i=0;i<7;i++){
+    const d=new Date(Date.UTC(m.getUTCFullYear(),m.getUTCMonth(),m.getUTCDate()+i)).toISOString().slice(0,10);
+    const fs=fichajesDia(empId,d);
+    // si el día acaba en 'entrada' sin salida, ese tramo está abierto: minFichadosDia ya lo
+    // contaría hasta "ahora" sólo si es hoy; para extras sólo contamos pares entrada-salida completos
+    let lastIn=null;
+    fs.forEach(f=>{ if(f.tipo==='entrada')lastIn=f.ts; else if(f.tipo==='salida'&&lastIn){min+=(new Date(f.ts)-new Date(lastIn))/60000;lastIn=null;} });
+  }
+  return min/60;
+}
+/* Recalcula las horas extra AUTOMÁTICAS de una semana a partir del fichaje real.
+   Regla: si las horas reales cerradas de la semana superan el contrato, el exceso
+   se registra como extra automática. No toca las extras añadidas a mano (sin .auto).
+   Devuelve true si cambió algo (para guardar). */
+function recalcExtrasAuto(wid){
+  if(!wid||!DB.semanas[wid])return false;
+  const w=DB.semanas[wid];
+  w.extras=w.extras||[];
+  let changed=false;
+  DB.empleados.forEach(e=>{
+    const hc=Number(e.horasContrato)||0;
+    if(!hc)return; // sin contrato definido no se puede comparar
+    const reales=horasCerradasSemana(e.id,wid);
+    const exceso=Math.round((reales-hc)*100)/100;
+    const idx=w.extras.findIndex(x=>x.empId===e.id&&x.auto);
+    if(exceso>0.05){
+      const fechaRef=weekIdToMonday(wid).toISOString().slice(0,10);
+      if(idx>=0){
+        if(Math.abs((Number(w.extras[idx].horas)||0)-exceso)>0.01){w.extras[idx].horas=exceso;w.extras[idx].fecha=fechaRef;changed=true;}
+      }else{
+        w.extras.push({id:uid(),empId:e.id,fecha:fechaRef,horas:exceso,motivo:'Exceso sobre contrato (fichaje real)',estado:'pendiente',auto:true});
+        changed=true;
+      }
+    }else if(idx>=0){
+      // Ya no hay exceso: elimina la extra automática previa
+      w.extras.splice(idx,1);changed=true;
+    }
+  });
+  return changed;
+}
 function fmtHM(min){ min=Math.round(min); const h=Math.floor(min/60),m=min%60; return h>0?`${h}h ${m}m`:`${m}m`; }
 function fmtHora(ts){ const d=new Date(ts); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
 function fpKey(d){ if(FICHAJE_PIN.length<6)FICHAJE_PIN+=d; FICHAJE_MSG=null; renderPad(); }
@@ -1464,6 +1521,8 @@ function ficharAhora(empId){
   const tipo=estadoFichaje(empId).dentro?'salida':'entrada';
   const now=new Date();
   (DB.fichajes=DB.fichajes||[]).push({id:uid(),empId,tipo,ts:now.toISOString(),fecha:now.toISOString().slice(0,10)});
+  // Al cerrar turno (salida), derivar horas extra automáticas de la semana
+  if(tipo==='salida'){ recalcExtrasAuto(isoWeekId(now)); }
   saveDB();
   const st=estadoFichaje(empId);
   FICHAJE_MSG={ok:true,nombre:e.nombre,tipo,hora:fmtHora(now.toISOString()),min:st.min};
