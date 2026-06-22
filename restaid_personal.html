@@ -61,9 +61,12 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);min-h
 .fs-h-item{display:flex;justify-content:space-between;padding:.5rem 0;font-size:1rem;border-bottom:1px solid var(--bg)}
 .fs-h-item:last-child{border-bottom:none}
 .fs-h-time{font-weight:600;color:var(--amber)}
-.btn-camera{width:100%;padding:1.4rem;font-size:1.3rem;font-weight:700;background:var(--amber);color:#fff;border:none;border-radius:12px;cursor:pointer}
+.alb-btns{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn-camera{width:100%;padding:1.4rem;font-size:1.15rem;font-weight:700;background:var(--amber);color:#fff;border:none;border-radius:12px;cursor:pointer}
 .btn-camera:active{background:var(--amber-dk)}
-#cam-input{display:none}
+.btn-galeria{width:100%;padding:1.4rem;font-size:1.15rem;font-weight:700;background:var(--surf);color:var(--navy);border:2px solid var(--amber);border-radius:12px;cursor:pointer}
+.btn-galeria:active{background:var(--amber-lt)}
+#cam-input,#gal-input{display:none}
 .alb-result{margin-top:1rem}
 .alb-prov-row{display:none;margin-top:1rem;background:var(--surf);border:1px solid var(--bdr);border-radius:10px;padding:1rem}
 .form-group{margin-bottom:.9rem}
@@ -128,8 +131,12 @@ table.alb-tbl input:focus{outline:1px solid var(--amber);border-radius:3px}
     <div class="fs-hist"><div class="fs-h-lbl">Fichajes de hoy</div><div id="f-hist"></div></div>
   </div>
   <div id="panel-albaran" class="panel">
-    <button class="btn-camera" onclick="document.getElementById('cam-input').click()">&#128247; Escanear albar&aacute;n</button>
-    <input type="file" id="cam-input" accept="image/*,application/pdf" capture="environment" onchange="handleAlbaran(this)">
+    <div class="alb-btns">
+      <button class="btn-camera" onclick="document.getElementById('cam-input').click()">&#128247; Hacer foto</button>
+      <button class="btn-galeria" onclick="document.getElementById('gal-input').click()">&#128194; Galer&iacute;a / archivo</button>
+    </div>
+    <input type="file" id="cam-input" accept="image/*" capture="environment" onchange="handleAlbaran(this)">
+    <input type="file" id="gal-input" accept="image/*,application/pdf" onchange="handleAlbaran(this)">
     <div class="alb-result" id="alb-result"></div>
     <div class="alb-prov-row" id="alb-prov-row">
       <div class="form-group"><label>Proveedor</label><select id="alb-prov"><option value="">&mdash; Seleccionar &mdash;</option></select></div>
