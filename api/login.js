@@ -21,28 +21,37 @@ module.exports = async (req, res) => {
   // ━━━━━━━━━━━━━━━━━ GET: Diagnóstico o carga de datos (personal mode) ━━━━━━━━━━━━━━━━━
   if (req.method === 'GET') {
     if (mode === 'personal') {
-      // Devolver DB para restaid_personal.html (sin auth, libre acceso)
-      // En producción, esto debería estar limitado a IPs internas/tablet conocida
       const sb = await supabaseInit();
       let db = { empleados: [], fichajes: [], albaranes: [], proveedores: [] };
+      let error = null;
       
-      if (sb) {
+      if (!sb) {
+        error = 'Supabase no configurado. Verifica SUPABASE_URL y SUPABASE_KEY en Vercel.';
+        console.error(error);
+      } else {
         try {
-          const { data: emp } = await sb.from('empleados').select('*');
-          const { data: fich } = await sb.from('fichajes').select('*');
-          const { data: prov } = await sb.from('proveedores').select('*');
+          const { data: emp, error: empErr } = await sb.from('empleados').select('*');
+          const { data: fich, error: fichErr } = await sb.from('fichajes').select('*');
+          const { data: prov, error: provErr } = await sb.from('proveedores').select('*');
+          
+          if (empErr) console.error('Error empleados:', empErr.message);
+          if (fichErr) console.error('Error fichajes:', fichErr.message);
+          if (provErr) console.error('Error proveedores:', provErr.message);
+          
           db = {
             empleados: emp || [],
             fichajes: fich || [],
             albaranes: [],
             proveedores: prov || []
           };
+          console.log('DB cargada — empleados:', db.empleados.length, 'proveedores:', db.proveedores.length);
         } catch (e) {
+          error = e.message;
           console.error('Error fetching DB:', e);
         }
       }
       
-      res.status(200).json({ ok: true, db });
+      res.status(200).json({ ok: true, db, error });
       return;
     }
     
