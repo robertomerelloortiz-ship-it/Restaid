@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>RESTAID Personal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --navy:#1A2B3C;--navy-mid:#243547;--navy-lt:#2E4259;
+  --amber:#E8914A;--amber-dk:#C8712A;--amber-lt:#F5C49A;
+  --bg:#F5F4F0;--surf:#FFFFFF;--surf-alt:#FAFAF8;
+  --bdr:#E6E4DF;--bdr-strong:#CCC9C0;
+  --tx:#1C2428;--tx2:#596570;--tx3:#98A3AC;
+  --green:#1D7A4A;--green-bg:#E6F5EE;
+  --red:#C03020;--red-bg:#FAECEA;
+  --ylw:#B07010;--ylw-bg:#FBF5E0;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{font-size:16px}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);min-height:100vh;display:flex}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ PIN GATE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+#pin-gate{position:fixed;top:0;left:0;width:100%;height:100%;background:var(--navy);display:flex;align-items:center;justify-content:center;z-index:9999;flex-direction:column}
+.pin-header{text-align:center;margin-bottom:2rem}
+.pin-logo{font-family:'DM Serif Display';font-size:2.5rem;color:var(--amber);margin-bottom:0.5rem}
+.pin-title{font-size:1.2rem;color:#fff;font-weight:600}
+.pin-form{background:var(--surf);border-radius:12px;padding:2rem;width:90%;max-width:320px;box-shadow:0 8px 32px rgba(0,0,0,.15)}
+.pin-input{width:100%;font-size:1.8rem;letter-spacing:0.5rem;text-align:center;padding:1rem;border:2px solid var(--bdr);border-radius:8px;margin-bottom:1rem;font-weight:600;font-family:monospace}
+.pin-input:focus{outline:none;border-color:var(--amber);box-shadow:0 0 0 3px rgba(232,145,74,.1)}
+.pin-error{color:var(--red);font-size:0.85rem;margin-bottom:0.5rem;text-align:center;min-height:20px}
+.pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:1rem}
+.pin-btn{background:var(--navy);color:#fff;border:none;padding:1rem;border-radius:8px;font-size:1.2rem;font-weight:600;cursor:pointer;transition:all 150ms}
+.pin-btn:active{transform:scale(0.95);background:var(--navy-mid)}
+.pin-btn.del{background:var(--red);font-size:1rem}
+.pin-btn.del:active{background:#A01F18}
+.pin-submit{width:100%;background:var(--amber);color:#fff;border:none;padding:1rem;border-radius:8px;font-size:1rem;font-weight:700;cursor:pointer;margin-top:0.5rem}
+.pin-submit:active{background:var(--amber-dk)}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ APP MAIN ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+#app{display:none;width:100%;height:100vh;flex-direction:column}
+#toolbar{background:var(--navy);padding:1rem;color:#fff;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.tb-brand{display:flex;align-items:center;gap:0.5rem}
+.tb-logo{font-family:'DM Serif Display';font-size:1.4rem;color:var(--amber)}
+.tb-user{font-size:0.9rem;opacity:0.8}
+.tb-logout{background:rgba(255,255,255,.1);border:none;color:#fff;padding:0.5rem 1rem;border-radius:6px;cursor:pointer;font-size:0.85rem;font-weight:600}
+.tb-logout:active{background:rgba(255,255,255,.2)}
+
+#content{flex:1;display:flex;overflow:hidden}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ TABS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+#tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:0.5rem;background:var(--bg);flex-shrink:0;border-bottom:1px solid var(--bdr)}
+.tab-btn{background:var(--surf);border:1px solid var(--bdr);padding:0.75rem;border-radius:8px;font-size:1rem;font-weight:600;color:var(--tx2);cursor:pointer;transition:all 150ms}
+.tab-btn.active{background:var(--amber);color:#fff;border-color:var(--amber)}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ PANELS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.panel{display:none;overflow-y:auto;flex:1;padding:1.5rem}
+.panel.active{display:flex;flex-direction:column}
+.panel-center{align-items:center;justify-content:center}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ FICHAJE PANEL ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+#panel-fichaje{flex-direction:column;gap:1rem}
+.fichaje-status{background:var(--surf);border:2px solid var(--bdr);border-radius:12px;padding:2rem;text-align:center;margin-bottom:1rem}
+.fs-lbl{font-size:0.85rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--tx3);margin-bottom:0.5rem;font-weight:600}
+.fs-val{font-family:'DM Serif Display';font-size:2.5rem;color:var(--tx);margin-bottom:0.5rem}
+.fs-sub{font-size:0.9rem;color:var(--tx2)}
+.fs-historial{background:var(--surf);border:1px solid var(--bdr);border-radius:8px;padding:1rem;margin-top:1rem}
+.fs-h-lbl{font-size:0.85rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--tx3);margin-bottom:0.5rem}
+.fs-h-item{display:flex;justify-content:space-between;padding:0.5rem 0;font-size:0.95rem;border-bottom:1px solid var(--bg)}
+.fs-h-item:last-child{border-bottom:none}
+.fs-h-time{font-weight:600;color:var(--amber)}
+.fs-h-type{color:var(--tx2)}
+
+.big-btn{width:100%;padding:2rem;font-size:1.8rem;font-weight:700;border:none;border-radius:12px;cursor:pointer;transition:all 150ms;margin:0.5rem 0}
+.btn-entrada{background:var(--green);color:#fff}
+.btn-entrada:active{opacity:0.85;transform:scale(0.98)}
+.btn-salida{background:var(--red);color:#fff}
+.btn-salida:active{opacity:0.85;transform:scale(0.98)}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ALBARANES PANEL ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+#panel-albaran{flex-direction:column;gap:1rem}
+.btn-camera{width:100%;padding:1.5rem;font-size:1.4rem;font-weight:700;background:var(--amber);color:#fff;border:none;border-radius:12px;cursor:pointer;transition:all 150ms}
+.btn-camera:active{background:var(--amber-dk);transform:scale(0.98)}
+
+#camera-input{display:none}
+
+.alb-preview{background:var(--surf);border:2px dashed var(--bdr);border-radius:12px;padding:1.5rem;text-align:center;min-height:200px;display:flex;align-items:center;justify-content:center;margin-bottom:1rem}
+.alb-preview.has-image{border-style:solid;padding:0}
+.alb-preview img{max-width:100%;max-height:300px;border-radius:12px}
+
+.alb-form{background:var(--surf);border:1px solid var(--bdr);border-radius:8px;padding:1rem;margin-bottom:1rem}
+.form-group{margin-bottom:1rem}
+.form-label{display:block;font-size:0.85rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--tx3);margin-bottom:0.3rem}
+.form-input,.form-select{width:100%;padding:0.7rem;border:1px solid var(--bdr);border-radius:6px;font-size:1rem;font-family:inherit}
+.form-input:focus,.form-select:focus{outline:none;border-color:var(--amber);box-shadow:0 0 0 2px rgba(232,145,74,.1)}
+
+.form-products{background:var(--bg);border-radius:8px;max-height:300px;overflow-y:auto}
+.form-product{padding:0.8rem;border-bottom:1px solid var(--bdr);display:flex;justify-content:space-between;align-items:center}
+.form-product:last-child{border-bottom:none}
+.fp-name{font-weight:600;color:var(--tx)}
+.fp-qty{font-size:0.9rem;color:var(--tx2)}
+
+.btn-aplicar{width:100%;padding:1rem;background:var(--green);color:#fff;border:none;border-radius:8px;font-size:1rem;font-weight:700;cursor:pointer}
+.btn-aplicar:active{opacity:0.85;transform:scale(0.98)}
+.btn-aplicar:disabled{opacity:0.5;cursor:not-allowed}
+
+.spinner{display:inline-block;width:20px;height:20px;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin 0.8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.msg{padding:1rem;border-radius:8px;margin-bottom:1rem;font-weight:600}
+.msg.success{background:var(--green-bg);color:var(--green)}
+.msg.error{background:var(--red-bg);color:var(--red)}
+.msg.info{background:var(--blue-bg);color:#1A4A8A}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ RESPONSIVE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+@media (max-width:600px){
+  html{font-size:14px}
+  #toolbar{padding:0.75rem}
+  #tabs{padding:0.3rem;gap:2px}
+  #content{padding:0.75rem}
+  .pin-form{width:95%}
+  .fichaje-status{padding:1.5rem}
+  .fs-val{font-size:2rem}
+  .big-btn{padding:1.5rem;font-size:1.4rem}
+}
+</style>
+</head>
+<body>
+
+<!-- ━━━━━━━━━━━━━━━━ PIN GATE ━━━━━━━━━━━━━━━━ -->
+<div id="pin-gate">
+  <div class="pin-header">
+    <div class="pin-logo">ⓡ</div>
+    <div class="pin-title">RESTAID Personal</div>
+  </div>
+  <form class="pin-form" onsubmit="verificarPin(event)">
+    <div class="pin-error" id="pin-error"></div>
+    <input type="password" id="pin-input" class="pin-input" placeholder="••••" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" autofocus>
+    <div class="pin-pad">
+      <button type="button" class="pin-btn" onclick="agregarPin('1')">1</button>
+      <button type="button" class="pin-btn" onclick="agregarPin('2')">2</button>
+      <button type="button" class="pin-btn" onclick="agregarPin('3')">3</button>
+      <button type="button" class="pin-btn" onclick="agregarPin('4')">4</button>
+      <button type="button" class="pin-btn" onclick="agregarPin('5')">5</button>
+      <button type="button" class="pin-btn" onclick="agregarPin('6')">6</button>
+      <button type="button" class="pin-btn" onclick="agregarPin('7')">7</button>
+      <button type="button" class="pin-btn" onclick="agregarPin('8')">8</button>
+      <button type="button" class="pin-btn" onclick="agregarPin('9')">9</button>
+      <button type="button" class="pin-btn" onclick="agregarPin('0')">0</button>
+      <button type="button" class="pin-btn del" onclick="borrarPin()">←</button>
+      <button type="submit" class="pin-btn" style="background:var(--amber);font-weight:700">✓</button>
+    </div>
+  </form>
+</div>
+
+<!-- ━━━━━━━━━━━━━━━━ APP MAIN ━━━━━━━━━━━━━━━━ -->
+<div id="app">
+  <div id="toolbar">
+    <div class="tb-brand">
+      <div class="tb-logo">ⓡ</div>
+      <span class="tb-user" id="tb-user-name">Personal</span>
+    </div>
+    <button class="tb-logout" onclick="logout()">Salir</button>
+  </div>
+
+  <div id="tabs">
+    <button class="tab-btn active" onclick="mostrarTab('fichaje')">📋 Fichaje</button>
+    <button class="tab-btn" onclick="mostrarTab('albaran')">📷 Albaranes</button>
+  </div>
+
+  <div id="content">
+    <!-- FICHAJE PANEL -->
+    <div id="panel-fichaje" class="panel active panel-center">
+      <div class="fichaje-status">
+        <div class="fs-lbl">Estado hoy</div>
+        <div class="fs-val" id="fichaje-estado">—</div>
+        <div class="fs-sub" id="fichaje-hora"></div>
+      </div>
+      <button class="big-btn btn-entrada" onclick="fichar('entrada')">📥 ENTRADA</button>
+      <button class="big-btn btn-salida" onclick="fichar('salida')">📤 SALIDA</button>
+      <div class="fs-historial">
+        <div class="fs-h-lbl">Fichajes hoy</div>
+        <div id="fichaje-historial"></div>
+      </div>
+    </div>
+
+    <!-- ALBARANES PANEL -->
+    <div id="panel-albaran" class="panel">
+      <button class="btn-camera" onclick="abrirCamara()">📷 Escanear albarán</button>
+      <div class="alb-preview" id="alb-preview">
+        <span style="color:var(--tx3)">Sin imagen</span>
+      </div>
+      <input type="file" id="camera-input" accept="image/*" capture="environment" onchange="procesarFoto(event)">
+      
+      <div id="alb-messages"></div>
+      <div id="alb-form" style="display:none">
+        <div class="alb-form">
+          <div class="form-group">
+            <label class="form-label">Proveedor</label>
+            <select id="alb-proveedor" class="form-select"></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Fecha</label>
+            <input type="date" id="alb-fecha" class="form-input">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Productos</label>
+            <div class="form-products" id="alb-productos"></div>
+          </div>
+        </div>
+        <button class="btn-aplicar" id="btn-aplicar" onclick="aplicarAlbaran()">Guardar albarán</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ STATE & DB ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+let STATE={empId:null,empNombre:null,pin:null};
+let DB={empleados:[],fichajes:[],albaranes:[],proveedores:[]};
+let currentAlbaran=null;
+let procesando=false;
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ INIT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async function init(){
+  try{
+    const res=await fetch('/api/login?mode=personal');
+    const data=await res.json();
+    if(data.ok){
+      DB=data.db||{empleados:[],fichajes:[],albaranes:[],proveedores:[]};
+      llenarProveedores();
+      document.getElementById('alb-fecha').valueAsDate=new Date();
+    }else{
+      console.error('Error init:',data.msg);
+    }
+  }catch(e){
+    console.error('Init error:',e);
+  }
+}
+init();
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ PIN GATE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function agregarPin(digit){
+  const inp=document.getElementById('pin-input');
+  if(inp.value.length<6)inp.value+=digit;
+}
+function borrarPin(){
+  const inp=document.getElementById('pin-input');
+  inp.value=inp.value.slice(0,-1);
+}
+function verificarPin(e){
+  e.preventDefault();
+  const pin=document.getElementById('pin-input').value.trim();
+  if(!pin){
+    mostrarPinError('Ingresa tu PIN');
+    return;
+  }
+  const emp=DB.empleados.find(e=>e.pin===pin);
+  if(!emp){
+    mostrarPinError('PIN incorrecto');
+    document.getElementById('pin-input').value='';
+    return;
+  }
+  STATE={empId:emp.id,empNombre:emp.nombre,pin:emp.pin};
+  document.getElementById('tb-user-name').textContent=emp.nombre;
+  document.getElementById('pin-gate').style.display='none';
+  document.getElementById('app').style.display='flex';
+  actualizarFichaje();
+}
+function mostrarPinError(msg){
+  const err=document.getElementById('pin-error');
+  err.textContent=msg;
+  setTimeout(()=>err.textContent='',3000);
+}
+function logout(){
+  STATE={empId:null,empNombre:null,pin:null};
+  currentAlbaran=null;
+  document.getElementById('pin-input').value='';
+  document.getElementById('pin-error').textContent='';
+  document.getElementById('pin-gate').style.display='flex';
+  document.getElementById('app').style.display='none';
+  document.getElementById('pin-input').focus();
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ TABS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function mostrarTab(tab){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('panel-'+tab).classList.add('active');
+  event.target.classList.add('active');
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ FICHAJE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function fichajesDia(empId,fechaISO){
+  return (DB.fichajes||[]).filter(f=>f.empId===empId&&f.fecha===fechaISO).sort((a,b)=>a.ts.localeCompare(b.ts));
+}
+function fichar(tipo){
+  const now=new Date();
+  const ts=now.toISOString();
+  const fecha=ts.slice(0,10);
+  const uid=()=>''+Date.now()+'_'+Math.random().toString(36).substr(2,9);
+  (DB.fichajes=DB.fichajes||[]).push({id:uid(),empId:STATE.empId,tipo,ts,fecha});
+  sincronizar();
+  actualizarFichaje();
+}
+function actualizarFichaje(){
+  const now=new Date();
+  const fecha=now.toISOString().slice(0,10);
+  const fs=fichajesDia(STATE.empId,fecha);
+  const estado=document.getElementById('fichaje-estado');
+  const hora=document.getElementById('fichaje-hora');
+  const hist=document.getElementById('fichaje-historial');
+  
+  if(fs.length===0){
+    estado.textContent='No fichado';
+    estado.style.color='var(--tx3)';
+    hora.textContent='';
+  }else{
+    const ult=fs[fs.length-1];
+    const ultHora=new Date(ult.ts).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+    if(ult.tipo==='entrada'){
+      estado.textContent='Trabajando';
+      estado.style.color='var(--green)';
+      hora.textContent='Entrada: '+ultHora;
+    }else{
+      estado.textContent='Salida registrada';
+      estado.style.color='var(--amber)';
+      const entrada=fs.find(f=>f.tipo==='entrada');
+      if(entrada){
+        const horaEnt=new Date(entrada.ts);
+        const horaSal=new Date(ult.ts);
+        const durMs=horaSal-horaEnt;
+        const horas=Math.floor(durMs/3600000);
+        const mins=Math.floor((durMs%3600000)/60000);
+        hora.textContent=`${horas}h ${mins}m trabajados`;
+      }
+    }
+  }
+  
+  hist.innerHTML='';
+  fs.forEach(f=>{
+    const t=new Date(f.ts);
+    const hms=t.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+    const icon=f.tipo==='entrada'?'📥':'📤';
+    const item=document.createElement('div');
+    item.className='fs-h-item';
+    item.innerHTML=`<span class="fs-h-type">${icon} ${f.tipo}</span><span class="fs-h-time">${hms}</span>`;
+    hist.appendChild(item);
+  });
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ALBARANES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function llenarProveedores(){
+  const sel=document.getElementById('alb-proveedor');
+  sel.innerHTML='<option value="">Selecciona proveedor...</option>';
+  (DB.proveedores||[]).forEach(p=>{
+    const opt=document.createElement('option');
+    opt.value=p.id;
+    opt.textContent=p.nombre;
+    sel.appendChild(opt);
+  });
+}
+function abrirCamara(){
+  document.getElementById('camera-input').click();
+}
+async function procesarFoto(e){
+  const file=e.target.files[0];
+  if(!file)return;
+  
+  procesando=true;
+  const preview=document.getElementById('alb-preview');
+  const reader=new FileReader();
+  reader.onload=(evt)=>{
+    preview.classList.add('has-image');
+    preview.innerHTML=`<img src="${evt.target.result}" style="cursor:pointer" onclick="abrirCamara()">`;
+  };
+  reader.readAsDataURL(file);
+  
+  // Leer como base64
+  const base64=await new Promise(res=>{
+    const r=new FileReader();
+    r.onload=()=>res(r.result.split(',')[1]);
+    r.readAsDataURL(file);
+  });
+  
+  try{
+    mostrarMsg('Procesando imagen...','info','alb-messages');
+    
+    // Prompt de Copiloto para OCR de albarán
+    const sysPrompt=`Eres un experto en digitalización de albaranes de proveedores de restaurantes.
+Analiza la imagen del albarán y extrae:
+- Nombre del proveedor
+- Fecha del albarán
+- Lista de productos con cantidad y unidad de compra
+
+DEBES responder SOLO con JSON válido, sin comentarios, en este formato:
+{
+  "proveedor_nombre": "nombre",
+  "fecha": "YYYY-MM-DD",
+  "productos": [
+    {"nombre": "Aceite oliva 5L", "cantidad": 2, "unidad": "bidones", "codigo": "ACE001"},
+    {"nombre": "Sal fina", "cantidad": 25, "unidad": "kg", "codigo": "SAL002"}
+  ]
+}
+
+Si la imagen no es un albarán, responde: {"error": "No es un albarán"}`;
+
+    const userPrompt=`Digitaliza este albarán de proveedor.`;
+
+    const messages=[
+      {
+        role:'user',
+        content:[
+          {type:'image',source:{type:'base64',media_type:'image/jpeg',data:base64}},
+          {type:'text',text:userPrompt}
+        ]
+      }
+    ];
+
+    const res=await fetch('/api/claude',{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'x-restaid-pass':'personal'
+      },
+      body:JSON.stringify({
+        model:'claude-sonnet-4-6',
+        max_tokens:1000,
+        system:sysPrompt,
+        messages
+      })
+    });
+    
+    const data=await res.json();
+    if(!res.ok){
+      mostrarMsg('Error API: '+(data.error?.message||'Unknown'),'error','alb-messages');
+      procesando=false;
+      e.target.value='';
+      return;
+    }
+
+    // Extraer JSON de respuesta
+    let jsonText='';
+    if(data.content && data.content[0]){
+      jsonText=data.content[0].text||'';
+    }
+    
+    const jsonMatch=jsonText.match(/\{[\s\S]*\}/);
+    if(!jsonMatch){
+      mostrarMsg('No se pudo extraer datos del albarán','error','alb-messages');
+      procesando=false;
+      e.target.value='';
+      return;
+    }
+
+    const parsed=JSON.parse(jsonMatch[0]);
+    if(parsed.error){
+      mostrarMsg(parsed.error,'error','alb-messages');
+      procesando=false;
+      e.target.value='';
+      return;
+    }
+
+    // Buscar proveedor por nombre
+    let provId=null;
+    const prov=DB.proveedores.find(p=>p.nombre.toLowerCase().includes(parsed.proveedor_nombre.toLowerCase()));
+    if(prov)provId=prov.id;
+
+    // Armar albarán
+    currentAlbaran={
+      proveedor_nombre:parsed.proveedor_nombre,
+      proveedor_id:provId,
+      fecha:parsed.fecha||new Date().toISOString().slice(0,10),
+      productos:(parsed.productos||[]).map(p=>({
+        nombre:p.nombre,
+        cantidad:p.cantidad||1,
+        unidad:p.unidad||'unidad',
+        codigo:p.codigo||'',
+        conversion_factor:1
+      }))
+    };
+
+    mostrarFormAlbaran(currentAlbaran);
+    mostrarMsg('Albarán procesado ✓','success','alb-messages');
+  }catch(err){
+    mostrarMsg('Error: '+err.message,'error','alb-messages');
+  }finally{
+    procesando=false;
+    e.target.value=''; // Reset input
+  }
+}
+function mostrarFormAlbaran(alb){
+  document.getElementById('alb-form').style.display='block';
+  if(alb.proveedor_id)document.getElementById('alb-proveedor').value=alb.proveedor_id;
+  if(alb.fecha)document.getElementById('alb-fecha').value=alb.fecha;
+  
+  const prod=document.getElementById('alb-productos');
+  prod.innerHTML='';
+  (alb.productos||[]).forEach(p=>{
+    const item=document.createElement('div');
+    item.className='form-product';
+    item.innerHTML=`
+      <div>
+        <div class="fp-name">${p.nombre}</div>
+        <div class="fp-qty">${p.cantidad} x ${p.unidad}</div>
+      </div>
+    `;
+    prod.appendChild(item);
+  });
+}
+async function aplicarAlbaran(){
+  if(!currentAlbaran)return;
+  const provId=document.getElementById('alb-proveedor').value;
+  const fecha=document.getElementById('alb-fecha').value;
+  
+  if(!provId){
+    mostrarMsg('Selecciona proveedor','error','alb-messages');
+    return;
+  }
+  
+  const btn=document.getElementById('btn-aplicar');
+  btn.disabled=true;
+  btn.innerHTML='<span class="spinner"></span>';
+  
+  try{
+    const res=await fetch('/api/login?mode=personal&action=aplicar_albaran',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        albaran:currentAlbaran,
+        provId,
+        fecha:fecha||new Date().toISOString().slice(0,10)
+      })
+    });
+    const data=await res.json();
+    if(data.ok){
+      mostrarMsg('Albarán guardado ✓','success','alb-messages');
+      currentAlbaran=null;
+      document.getElementById('alb-form').style.display='none';
+      document.getElementById('alb-preview').classList.remove('has-image');
+      document.getElementById('alb-preview').innerHTML='<span style="color:var(--tx3)">Sin imagen</span>';
+      DB=data.db||DB;
+    }else{
+      mostrarMsg('Error: '+data.msg,'error','alb-messages');
+    }
+  }catch(e){
+    mostrarMsg('Error: '+e.message,'error','alb-messages');
+  }finally{
+    btn.disabled=false;
+    btn.innerHTML='Guardar albarán';
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ UTILS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function mostrarMsg(text,tipo,containerId){
+  const cont=document.getElementById(containerId||'alb-messages');
+  const msg=document.createElement('div');
+  msg.className='msg '+tipo;
+  msg.textContent=text;
+  cont.innerHTML='';
+  cont.appendChild(msg);
+  setTimeout(()=>msg.style.opacity='0.5',3000);
+}
+async function sincronizar(){
+  try{
+    await fetch('/api/login?mode=personal&action=sync',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({db:DB})
+    });
+  }catch(e){
+    console.error('Sync error:',e);
+  }
+}
+</script>
+</body>
+</html>
