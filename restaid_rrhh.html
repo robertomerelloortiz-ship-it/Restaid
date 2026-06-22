@@ -442,6 +442,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
 .fich-tag.out{background:#F1F5F9;color:#475569}
 .fich-up{color:var(--red);font-weight:600}
 .fich-down{color:#D97706;font-weight:600}
+.fich-edit{display:inline-block;cursor:pointer;color:var(--tx2);border:1px solid var(--bdr);border-radius:6px;padding:1px 7px;transition:all .12s}
+.fich-edit:hover{border-color:var(--amber);color:var(--amber);background:var(--ylw-bg)}
+.fich-add{cursor:pointer;border:1px dashed var(--bdr-strong);background:none;color:var(--tx3);border-radius:6px;width:22px;height:22px;font-size:14px;line-height:1;vertical-align:middle}
+.fich-add:hover{border-color:var(--green);color:var(--green)}
 .fich-empty{color:var(--tx3);font-size:13px;margin:4px 0 0}
 .fich-note{font-size:11.5px;color:var(--tx3);margin:8px 0 0}
 @media(max-width:768px){ .fich-grid{grid-template-columns:1fr} }
@@ -944,7 +948,7 @@ function openEmpModal(id){
       <div class="field"><label>Día de descanso estándar</label><select id="em-descanso"><option value="">Sin definir</option>${DIAS_FULL.map(d=>`<option ${e.diaDescanso===d?'selected':''}>${d}</option>`).join('')}</select></div>
     </div>
     <div class="field-row">
-      <div class="field"><label>PIN de fichaje (4–6 dígitos)</label><input id="em-pin" type="text" inputmode="numeric" maxlength="6" value="${e.pin||''}" placeholder="Ej. 1234"><div class="field-hint">Cada persona ficha su entrada/salida con este PIN. Debe ser único.</div></div>
+      <div class="field"><label>PIN de fichaje (4 dígitos)</label><input id="em-pin" type="text" inputmode="numeric" maxlength="4" value="${e.pin||''}" placeholder="Ej. 1234"><div class="field-hint">Cada persona ficha su entrada/salida con este PIN. Debe ser único.</div></div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button>
@@ -972,7 +976,7 @@ function saveEmp(id){
   const nombre=$('em-nombre').value.trim();
   if(!nombre){toast('Pon al menos el nombre');return;}
   const pin=($('em-pin')?.value||'').trim();
-  if(pin&&!/^\d{4,6}$/.test(pin)){toast('El PIN debe tener entre 4 y 6 dígitos');return;}
+  if(pin&&!/^\d{4}$/.test(pin)){toast('El PIN debe tener exactamente 4 dígitos');return;}
   if(pin&&DB.empleados.some(e=>e.id!==id&&(e.pin||'')===pin)){toast('Ese PIN ya lo usa otra persona');return;}
   const salarioBrutoMes=parseFloat($('em-salario-mes').value)||0;
   const horasContrato=parseFloat($('em-horas').value)||40;
@@ -1507,11 +1511,11 @@ function recalcExtrasAuto(wid){
 }
 function fmtHM(min){ min=Math.round(min); const h=Math.floor(min/60),m=min%60; return h>0?`${h}h ${m}m`:`${m}m`; }
 function fmtHora(ts){ const d=new Date(ts); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
-function fpKey(d){ if(FICHAJE_PIN.length<6)FICHAJE_PIN+=d; FICHAJE_MSG=null; renderPad(); }
+function fpKey(d){ if(FICHAJE_PIN.length<4)FICHAJE_PIN+=d; FICHAJE_MSG=null; renderPad(); if(FICHAJE_PIN.length===4)setTimeout(fpEnter,150); }
 function fpDel(){ FICHAJE_PIN=FICHAJE_PIN.slice(0,-1); FICHAJE_MSG=null; renderPad(); }
 function fpClear(){ FICHAJE_PIN=''; FICHAJE_MSG=null; renderPad(); }
 function fpEnter(){
-  if(FICHAJE_PIN.length<4){ FICHAJE_MSG={err:'El PIN tiene al menos 4 dígitos'}; renderPad(); return; }
+  if(FICHAJE_PIN.length<4){ FICHAJE_MSG={err:'El PIN tiene 4 dígitos'}; renderPad(); return; }
   const e=(DB.empleados||[]).find(x=>(x.pin||'')===FICHAJE_PIN);
   if(!e){ FICHAJE_MSG={err:'PIN no reconocido'}; FICHAJE_PIN=''; renderPad(); return; }
   ficharAhora(e.id);
@@ -1580,7 +1584,7 @@ function renderFichajeRecords(){
     return `<tr>
       <td><b>${esc(e.nombre)}</b></td>
       <td><span class="fich-tag ${st.dentro?'in':'out'}">${st.dentro?'Dentro':'Fuera'}</span></td>
-      <td style="font-size:12px;color:var(--tx3)">${st.fichajes.map(f=>(f.tipo==='entrada'?'▸':'◂')+fmtHora(f.ts)).join('&nbsp; ')}</td>
+      <td style="font-size:12px">${st.fichajes.map(f=>`<span class="fich-edit" onclick="editFichaje('${f.id}')" title="Editar hora">${(f.tipo==='entrada'?'▸':'◂')+fmtHora(f.ts)}</span>`).join('&nbsp; ')} <button class="fich-add" onclick="addFichaje('${e.id}')" title="Añadir fichaje olvidado">+</button></td>
       <td class="td-num">${fmtHM(st.min)}</td>
     </tr>`;
   }).filter(Boolean).join('');
@@ -1620,6 +1624,76 @@ function exportFichajesCSV(){
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download='fichajes_'+new Date().toISOString().slice(0,10)+'.csv'; a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),1000); toast('Registro exportado');
+}
+
+/* ── Edición manual de fichajes (corregir olvidos) ── */
+function editFichaje(fid){
+  const f=(DB.fichajes||[]).find(x=>x.id===fid); if(!f)return;
+  const e=emp(f.empId);
+  $('modal-host').innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()"><div class="modal">
+    <h3>Editar fichaje</h3>
+    <p class="modal-desc">${esc(e?e.nombre:'')} · ${fmtDate(f.fecha)}</p>
+    <div class="field"><label>Tipo</label><select id="ef-tipo">
+      <option value="entrada"${f.tipo==='entrada'?' selected':''}>Entrada</option>
+      <option value="salida"${f.tipo==='salida'?' selected':''}>Salida</option>
+    </select></div>
+    <div class="field"><label>Hora</label><input type="time" id="ef-hora" value="${String(new Date(f.ts).getHours()).padStart(2,'0')}:${String(new Date(f.ts).getMinutes()).padStart(2,'0')}"></div>
+    <div class="modal-actions" style="justify-content:space-between">
+      <button class="btn btn-danger btn-sm" onclick="delFichaje('${fid}')">Eliminar</button>
+      <div><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-amber btn-sm" onclick="saveFichaje('${fid}')">Guardar</button></div>
+    </div>
+  </div></div>`;
+}
+function saveFichaje(fid){
+  const f=(DB.fichajes||[]).find(x=>x.id===fid); if(!f)return;
+  const hora=$('ef-hora').value; if(!hora){toast('Indica la hora');return;}
+  const[h,m]=hora.split(':').map(Number);
+  const d=new Date(f.ts); d.setHours(h,m,0,0);
+  f.ts=d.toISOString(); f.tipo=$('ef-tipo').value;
+  recalcExtrasAuto(isoWeekId(new Date(f.ts)));
+  saveDB(); closeModal(); renderFichajeRecords();
+  if(document.querySelector('.tab[data-page].active')?.dataset.page==='cuadrante')renderCuadrante();
+  toast('Fichaje actualizado');
+}
+function delFichaje(fid){
+  const f=(DB.fichajes||[]).find(x=>x.id===fid); if(!f)return;
+  const wid=isoWeekId(new Date(f.ts));
+  DB.fichajes=DB.fichajes.filter(x=>x.id!==fid);
+  recalcExtrasAuto(wid);
+  saveDB(); closeModal(); renderFichajeRecords();
+  if(document.querySelector('.tab[data-page].active')?.dataset.page==='cuadrante')renderCuadrante();
+  toast('Fichaje eliminado');
+}
+function addFichaje(empId){
+  const e=emp(empId); if(!e)return;
+  const dentro=estadoFichaje(empId).dentro;
+  const ahora=new Date();
+  $('modal-host').innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()"><div class="modal">
+    <h3>Añadir fichaje</h3>
+    <p class="modal-desc">${esc(e.nombre)} · para corregir un olvido</p>
+    <div class="field"><label>Tipo</label><select id="af-tipo">
+      <option value="entrada"${!dentro?' selected':''}>Entrada</option>
+      <option value="salida"${dentro?' selected':''}>Salida</option>
+    </select></div>
+    <div class="field-row">
+      <div class="field"><label>Fecha</label><input type="date" id="af-fecha" value="${ahora.toISOString().slice(0,10)}"></div>
+      <div class="field"><label>Hora</label><input type="time" id="af-hora" value="${String(ahora.getHours()).padStart(2,'0')}:${String(ahora.getMinutes()).padStart(2,'0')}"></div>
+    </div>
+    <div class="modal-actions"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-amber btn-sm" onclick="saveNewFichaje('${empId}')">Añadir</button></div>
+  </div></div>`;
+}
+function saveNewFichaje(empId){
+  const fecha=$('af-fecha').value, hora=$('af-hora').value;
+  if(!fecha||!hora){toast('Indica fecha y hora');return;}
+  const[h,m]=hora.split(':').map(Number);
+  const d=new Date(fecha+'T00:00:00'); d.setHours(h,m,0,0);
+  (DB.fichajes=DB.fichajes||[]).push({id:uid(),empId,tipo:$('af-tipo').value,ts:d.toISOString(),fecha});
+  recalcExtrasAuto(isoWeekId(d));
+  saveDB(); closeModal(); renderFichajeRecords();
+  if(document.querySelector('.tab[data-page].active')?.dataset.page==='cuadrante')renderCuadrante();
+  toast('Fichaje añadido');
 }
 
 function renderAsistente(){

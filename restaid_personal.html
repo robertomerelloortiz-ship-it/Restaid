@@ -166,12 +166,12 @@ async function init(){
   renderDots();
 }
 let PIN='';
-function renderDots(){const d=$('pin-dots');d.innerHTML='';for(let i=0;i<6;i++){const s=document.createElement('div');s.className='pin-dot'+(i<PIN.length?' on':'');d.appendChild(s);}}
-function fpKey(n){if(PIN.length<6){PIN+=n;$('pin-msg').textContent='';renderDots();}}
+function renderDots(){const d=$('pin-dots');d.innerHTML='';for(let i=0;i<4;i++){const s=document.createElement("div");s.className="pin-dot"+(i<PIN.length?" on":"");d.appendChild(s);}}
+function fpKey(n){if(PIN.length<4){PIN+=n;$('pin-msg').textContent='';renderDots();if(PIN.length===4)setTimeout(fpEnter,150);}}
 function fpDel(){PIN=PIN.slice(0,-1);renderDots();}
 function fpEnter(){
   const msg=$('pin-msg');
-  if(PIN.length<4){msg.className='pin-msg err';msg.textContent='El PIN tiene al menos 4 d\u00edgitos';return;}
+  if(PIN.length<4){msg.className='pin-msg err';msg.textContent="El PIN tiene 4 d\u00edgitos";return;}
   const e=(RRHH.empleados||[]).find(x=>(x.pin||'')===PIN);
   if(!e){msg.className='pin-msg err';msg.textContent='PIN no reconocido';PIN='';renderDots();return;}
   USER=e;PIN='';renderDots();
