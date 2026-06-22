@@ -242,6 +242,17 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
 .cuad-chip.comida{background:var(--green-bg);color:var(--green)}
 .cuad-chip.cena{background:var(--blue-bg);color:var(--blue)}
 .cuad-chip-empty{font-size:16px;color:var(--bdr-strong);font-weight:400}
+.cuad-live{display:flex;align-items:center;gap:4px;font-size:9.5px;font-weight:700;padding:2px 5px;border-radius:5px;margin-top:2px;background:rgba(29,122,74,.12);color:var(--green);border:1px solid rgba(29,122,74,.3)}
+.cuad-live.fuera{background:rgba(89,101,112,.1);color:var(--tx2);border-color:rgba(89,101,112,.25)}
+.cuad-live-dot{width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0;animation:livePulse 1.6s ease-in-out infinite}
+@keyframes livePulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(29,122,74,.5)}50%{opacity:.7;box-shadow:0 0 0 4px rgba(29,122,74,0)}}
+.cuad-live-clock{margin-left:auto;font-weight:600;opacity:.85}
+.cuad-now{display:flex;align-items:center;flex-wrap:wrap;gap:8px;background:var(--green-bg);border:1px solid rgba(29,122,74,.3);border-radius:var(--r);padding:.6rem .85rem;margin-bottom:.85rem}
+.cuad-now-hd{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--green)}
+.cuad-now-empty{font-size:12px;color:var(--tx3)}
+.cuad-now-pill{display:inline-flex;align-items:center;gap:5px;background:var(--surf);border:1px solid rgba(29,122,74,.25);border-radius:14px;padding:3px 10px;font-size:11px;font-weight:600;color:var(--tx)}
+.cuad-now-pill .cuad-live-dot{width:6px;height:6px}
+.cuad-now-pill small{color:var(--tx3);font-weight:500}
 .cuad-total-cell{background:var(--surf-alt);font-size:11.5px;min-width:92px;padding:9px 8px!important}
 .cuad-total-h{font-weight:700;font-size:13px}
 .cuad-total-sub{font-size:10px;color:var(--tx3);margin-top:1px}
@@ -824,6 +835,7 @@ function showPage(id){
   $$('.tab[data-page]').forEach(el=>el.classList.toggle('active',el.dataset.page===id));
   $$('.page').forEach(p=>p.classList.remove('active'));$('pg-'+id).classList.add('active');
   ({resumen:renderResumen,empleados:renderEmpleados,cuadrante:renderCuadrante,fichaje:renderFichaje,costes:renderCostes,extras:renderExtras,personas:renderPersonas,asistente:renderAsistente}[id]||function(){})();
+  if(id==='cuadrante')startCuadLive();else clearInterval(CUAD_LIVE_TIMER);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -994,6 +1006,7 @@ function renderCuadrante(){
     ${w.asignaciones.length?`<button class="btn btn-danger btn-sm" onclick="clearCuad()">Vaciar</button>`:''}
   </div>
   <div id="cuad-ai-panel"></div>
+  ${isCurWeek?renderCuadNow():''}
   <div class="cuad-scroll"><table class="cuad-table">
     <colgroup><col style="width:160px">${DIAS.map(()=>'<col>').join('')}<col style="width:100px"></colgroup>
     <thead><tr><th class="cuad-emp-cell"></th>${DIAS.map(thDay).join('')}<th class="cuad-total-cell">Semana</th></tr></thead>
@@ -1009,6 +1022,33 @@ function renderCuadrante(){
   </table></div>
   <p style="font-size:11px;color:var(--tx3);margin-top:.75rem;line-height:1.6">Dotación: fuerza presente vs necesaria (≈1 cam./${DB.config.ratioSala} comensales, 1 coc./${DB.config.ratioCocina}). Ticket medio: ${fc(DB.config.ticketMedio,0)}€.</p>`;
 }
+function renderCuadNow(){
+  const dentro=DB.empleados.map(e=>({e,st:estadoFichaje(e.id)})).filter(x=>x.st.dentro);
+  let html='<div class="cuad-now"><div class="cuad-now-hd"><span class="cuad-live-dot"></span>Trabajando ahora</div>';
+  if(!dentro.length){html+='<span class="cuad-now-empty">Nadie ha fichado entrada todavía</span>';}
+  else{html+=dentro.map(({e,st})=>`<span class="cuad-now-pill"><span class="cuad-live-dot"></span>${esc(e.nombre)} <small>desde ${fmtHora(st.desde)} · ${fmtHM(st.min)}</small></span>`).join('');}
+  html+='</div>';
+  return html;
+}
+// Refresco en vivo del cuadrante mientras esté abierto (sin tocar lo planificado)
+let CUAD_LIVE_TIMER=null;
+function startCuadLive(){
+  clearInterval(CUAD_LIVE_TIMER);
+  CUAD_LIVE_TIMER=setInterval(()=>{
+    const act=document.querySelector('.tab[data-page].active');
+    if(act&&act.dataset.page==='cuadrante'){
+      // Recarga remoto por si alguien fichó desde la tablet, y repinta
+      if(typeof sbGetRRHH==='function'){sbGetRRHH().then(remote=>{
+        if(remote&&Array.isArray(remote.fichajes)){
+          const localN=(DB.fichajes||[]).length, remoteN=remote.fichajes.length;
+          if(remoteN!==localN&&!LOCAL_DIRTY){DB.fichajes=remote.fichajes;}
+        }
+        renderCuadrante();
+      }).catch(()=>renderCuadrante());}
+      else renderCuadrante();
+    }
+  },30000); // cada 30s
+}
 function renderCuadRows(label,emps,rolKey,w,isCurWeek,todayDow){
   if(!emps.length)return'';
   const cols=9; // nombre + 7 dias + semana
@@ -1019,10 +1059,17 @@ function renderCuadRows(label,emps,rolKey,w,isCurWeek,todayDow){
     const isDescanso=d=>e.diaDescanso&&DIAS_FULL[DIAS.indexOf(d)]===e.diaDescanso;
     html+=`<tr>
       <td class="cuad-emp-cell"><div class="cuad-emp-name">${esc(e.nombre)}</div><div class="cuad-emp-sub"><span class="emp-role-tag ${roleClass(e.rol)}">${esc(e.rol)}</span> ${fc(calcSalarioHora(e),1)}€/h${e.diaDescanso?` · lib. ${e.diaDescanso.slice(0,3)}`:''}</div></td>
-      ${DIAS.map(d=>{
+      ${DIAS.map((d,di)=>{
         const cells=w.asignaciones.filter(a=>a.empId===e.id&&a.dia===d);
         const bg=isDescanso(d)&&!cells.length?'background:repeating-linear-gradient(135deg,transparent,transparent 4px,var(--bg) 4px,var(--bg) 8px);':'';
-        return `<td class="cuad-cell" style="${bg}" onclick="openTurno('${e.id}','${d}')">${cells.length?cells.map(a=>`<span class="cuad-chip ${a.turno.toLowerCase()}">${esc(a.turno[0])} ${esc(a.ini)}-${esc(a.fin)}</span>`).join(''):'<span class="cuad-chip-empty">+</span>'}</td>`;
+        const esHoyCol=isCurWeek&&di===todayDow;
+        let liveHtml='';
+        if(esHoyCol){
+          const st=estadoFichaje(e.id);
+          if(st.dentro){liveHtml=`<div class="cuad-live"><span class="cuad-live-dot"></span>En curso<span class="cuad-live-clock">${fmtHora(st.desde)}</span></div>`;}
+          else if(st.fichajes.length){liveHtml=`<div class="cuad-live fuera">Fichó ${fmtHM(st.min)}</div>`;}
+        }
+        return `<td class="cuad-cell" style="${bg}" onclick="openTurno('${e.id}','${d}')">${cells.length?cells.map(a=>`<span class="cuad-chip ${a.turno.toLowerCase()}">${esc(a.turno[0])} ${esc(a.ini)}-${esc(a.fin)}</span>`).join(''):(liveHtml?'':'<span class="cuad-chip-empty">+</span>')}${liveHtml}</td>`;
       }).join('')}
       <td class="cuad-total-cell ${over?'cuad-over':''}"><div class="cuad-total-h">${fc(hSem,1)} h</div><div class="cuad-total-sub">${fk(cSem)}€${e.horasContrato?` / ${fc(e.horasContrato,0)}h`:''}</div></td>
     </tr>`;
