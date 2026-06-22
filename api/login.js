@@ -1,189 +1,140 @@
-// /api/login.js — Valida credenciales y soporta modo personal (tablet) para PIN.
-const supabaseInit = async () => {
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) {
-    console.warn('Supabase no configurado, usando DB mock');
-    return null;
+// /api/login.js — Sin dependencias externas. Usa fetch directo a Supabase REST API.
+
+const sbFetch = async (table, method = 'GET', body = null) => {
+  const url = `${process.env.SUPABASE_URL}/rest/v1/${table}`;
+  const headers = {
+    'apikey': process.env.SUPABASE_KEY,
+    'Authorization': `Bearer ${process.env.SUPABASE_KEY}`,
+    'Content-Type': 'application/json',
+    'Prefer': method === 'POST' ? 'resolution=merge-duplicates' : 'return=representation'
+  };
+  const opts = { method, headers };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(url + (method === 'GET' ? '?select=*' : ''), opts);
+  if (!r.ok) {
+    const err = await r.text();
+    throw new Error(`Supabase ${table} error ${r.status}: ${err}`);
   }
-  try {
-    const { createClient } = await import('@supabase/supabase-js');
-    return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
-  } catch (e) {
-    console.error('Error Supabase:', e);
-    return null;
-  }
+  return r.json();
 };
+
+const readBody = (req) => new Promise((resolve, reject) => {
+  if (req.body && typeof req.body === 'object') { resolve(req.body); return; }
+  let d = '';
+  req.on('data', c => (d += c));
+  req.on('end', () => { try { resolve(d ? JSON.parse(d) : {}); } catch { resolve({}); } });
+  req.on('error', reject);
+});
 
 module.exports = async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const mode = url.searchParams.get('mode');
   const action = url.searchParams.get('action');
 
-  // ━━━━━━━━━━━━━━━━━ GET: Diagnóstico o carga de datos (personal mode) ━━━━━━━━━━━━━━━━━
+  const SB_OK = !!(process.env.SUPABASE_URL && process.env.SUPABASE_KEY);
+
+  // ━━━━━━━━━━━━━━━━━ GET ━━━━━━━━━━━━━━━━━
   if (req.method === 'GET') {
+
     if (mode === 'personal') {
-      const sb = await supabaseInit();
-      let db = { empleados: [], fichajes: [], albaranes: [], proveedores: [] };
-      let error = null;
-      
-      if (!sb) {
-        error = 'Supabase no configurado. Verifica SUPABASE_URL y SUPABASE_KEY en Vercel.';
-        console.error(error);
-      } else {
-        try {
-          const { data: emp, error: empErr } = await sb.from('empleados').select('*');
-          const { data: fich, error: fichErr } = await sb.from('fichajes').select('*');
-          const { data: prov, error: provErr } = await sb.from('proveedores').select('*');
-          
-          if (empErr) console.error('Error empleados:', empErr.message);
-          if (fichErr) console.error('Error fichajes:', fichErr.message);
-          if (provErr) console.error('Error proveedores:', provErr.message);
-          
-          db = {
-            empleados: emp || [],
-            fichajes: fich || [],
-            albaranes: [],
-            proveedores: prov || []
-          };
-          console.log('DB cargada — empleados:', db.empleados.length, 'proveedores:', db.proveedores.length);
-        } catch (e) {
-          error = e.message;
-          console.error('Error fetching DB:', e);
-        }
+      if (!SB_OK) {
+        res.status(200).json({ ok: true, db: { empleados: [], fichajes: [], albaranes: [], proveedores: [] }, error: 'Supabase no configurado' });
+        return;
       }
-      
-      res.status(200).json({ ok: true, db, error });
+      try {
+        const [empleados, fichajes, proveedores] = await Promise.all([
+          sbFetch('empleados'),
+          sbFetch('fichajes'),
+          sbFetch('proveedores')
+        ]);
+        console.log('DB personal — empleados:', empleados.length);
+        res.status(200).json({ ok: true, db: { empleados, fichajes, albaranes: [], proveedores } });
+      } catch (e) {
+        console.error('Error GET personal:', e.message);
+        res.status(200).json({ ok: true, db: { empleados: [], fichajes: [], albaranes: [], proveedores: [] }, error: e.message });
+      }
       return;
     }
-    
-    // GET diagnostico: informa solo de SI existen las variables
-    res.status(200).json({
-      ok: false,
-      userSet: !!process.env.RESTAID_USER,
-      passSet: !!process.env.RESTAID_PASS,
-      keySet: !!process.env.ANTHROPIC_API_KEY
-    });
+
+    res.status(200).json({ ok: false, userSet: !!process.env.RESTAID_USER, passSet: !!process.env.RESTAID_PASS, keySet: !!process.env.ANTHROPIC_API_KEY, sbSet: SB_OK });
     return;
   }
 
-  if (req.method !== 'POST') {
-    res.status(405).json({ ok: false });
-    return;
-  }
+  if (req.method !== 'POST') { res.status(405).json({ ok: false }); return; }
+  const body = await readBody(req);
 
-  let body = req.body;
-  if (!body || typeof body === 'string') {
-    try {
-      const raw = await new Promise((resolve, reject) => {
-        let d = '';
-        req.on('data', c => (d += c));
-        req.on('end', () => resolve(d));
-        req.on('error', reject);
-      });
-      body = raw ? JSON.parse(raw) : {};
-    } catch (_) { body = {}; }
-  }
-
-  // ━━━━━━━━━━━━━━━━━ Personal mode: sync de fichajes y albaranes ━━━━━━━━━━━━━━━━━
+  // ━━━━━━━━━━━━━━━━━ POST: sync fichajes ━━━━━━━━━━━━━━━━━
   if (mode === 'personal' && action === 'sync') {
     const { db } = body || {};
-    if (!db) {
-      res.status(400).json({ ok: false, msg: 'No DB' });
-      return;
-    }
-    const sb = await supabaseInit();
-    if (sb && db.fichajes && db.fichajes.length > 0) {
+    if (SB_OK && db && db.fichajes && db.fichajes.length > 0) {
       try {
-        await sb.from('fichajes').upsert(db.fichajes);
-      } catch (e) {
-        console.error('Error upserting fichajes:', e);
-      }
+        const sbUrl = `${process.env.SUPABASE_URL}/rest/v1/fichajes`;
+        await fetch(sbUrl, {
+          method: 'POST',
+          headers: {
+            'apikey': process.env.SUPABASE_KEY,
+            'Authorization': `Bearer ${process.env.SUPABASE_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'resolution=merge-duplicates'
+          },
+          body: JSON.stringify(db.fichajes)
+        });
+      } catch (e) { console.error('Sync error:', e.message); }
     }
     res.status(200).json({ ok: true });
     return;
   }
 
-  // ━━━━━━━━━━━━━━━━━ Personal mode: aplicar albarán ━━━━━━━━━━━━━━━━━
+  // ━━━━━━━━━━━━━━━━━ POST: aplicar albarán ━━━━━━━━━━━━━━━━━
   if (mode === 'personal' && action === 'aplicar_albaran') {
     const { albaran, provId, fecha } = body || {};
-    if (!albaran || !provId) {
-      res.status(400).json({ ok: false, msg: 'Datos incompletos' });
-      return;
-    }
-
-    const sb = await supabaseInit();
-    if (!sb) {
-      res.status(500).json({ ok: false, msg: 'DB no disponible' });
-      return;
-    }
+    if (!albaran || !provId) { res.status(400).json({ ok: false, msg: 'Datos incompletos' }); return; }
+    if (!SB_OK) { res.status(500).json({ ok: false, msg: 'Supabase no configurado' }); return; }
 
     try {
-      // Guardar albarán
       const alb_id = `alb_${Date.now()}`;
-      await sb.from('albaranes').insert({
-        id: alb_id,
-        proveedor_id: provId,
-        fecha: fecha || new Date().toISOString().slice(0, 10),
-        productos: albaran.productos || []
+      const sbUrl = `${process.env.SUPABASE_URL}/rest/v1`;
+      const headers = {
+        'apikey': process.env.SUPABASE_KEY,
+        'Authorization': `Bearer ${process.env.SUPABASE_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
+      };
+
+      // Guardar albarán
+      await fetch(`${sbUrl}/albaranes`, {
+        method: 'POST', headers,
+        body: JSON.stringify({ id: alb_id, proveedor_id: provId, fecha: fecha || new Date().toISOString().slice(0, 10), productos: albaran.productos || [] })
       });
 
-      // Aplicar stock (mismo logic que restaid_inventario.html)
+      // Guardar movimientos de stock
       if (albaran.productos && albaran.productos.length > 0) {
-        for (const prod of albaran.productos) {
-          // Obtener receta del producto para calcular conversión
-          const { data: receta } = await sb
-            .from('recetas')
-            .select('*')
-            .eq('prod_id', prod.id)
-            .single();
-
-          if (receta && receta.ingredientes) {
-            // Aplicar cada ingrediente
-            for (const ing of receta.ingredientes) {
-              const cantBase = (prod.cantidad * (prod.conversion_factor || 1)) * (ing.cantidad || 1);
-              
-              // Registrar movimiento
-              const mov = {
-                id: `mov_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                ing_id: ing.id,
-                tipo: 'entrada',
-                cantidad: cantBase,
-                fecha: fecha || new Date().toISOString().slice(0, 10),
-                concepto: `Albarán ${prod.nombre}`,
-                proveedor_id: provId
-              };
-              
-              await sb.from('movimientos').insert(mov);
-            }
-          }
-        }
+        const movimientos = albaran.productos.map(prod => ({
+          id: `mov_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          tipo: 'entrada',
+          cantidad: prod.cantidad * (prod.conversion_factor || 1),
+          fecha: fecha || new Date().toISOString().slice(0, 10),
+          concepto: `Albarán ${prod.nombre}`,
+          proveedor_id: provId,
+          nombre_producto: prod.nombre
+        }));
+        await fetch(`${sbUrl}/movimientos`, { method: 'POST', headers, body: JSON.stringify(movimientos) });
       }
 
       // Devolver DB actualizada
-      const { data: emp } = await sb.from('empleados').select('*');
-      const { data: fich } = await sb.from('fichajes').select('*');
-      const { data: prov } = await sb.from('proveedores').select('*');
-      const db = {
-        empleados: emp || [],
-        fichajes: fich || [],
-        albaranes: [],
-        proveedores: prov || []
-      };
-
-      res.status(200).json({ ok: true, db });
+      const [empleados, fichajes, proveedores] = await Promise.all([
+        sbFetch('empleados'), sbFetch('fichajes'), sbFetch('proveedores')
+      ]);
+      res.status(200).json({ ok: true, db: { empleados, fichajes, albaranes: [], proveedores } });
     } catch (e) {
-      console.error('Error aplicar albarán:', e);
+      console.error('Error aplicar albarán:', e.message);
       res.status(500).json({ ok: false, msg: e.message });
     }
     return;
   }
 
-  // ━━━━━━━━━━━━━━━━━ POST: Login normal (credenciales) ━━━━━━━━━━━━━━━━━
+  // ━━━━━━━━━━━━━━━━━ POST: login normal ━━━━━━━━━━━━━━━━━
   const { user, pass } = body || {};
-  const ok =
-    !!process.env.RESTAID_USER &&
-    !!process.env.RESTAID_PASS &&
-    user === process.env.RESTAID_USER &&
-    pass === process.env.RESTAID_PASS;
-
+  const ok = !!process.env.RESTAID_USER && !!process.env.RESTAID_PASS && user === process.env.RESTAID_USER && pass === process.env.RESTAID_PASS;
   res.status(ok ? 200 : 401).json({ ok });
 };
