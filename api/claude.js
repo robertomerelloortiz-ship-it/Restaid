@@ -20,9 +20,12 @@ module.exports = async (req, res) => {
     } catch (_) { body = {}; }
   }
 
-  // Autorización por contraseña (la misma del login)
+  // Autorización: 'personal' permite acceso sin contraseña, otros requieren contraseña
   const pass = req.headers['x-restaid-pass'] || '';
-  if (!process.env.RESTAID_PASS || pass !== process.env.RESTAID_PASS) {
+  const isPersonalMode = pass === 'personal';
+  const requiresAuth = !isPersonalMode;
+
+  if (requiresAuth && (!process.env.RESTAID_PASS || pass !== process.env.RESTAID_PASS)) {
     res.status(401).json({ error: { message: 'No autorizado' } });
     return;
   }
