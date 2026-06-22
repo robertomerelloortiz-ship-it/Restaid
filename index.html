@@ -162,12 +162,6 @@ nav {
 
 .tb-copilot-btn:hover { background: var(--navy-light); }
 
-.tb-copilot-btn .pulse-dot {
-  width: 7px; height: 7px;
-  border-radius: 50%;
-  background: var(--amber);
-  animation: pulse 2s infinite;
-}
 
 @keyframes pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
@@ -576,11 +570,7 @@ nav {
     width: 38px; height: 38px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
   }
-  #mobile-copilot-btn .pulse-dot {
-    width: 9px; height: 9px; border-radius: 50%;
-    background: var(--amber); animation: pulse-ring 2s ease-in-out infinite;
-  }
-
+  
   /* Sidebar como panel deslizable desde la izquierda */
   #sidebar {
     position: fixed;
@@ -807,12 +797,17 @@ nav {
 /* Badge de avisos en el botón de Copiloto */
 .nav-item[data-module="copiloto"], #mobile-copilot-btn { position: relative; }
 .cp-badge {
-  position: absolute; top: -3px; right: -3px;
-  min-width: 18px; height: 18px; padding: 0 4px;
+  position: absolute; top: 50%; right: 10px;
+  transform: translateY(-50%);
+  min-width: 18px; height: 18px; padding: 0 5px;
   background: #dc2626; color: #fff; border-radius: 9px;
-  font-size: 11px; font-weight: 700; line-height: 1;
+  font-size: 11px; font-weight: 700; line-height: 18px;
   display: none; align-items: center; justify-content: center;
   box-shadow: 0 1px 3px rgba(0,0,0,.35);
+  pointer-events: none;
+}
+#mobile-copilot-btn .cp-badge {
+  top: 2px; right: 2px; transform: none;
 }
 
 /* Motor de previsión: tira semanal */
@@ -921,7 +916,9 @@ nav {
   </button>
   <span id="mobile-title">RESTAID</span>
   <button id="mobile-copilot-btn" onclick="openCopilot()" aria-label="Copiloto">
-    <span class="pulse-dot"></span>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20" style="color:#fff">
+      <circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
+    </svg>
   </button>
 </div>
 <div id="sidebar-backdrop" onclick="closeSidebar()"></div>
@@ -946,7 +943,6 @@ nav {
         <circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
       </svg>
       Copiloto
-      <span style="width:6px;height:6px;border-radius:50%;background:var(--amber);margin-left:auto;animation:pulse-ring 2s ease-in-out infinite"></span>
     </div>
 
     <div class="nav-section">Módulos</div>
@@ -997,7 +993,7 @@ nav {
     <div class="tb-title" id="tb-title">RESTAID</div>
     <div class="tb-spacer"></div>
     <button class="tb-copilot-btn" onclick="openCopilot()">
-      <div class="pulse-dot"></div>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
       Copiloto
     </button>
   </header>
