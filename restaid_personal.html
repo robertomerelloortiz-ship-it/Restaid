@@ -224,17 +224,32 @@ let procesando=false;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ INIT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function init(){
+  const pinGate=document.getElementById('pin-gate');
+  const pinError=document.getElementById('pin-error');
+  
   try{
     const res=await fetch('/api/login?mode=personal');
-    const data=await res.json();
-    if(data.ok){
-      DB=data.db||{empleados:[],fichajes:[],albaranes:[],proveedores:[]};
-      llenarProveedores();
-      document.getElementById('alb-fecha').valueAsDate=new Date();
-    }else{
-      console.error('Error init:',data.msg);
+    if(!res.ok){
+      pinError.textContent='Error del servidor ('+res.status+'). Avisa al encargado.';
+      console.error('HTTP error:',res.status);
+      return;
     }
+    const data=await res.json();
+    console.log('Init response:',data);
+    
+    DB=data.db||{empleados:[],fichajes:[],albaranes:[],proveedores:[]};
+    console.log('Empleados cargados:',DB.empleados.length);
+    
+    if(DB.empleados.length===0){
+      pinError.textContent='Sin empleados en BD. Avisa al encargado.';
+      console.warn('No hay empleados en la BD');
+    }
+    
+    llenarProveedores();
+    document.getElementById('alb-fecha').valueAsDate=new Date();
+    
   }catch(e){
+    pinError.textContent='Error de conexión. Comprueba la red.';
     console.error('Init error:',e);
   }
 }
