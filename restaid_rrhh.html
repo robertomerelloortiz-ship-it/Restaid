@@ -124,6 +124,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
   #tabbar{padding:0 8px;height:42px}
   .tab{font-size:13px;padding:0 11px}
   #content{padding:14px}
+  input,select,textarea{font-size:16px!important}   /* evita el auto-zoom de iOS al enfocar */
   .tbl-wrap,table{overflow-x:auto;-webkit-overflow-scrolling:touch}
   /* KPIs en grid de 2 columnas en vez de fila que se corta */
   [class*="kpi-row"],.kpi-grid{grid-template-columns:repeat(2,1fr)!important;overflow:visible!important}
@@ -431,6 +432,19 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
 .fich-note{font-size:11.5px;color:var(--tx3);margin:8px 0 0}
 @media(max-width:768px){ .fich-grid{grid-template-columns:1fr} }
 
+
+/* Fichaje en móvil */
+.mb-fichaje{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--r);padding:14px;margin-bottom:1.4rem;box-shadow:0 2px 10px rgba(0,0,0,.05)}
+.mb-fx-hd{display:flex;justify-content:space-between;align-items:center;font-weight:700;font-size:14px;margin-bottom:10px}
+.mb-fx-n{font-size:11px;font-weight:600;color:var(--green);background:#E6F5EE;padding:2px 9px;border-radius:10px}
+.mb-fx-btn{width:100%;padding:13px;border:none;border-radius:11px;background:var(--amber);color:#fff;font-size:15px;font-weight:600;font-family:inherit;cursor:pointer}
+.mb-fx-btn:active{transform:scale(.98)}
+.mb-fx-close{display:block;margin:12px auto 0;background:none;border:none;color:var(--tx2);font-size:13px;font-family:inherit;cursor:pointer;text-decoration:underline}
+.mb-fx-list{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.mb-fx-row{display:flex;align-items:center;gap:8px;font-size:13px}
+.mb-fx-dot{width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0}
+.mb-fx-name{flex:1;font-weight:600}
+.mb-fx-since{font-size:11.5px;color:var(--tx3)}
 </style>
 </head>
 <body>
@@ -690,7 +704,9 @@ function publishCore(){const w=DB.semanas[DB.semanaActual];RESTAID.rrhh={emplead
    avisos y coste laboral. Solo se muestra en móvil (ver CSS).
 ════════════════════════════════════════════════════════ */
 let MOB_DAY=null;
+let MOB_FICHAR=false;
 function mobSetDay(d){ if(DIAS.includes(d)) MOB_DAY=d; renderMobile(); }
+function mobFichar(on){ MOB_FICHAR=!!on; if(!on){ FICHAJE_PIN=''; FICHAJE_MSG=null; } renderMobile(); }
 
 function renderMobile(){
   const box=$('mobile-view'); if(!box) return;
@@ -741,7 +757,21 @@ function renderMobile(){
   const pct=ventas>0?coste/ventas*100:null, cls=pctClass(pct), t=DB.config.targetPct||30;
   const costColor=cls==='ok'?'var(--green)':cls==='warn'?'var(--ylw)':cls==='bad'?'var(--red)':'var(--tx3)';
 
+  // ── Fichaje en móvil: quién está dentro + teclado PIN ──
+  const fxDentro=DB.empleados.map(e=>({e,st:estadoFichaje(e.id)})).filter(x=>x.st.dentro);
+  const fxHasPin=DB.empleados.some(e=>e.pin);
+  const fichajeCard=`
+    <div class="mb-fichaje">
+      <div class="mb-fx-hd"><span>⏱ Fichaje</span>${fxDentro.length?`<span class="mb-fx-n">${fxDentro.length} dentro</span>`:''}</div>
+      ${MOB_FICHAR?`
+        <div class="fichaje-pad-slot"></div>
+        <button class="mb-fx-close" onclick="mobFichar(false)">Cerrar</button>`
+      :`${fxHasPin?`<button class="mb-fx-btn" onclick="mobFichar(true)">Fichar entrada / salida</button>`:`<div class="mb-none">Asigna un PIN a cada persona (desde el ordenador) para poder fichar.</div>`}
+        ${fxDentro.length?`<div class="mb-fx-list">${fxDentro.map(({e,st})=>`<div class="mb-fx-row"><span class="mb-fx-dot"></span><span class="mb-fx-name">${esc(e.nombre)}</span><span class="mb-fx-since">desde ${fmtHora(st.desde)}</span></div>`).join('')}</div>`:''}`}
+    </div>`;
+
   box.innerHTML=`
+    ${fichajeCard}
     <div class="mb-week">
       <button onclick="navWeek(-1)" aria-label="Semana anterior">‹</button>
       <span>${weekLabel(DB.semanaActual)}</span>
@@ -773,6 +803,7 @@ function renderMobile(){
       <span class="mb-cost-obj">obj. ${t}%</span>
     </div>
   `;
+  if(MOB_FICHAR) renderPad();
 }
 
 function updateSidebar(){
@@ -1390,32 +1421,34 @@ function ficharAhora(empId){
   clearTimeout(window._fichTO); window._fichTO=setTimeout(()=>{ FICHAJE_MSG=null; renderPad(); }, 6000);
 }
 function renderPad(){
-  const el=$('fichaje-pad'); if(!el)return;
+  const slots=document.querySelectorAll('.fichaje-pad-slot'); if(!slots.length)return;
+  let html;
   if(FICHAJE_MSG&&FICHAJE_MSG.ok){
     const m=FICHAJE_MSG, isIn=m.tipo==='entrada';
-    el.innerHTML=`<div class="fich-done ${isIn?'in':'out'}">
+    html=`<div class="fich-done ${isIn?'in':'out'}">
       <div class="fich-done-ic">${isIn?'🟢':'🔴'}</div>
       <div class="fich-done-name">${esc(m.nombre)}</div>
       <div class="fich-done-tx">${isIn?'Entrada':'Salida'} registrada · ${m.hora}</div>
       <div class="fich-done-sub">${isIn?'¡Buen turno!':'Jornada de hoy: '+fmtHM(m.min)}</div>
       <button class="btn btn-ghost btn-sm" onclick="fpClear()">Fichar otra persona</button>
     </div>`;
-    return;
+  } else {
+    const len=FICHAJE_PIN.length, nDots=Math.max(4,len);
+    const dots=Array.from({length:nDots}).map((_,i)=>`<span class="fich-dot ${i<len?'on':''}"></span>`).join('');
+    const keys=['1','2','3','4','5','6','7','8','9'];
+    html=`<div class="fich-pad">
+      <div class="fich-pad-title">Introduce tu PIN para fichar</div>
+      <div class="fich-dots">${dots}</div>
+      ${FICHAJE_MSG&&FICHAJE_MSG.err?`<div class="fich-err">⚠ ${esc(FICHAJE_MSG.err)}</div>`:'<div class="fich-err-sp"></div>'}
+      <div class="fich-keys">
+        ${keys.map(k=>`<button class="fich-key" onclick="fpKey('${k}')">${k}</button>`).join('')}
+        <button class="fich-key fich-key-fn" onclick="fpDel()">⌫</button>
+        <button class="fich-key" onclick="fpKey('0')">0</button>
+        <button class="fich-key fich-key-ok" onclick="fpEnter()">✓</button>
+      </div>
+    </div>`;
   }
-  const len=FICHAJE_PIN.length, nDots=Math.max(4,len);
-  const dots=Array.from({length:nDots}).map((_,i)=>`<span class="fich-dot ${i<len?'on':''}"></span>`).join('');
-  const keys=['1','2','3','4','5','6','7','8','9'];
-  el.innerHTML=`<div class="fich-pad">
-    <div class="fich-pad-title">Introduce tu PIN para fichar</div>
-    <div class="fich-dots">${dots}</div>
-    ${FICHAJE_MSG&&FICHAJE_MSG.err?`<div class="fich-err">⚠ ${esc(FICHAJE_MSG.err)}</div>`:'<div class="fich-err-sp"></div>'}
-    <div class="fich-keys">
-      ${keys.map(k=>`<button class="fich-key" onclick="fpKey('${k}')">${k}</button>`).join('')}
-      <button class="fich-key fich-key-fn" onclick="fpDel()">⌫</button>
-      <button class="fich-key" onclick="fpKey('0')">0</button>
-      <button class="fich-key fich-key-ok" onclick="fpEnter()">✓</button>
-    </div>
-  </div>`;
+  slots.forEach(el=>el.innerHTML=html);
 }
 function renderFichaje(){
   const pg=$('pg-fichaje');
@@ -1424,7 +1457,7 @@ function renderFichaje(){
   ${!DB.empleados.length?`<div class="empty"><div class="empty-icon">🧑‍🍳</div><h3>Primero da de alta a tu equipo</h3><p>Añade empleados y asígnales un PIN para que puedan fichar.</p><button class="btn btn-amber" onclick="showPage('empleados')">Ir a Empleados →</button></div>`:
   `${conPin===0?`<div class="fich-warn">Ningún empleado tiene PIN todavía. Asígnalo en <b>Empleados → editar</b> para poder fichar.</div>`:''}
   <div class="fich-grid">
-    <div><div id="fichaje-pad"></div></div>
+    <div><div id="fichaje-pad" class="fichaje-pad-slot"></div></div>
     <div id="fichaje-records"></div>
   </div>`}`;
   if(DB.empleados.length){ renderPad(); renderFichajeRecords(); }
