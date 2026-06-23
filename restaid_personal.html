@@ -463,7 +463,7 @@ function goAlb(){albQueue=[];renderCola();$('alb-applybar').classList.remove('on
 function backFromAlb(){albQueue=[];renderCola();$('alb-applybar').classList.remove('on');if(USER){renderUserState();show('s-user');}else goRest();}
 
 /* ── ALBARÁN (idéntico a RESTAID) ── */
-function llenarProveedores(){if(!INV)return;$('alb-prov').innerHTML='<option value="">\u2014 Seleccionar \u2014</option>'+(INV.proveedores||[]).map(p=>`<option value="${p.id}">${esc(p.nombre)}</option>`).join('');}
+function llenarProveedores(){const sel=$('alb-prov');if(!INV||!sel)return;sel.innerHTML='<option value="">\u2014 Seleccionar \u2014</option>'+(INV.proveedores||[]).map(p=>`<option value="${p.id}">${esc(p.nombre)}</option>`).join('');}
 function f2b64(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.onerror=()=>rej(new Error('Error lectura'));r.readAsDataURL(file);});}
 /* Redimensiona y comprime imágenes grandes antes de enviarlas a la IA.
    Las fotos de móvil/tablet pesan varios MB; esto evita "load failed" por timeout o payload.
@@ -630,7 +630,7 @@ async function aplicarTodos(){
     renderCola();
   }
   // Guardar una sola vez al final (más eficiente)
-  try{await sbWrite('inventario',INV);llenarProveedores();}
+  try{await sbWrite('inventario',INV);}
   catch(e){$('alb-queue').insertAdjacentHTML('afterbegin',`<div class="alert alert-red">Error guardando: ${esc(e.message)}</div>`);}
   btn.disabled=false;btn.innerHTML='Aplicar a stock';
   actualizarApplyBar();
