@@ -2072,6 +2072,7 @@ Cuando el gestor pida modificar datos, responde con el texto normal y añade al 
 [ACTION]{"tipo":"asignar_turnos_bulk","asignaciones":[{"nombre":"texto","dia":"Lun","turno":"Comida","ini":"12:00","fin":"17:00"}]}[/ACTION]
 [ACTION]{"tipo":"registrar_extra","nombre":"nombre del empleado","fecha":"YYYY-MM-DD","horas":NUMERO,"motivo":"texto","estado":"pendiente"}[/ACTION]
 [ACTION]{"tipo":"ventas_previstas","dias":{"Lun":{"Comida":NUMERO,"Cena":NUMERO}}}[/ACTION]
+[ACTION]{"tipo":"eliminar_movimiento","movId":"ID_del_movimiento_si_lo_tienes","motivo":"texto del motivo si no tienes id","ingId":"ID_ingrediente_opcional"}[/ACTION]
 [ACTION]{"tipo":"crear_ingrediente","nombre":"texto","categoria":"Carne|Pescado|Verdura|etc","unidad":"kg|l|ud","precio":PRECIO_POR_UNIDAD,"stock":NUMERO,"stockMin":NUMERO,"ivaPct":10,"proveedor":"nombre opcional"}[/ACTION]
 
 DOCUMENTOS ADJUNTOS:
@@ -2108,7 +2109,12 @@ Datos por flujo (pídelos todos juntos):
 - CREAR PEDIDO (crear_pedido): pregunta el proveedor y los productos con cantidades. Puedes sugerir qué pedir mirando el stock bajo mínimos.
 - NUEVO INGREDIENTE (crear_ingrediente): obligatorio nombre, unidad y precio por unidad; recomendado categoría, stock inicial (def. 0), stock mínimo, IVA (def. 10%) y proveedor.
 
-Si la acción no está disponible todavía, díselo al gestor con honestidad.
+REGLAS DE COMPORTAMIENTO CRÍTICAS:
+- NUNCA preguntes al usuario cómo funciona RESTAID, qué acciones existen, o cómo se hacen las cosas internamente. Tú eres el sistema; si algo no puedes hacerlo, dilo directamente y ofrece la alternativa (ej: "No puedo eliminar ese movimiento desde aquí; ve a la pestaña Movimientos y bórralo manualmente").
+- NUNCA digas "no tengo documentada esa acción" ni "¿podrías confirmarme cómo se hace?". Si no está en tu set de acciones, dilo con claridad y redirige.
+- Si el usuario pide algo que sí puedes hacer con tus acciones, hazlo sin preguntar si existe o no.
+
+Si la acción no está disponible, díselo con claridad y di exactamente dónde hacerlo en la interfaz.
 
 WIDGETS VISUALES (canvas derecho):
 Cuando la respuesta se beneficie de una visualización, añade al final UN bloque WIDGET en JSON:
@@ -2207,6 +2213,28 @@ function executeActions(actions, db) {
           else if (action.tipo_mov === 'salida' || action.tipo_mov === 'merma') ing.stock = Math.max(0, (ing.stock || 0) - action.cantidad);
           results.push(`✓ Movimiento registrado: ${action.tipo_mov} ${action.cantidad} ${ing.unidad} de ${ing.nombre}`);
           invChanged = true;
+        }
+      }
+
+      if (action.tipo === 'eliminar_movimiento') {
+        const inv = db.inventario;
+        if (!inv) continue;
+        // Buscar por id exacto, o por motivo + ingId si no hay id
+        let mov = null;
+        if (action.movId) mov = inv.movimientos.find(m => m.id === action.movId);
+        if (!mov && action.motivo) mov = inv.movimientos.find(m => m.motivo === action.motivo && (!action.ingId || m.ingId === action.ingId));
+        if (mov) {
+          // Revertir efecto en stock
+          const ing = inv.ingredientes.find(i => i.id === mov.ingId);
+          if (ing) {
+            if (mov.tipo === 'entrada') ing.stock = Math.max(0, (ing.stock || 0) - (mov.cantidad || 0));
+            else ing.stock = (ing.stock || 0) + (mov.cantidad || 0);
+          }
+          inv.movimientos = inv.movimientos.filter(m => m.id !== mov.id);
+          results.push(`✓ Movimiento eliminado y stock corregido`);
+          invChanged = true;
+        } else {
+          results.push(`⚠ No se encontró el movimiento`);
         }
       }
 
@@ -2438,12 +2466,10 @@ function executeActions(actions, db) {
 
   // Guardar cambios
   if (invChanged && db.inventario) {
-    db.inventario._ts = Date.now();
     localStorage.setItem('restaid_inv_v1', JSON.stringify(db.inventario));
     const frame = document.getElementById('frame-inventario');
     if (frame && frame.src) {
       try { frame.contentWindow.postMessage({ type: 'restaid_refresh' }, '*'); } catch {}
-      try { frame.contentWindow.postMessage({ type: 'restaid_sync_to_cloud' }, '*'); } catch {}
     }
   }
   if (escChanged && db.escandallo) {
