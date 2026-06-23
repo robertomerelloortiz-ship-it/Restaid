@@ -162,6 +162,8 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 .ac-remove{width:26px;height:26px;border-radius:7px;background:var(--bg2);color:var(--tx2);font-size:1.2rem;line-height:1;flex-shrink:0}
 .ac-remove:active{background:var(--red-soft);color:var(--red)}
 .ac-status{display:flex;align-items:center;gap:.6rem;font-size:.92rem;color:var(--tx2);padding:.4rem 0}
+.ac-retry{background:var(--amber);color:#0e1620;font-weight:700;font-size:.9rem;padding:.6rem 1rem;border-radius:var(--r);width:100%}
+.ac-retry:active{background:var(--amber-dk)}
 .ac-dot{width:9px;height:9px;border-radius:50%}
 .ac-dot.q{background:var(--tx3)}
 .ac-detected{background:var(--amber-soft);color:var(--amber);border-radius:var(--r);padding:.55rem .8rem;font-size:.85rem;margin-bottom:.8rem}
@@ -463,6 +465,28 @@ function backFromAlb(){albQueue=[];renderCola();$('alb-applybar').classList.remo
 /* ── ALBARÁN (idéntico a RESTAID) ── */
 function llenarProveedores(){if(!INV)return;$('alb-prov').innerHTML='<option value="">\u2014 Seleccionar \u2014</option>'+(INV.proveedores||[]).map(p=>`<option value="${p.id}">${esc(p.nombre)}</option>`).join('');}
 function f2b64(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.onerror=()=>rej(new Error('Error lectura'));r.readAsDataURL(file);});}
+/* Redimensiona y comprime imágenes grandes antes de enviarlas a la IA.
+   Las fotos de móvil/tablet pesan varios MB; esto evita "load failed" por timeout o payload.
+   Los PDF se envían tal cual. */
+function comprimirImagen(file,maxLado=1600,calidad=0.82){
+  return new Promise((resolve)=>{
+    if(!file||file.type==='application/pdf'||!/^image\//.test(file.type||'')){resolve({blob:file,type:file.type});return;}
+    const img=new Image();const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      URL.revokeObjectURL(url);
+      let w=img.naturalWidth||img.width,h=img.naturalHeight||img.height;
+      if(!w||!h){resolve({blob:file,type:file.type});return;}
+      if(Math.max(w,h)>maxLado){const r=maxLado/Math.max(w,h);w=Math.round(w*r);h=Math.round(h*r);}
+      try{
+        const c=document.createElement('canvas');c.width=w;c.height=h;
+        const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h);ctx.drawImage(img,0,0,w,h);
+        c.toBlob(b=>resolve({blob:b||file,type:'image/jpeg'}),'image/jpeg',calidad);
+      }catch(e){resolve({blob:file,type:file.type});}
+    };
+    img.onerror=()=>{URL.revokeObjectURL(url);resolve({blob:file,type:file.type});};
+    img.src=url;
+  });
+}
 function _albSysPrompt(){return `Eres un experto en digitalizar albaranes y facturas de proveedores de hosteleria espanola, y ademas RAZONAS sobre los productos como lo haria un jefe de cocina experto. No solo transcribes: interpretas formatos, conviertes unidades y deduces categorias. Devuelve UNICAMENTE un JSON valido, sin texto adicional ni bloques markdown.
 
 ESTRUCTURA DEL JSON A DEVOLVER:
@@ -496,7 +520,7 @@ REGLAS CRITICAS:
 6. CATEGORIA SUGERIDA DEL PROVEEDOR: deduce a que se dedica por los productos. Ej: teleras -> "Panaderia"; mojama y pulpo -> "Pescaderia". Rellena "categoria_sugerida".
 
 7. ALERTAS: anota manuscritos (DEVO, firmas), tachaduras, sellos, devoluciones, y avisa si tienes BAJA CONFIANZA en alguna conversion.`;}
-async function extraerAlbaranDeFile(file){const b64=await f2b64(file);const isPDF=file.type==='application/pdf';const body={model:ALB_MODEL,max_tokens:2500,system:_albSysPrompt(),messages:[{role:'user',content:[isPDF?{type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}}:{type:'image',source:{type:'base64',media_type:file.type,data:b64}},{type:'text',text:'Digitaliza este albaran o factura. RAZONA sobre el formato de cada producto y convierte a unidad base. Devuelve SOLO el JSON, sin texto adicional.'}]}]};const r=await fetch(API,{method:'POST',headers:aiHeaders(),body:JSON.stringify(body)});if(!r.ok)await aiCheck(r);const d=await r.json();return JSON.parse((d.content?.find(c=>c.type==='text')?.text||'').replace(/```json|```/g,'').trim());}
+async function extraerAlbaranDeFile(file){const isPDF=file.type==='application/pdf';const{blob,type}=isPDF?{blob:file,type:'application/pdf'}:await comprimirImagen(file);const b64=await f2b64(blob);const mt=isPDF?'application/pdf':(type||'image/jpeg');const body={model:ALB_MODEL,max_tokens:2500,system:_albSysPrompt(),messages:[{role:'user',content:[isPDF?{type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}}:{type:'image',source:{type:'base64',media_type:mt,data:b64}},{type:'text',text:'Digitaliza este albaran o factura. RAZONA sobre el formato de cada producto y convierte a unidad base. Devuelve SOLO el JSON, sin texto adicional.'}]}]};const r=await fetch(API,{method:'POST',headers:aiHeaders(),body:JSON.stringify(body)});if(!r.ok)await aiCheck(r);const d=await r.json();return JSON.parse((d.content?.find(c=>c.type==='text')?.text||'').replace(/```json|```/g,'').trim());}
 /* ── Cola multi-albarán ──
    Cada item: {id, fileName, isPDF, status:'queue|analyzing|ready|error|applying|done', parsed, error} */
 async function handleAlbaran(input){
@@ -512,21 +536,39 @@ async function procesarCola(){
   for(const item of albQueue){
     if(item.status!=='queue')continue;
     item.status='analyzing';renderCola();
-    try{
-      item.parsed=await extraerAlbaranDeFile(item.file);
-      // Pre-resolver proveedor y fecha
+    let ok=false,lastErr=null;
+    // Hasta 3 intentos con espera creciente (cubre cortes de red, saturación y rate limit)
+    for(let intento=0;intento<3&&!ok;intento++){
+      try{
+        item.parsed=await extraerAlbaranDeFile(item.file);
+        ok=true;
+      }catch(e){
+        lastErr=e;
+        if(intento<2){item.status='retrying';item.intento=intento+1;renderCola();await new Promise(r=>setTimeout(r,1200*(intento+1)));item.status='analyzing';renderCola();}
+      }
+    }
+    if(ok){
       const p=item.parsed;
       const nom=p.proveedor&&(typeof p.proveedor==='object'?p.proveedor.nombre:p.proveedor);
       item.provId='';
       if(nom){const pv=(INV.proveedores||[]).find(x=>x.nombre.toLowerCase().includes((nom||'').toLowerCase().slice(0,8)));if(pv)item.provId=pv.id;}
       item.fecha=(p.documento&&p.documento.fecha)||hoy();
-      item.file=null; // liberar memoria
+      item.file=null; // liberar memoria solo en éxito
       item.status='ready';
-    }catch(e){item.status='error';item.error=e.message;item.file=null;}
+    }else{
+      item.status='error';item.error=(lastErr&&lastErr.message)||'No se pudo leer';
+      // Conservar item.file para poder reintentar manualmente
+    }
     renderCola();
   }
   procesandoCola=false;
   actualizarApplyBar();
+}
+function reintentarAlb(id){
+  const item=albQueue.find(x=>x.id===id);
+  if(!item||!item.file){return;}
+  item.status='queue';item.error=null;
+  renderCola();procesarCola();
 }
 function actualizarApplyBar(){
   const ready=albQueue.filter(x=>x.status==='ready').length;
@@ -545,7 +587,8 @@ function renderAlbCard(item,idx){
   const head=`<div class="ac-head"><span class="ac-file">${esc(item.fileName)}</span>${item.status==='ready'||item.status==='error'||item.status==='done'?`<button class="ac-remove" onclick="quitarAlb('${item.id}')">&times;</button>`:''}</div>`;
   if(item.status==='queue')return `<div class="alb-card">${head}<div class="ac-status"><span class="ac-dot q"></span>En cola&hellip;</div></div>`;
   if(item.status==='analyzing')return `<div class="alb-card">${head}<div class="ac-status"><span class="spin"></span> Analizando con IA&hellip;</div></div>`;
-  if(item.status==='error')return `<div class="alb-card err">${head}<div class="alert alert-red" style="margin:0">${esc(item.error||'No se pudo leer')}</div></div>`;
+  if(item.status==='retrying')return `<div class="alb-card">${head}<div class="ac-status"><span class="spin"></span> Reintentando (${item.intento||1}/2)&hellip;</div></div>`;
+  if(item.status==='error')return `<div class="alb-card err">${head}<div class="alert alert-red" style="margin:0 0 .7rem">${esc(item.error||'No se pudo leer')}</div>${item.file?`<button class="ac-retry" onclick="reintentarAlb('${item.id}')">&#8635; Reintentar</button>`:''}</div>`;
   if(item.status==='applying')return `<div class="alb-card">${head}<div class="ac-status"><span class="spin"></span> Aplicando&hellip;</div></div>`;
   if(item.status==='done')return `<div class="alb-card done">${head}<div class="alert alert-green" style="margin:0">&#10003; Aplicado a stock (${item.aplicados||0} productos)</div></div>`;
   // ready → editable
