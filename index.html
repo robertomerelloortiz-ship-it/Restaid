@@ -2438,10 +2438,12 @@ function executeActions(actions, db) {
 
   // Guardar cambios
   if (invChanged && db.inventario) {
+    db.inventario._ts = Date.now();
     localStorage.setItem('restaid_inv_v1', JSON.stringify(db.inventario));
     const frame = document.getElementById('frame-inventario');
     if (frame && frame.src) {
       try { frame.contentWindow.postMessage({ type: 'restaid_refresh' }, '*'); } catch {}
+      try { frame.contentWindow.postMessage({ type: 'restaid_sync_to_cloud' }, '*'); } catch {}
     }
   }
   if (escChanged && db.escandallo) {
