@@ -2072,8 +2072,18 @@ Cuando el gestor pida modificar datos, responde con el texto normal y añade al 
 [ACTION]{"tipo":"asignar_turnos_bulk","asignaciones":[{"nombre":"texto","dia":"Lun","turno":"Comida","ini":"12:00","fin":"17:00"}]}[/ACTION]
 [ACTION]{"tipo":"registrar_extra","nombre":"nombre del empleado","fecha":"YYYY-MM-DD","horas":NUMERO,"motivo":"texto","estado":"pendiente"}[/ACTION]
 [ACTION]{"tipo":"ventas_previstas","dias":{"Lun":{"Comida":NUMERO,"Cena":NUMERO}}}[/ACTION]
-[ACTION]{"tipo":"eliminar_movimiento","movId":"ID_del_movimiento_si_lo_tienes","motivo":"texto del motivo si no tienes id","ingId":"ID_ingrediente_opcional"}[/ACTION]
 [ACTION]{"tipo":"crear_ingrediente","nombre":"texto","categoria":"Carne|Pescado|Verdura|etc","unidad":"kg|l|ud","precio":PRECIO_POR_UNIDAD,"stock":NUMERO,"stockMin":NUMERO,"ivaPct":10,"proveedor":"nombre opcional"}[/ACTION]
+[ACTION]{"tipo":"modificar_ingrediente","ingId":"ID_o_usar_nombre","nombre":"nombre a buscar","nuevoNombre":"opcional","categoria":"opcional","precio":OPCIONAL,"stockMin":OPCIONAL,"unidad":"opcional","notas":"opcional"}[/ACTION]
+[ACTION]{"tipo":"eliminar_ingrediente","ingId":"ID_si_lo_tienes","nombre":"nombre si no tienes ID"}[/ACTION]
+[ACTION]{"tipo":"eliminar_movimiento","movId":"ID_si_lo_tienes","motivo":"texto del motivo si no tienes ID","ingId":"ID_ingrediente_opcional"}[/ACTION]
+[ACTION]{"tipo":"limpiar_movimientos","ingId":"ID_ingrediente_para_limpiar_solo_ese_OPCIONAL","resetearStock":false}[/ACTION]
+[ACTION]{"tipo":"resetear_stock","ingId":"ID_para_uno_solo_OPCIONAL","valor":0}[/ACTION]
+[ACTION]{"tipo":"crear_proveedor","nombre":"texto","cif":"opcional","tel":"opcional","email":"opcional","categoria":"opcional","pago":"opcional"}[/ACTION]
+[ACTION]{"tipo":"eliminar_proveedor","provId":"ID_si_lo_tienes","nombre":"nombre si no tienes ID"}[/ACTION]
+[ACTION]{"tipo":"eliminar_pedido","pedId":"ID_si_lo_tienes","ref":"REF-XXXXXX_si_no_tienes_ID"}[/ACTION]
+[ACTION]{"tipo":"avanzar_pedido","pedId":"ID_si_lo_tienes","ref":"REF si no tienes ID"}[/ACTION]
+[ACTION]{"tipo":"eliminar_albaran","albId":"ID_si_lo_tienes","ref":"numero_ref_si_no_tienes_ID"}[/ACTION]
+[ACTION]{"tipo":"eliminar_extra","extraId":"ID_si_lo_tienes","nombre":"nombre empleado si no tienes ID"}[/ACTION]
 
 DOCUMENTOS ADJUNTOS:
 - Si el gestor adjunta una foto o PDF de un ALBARÁN/factura de proveedor: extrae el proveedor, la fecha y TODAS las líneas (producto, cantidad, unidad, precio unitario e importe) y genera UN crear_albaran con todas las líneas. Para cada producto que ya exista en INGREDIENTES, añade además un actualizar_precio con su nuevo precio por unidad.
@@ -2110,11 +2120,11 @@ Datos por flujo (pídelos todos juntos):
 - NUEVO INGREDIENTE (crear_ingrediente): obligatorio nombre, unidad y precio por unidad; recomendado categoría, stock inicial (def. 0), stock mínimo, IVA (def. 10%) y proveedor.
 
 REGLAS DE COMPORTAMIENTO CRÍTICAS:
-- NUNCA preguntes al usuario cómo funciona RESTAID, qué acciones existen, o cómo se hacen las cosas internamente. Tú eres el sistema; si algo no puedes hacerlo, dilo directamente y ofrece la alternativa (ej: "No puedo eliminar ese movimiento desde aquí; ve a la pestaña Movimientos y bórralo manualmente").
-- NUNCA digas "no tengo documentada esa acción" ni "¿podrías confirmarme cómo se hace?". Si no está en tu set de acciones, dilo con claridad y redirige.
-- Si el usuario pide algo que sí puedes hacer con tus acciones, hazlo sin preguntar si existe o no.
-
-Si la acción no está disponible, díselo con claridad y di exactamente dónde hacerlo en la interfaz.
+- Tienes acceso completo a RESTAID. NUNCA digas que no puedes hacer algo sin haberlo intentado con las acciones disponibles.
+- NUNCA preguntes al usuario cómo funciona el sistema, qué acciones existen, ni cómo se realizan las operaciones internamente. Tú eres el sistema.
+- Si una operación no está en tu set de acciones (raro), dilo con claridad y redirige: "No puedo hacerlo desde aquí; ve a [sección concreta] y [acción concreta]".
+- NUNCA listes tus acciones disponibles al usuario ni expliques tu arquitectura interna.
+- Si el gestor pide eliminar, resetear, limpiar o modificar datos: hazlo directamente tras confirmación, usando las acciones correspondientes.
 
 WIDGETS VISUALES (canvas derecho):
 Cuando la respuesta se beneficie de una visualización, añade al final UN bloque WIDGET en JSON:
@@ -2213,28 +2223,6 @@ function executeActions(actions, db) {
           else if (action.tipo_mov === 'salida' || action.tipo_mov === 'merma') ing.stock = Math.max(0, (ing.stock || 0) - action.cantidad);
           results.push(`✓ Movimiento registrado: ${action.tipo_mov} ${action.cantidad} ${ing.unidad} de ${ing.nombre}`);
           invChanged = true;
-        }
-      }
-
-      if (action.tipo === 'eliminar_movimiento') {
-        const inv = db.inventario;
-        if (!inv) continue;
-        // Buscar por id exacto, o por motivo + ingId si no hay id
-        let mov = null;
-        if (action.movId) mov = inv.movimientos.find(m => m.id === action.movId);
-        if (!mov && action.motivo) mov = inv.movimientos.find(m => m.motivo === action.motivo && (!action.ingId || m.ingId === action.ingId));
-        if (mov) {
-          // Revertir efecto en stock
-          const ing = inv.ingredientes.find(i => i.id === mov.ingId);
-          if (ing) {
-            if (mov.tipo === 'entrada') ing.stock = Math.max(0, (ing.stock || 0) - (mov.cantidad || 0));
-            else ing.stock = (ing.stock || 0) + (mov.cantidad || 0);
-          }
-          inv.movimientos = inv.movimientos.filter(m => m.id !== mov.id);
-          results.push(`✓ Movimiento eliminado y stock corregido`);
-          invChanged = true;
-        } else {
-          results.push(`⚠ No se encontró el movimiento`);
         }
       }
 
@@ -2456,6 +2444,152 @@ function executeActions(actions, db) {
         });
         if (n > 0) { results.push(`✓ Ventas previstas actualizadas (${n} día${n>1?'s':''})`); rrhhChanged = true; }
         else results.push(`⚠ No se han podido interpretar las ventas previstas`);
+      }
+
+
+      if (action.tipo === 'eliminar_movimiento') {
+        const inv = db.inventario; if (!inv) continue;
+        const mov = action.movId ? inv.movimientos.find(m => m.id === action.movId)
+          : inv.movimientos.find(m => m.motivo === action.motivo && (!action.ingId || m.ingId === action.ingId));
+        if (mov) {
+          const ing = inv.ingredientes.find(i => i.id === mov.ingId);
+          if (ing) { if (mov.tipo === 'entrada') ing.stock = Math.max(0,(ing.stock||0)-(mov.cantidad||0)); else ing.stock = (ing.stock||0)+(mov.cantidad||0); }
+          inv.movimientos = inv.movimientos.filter(m => m.id !== mov.id);
+          results.push(`✓ Movimiento eliminado`); invChanged = true;
+        } else results.push(`⚠ Movimiento no encontrado`);
+      }
+
+      if (action.tipo === 'limpiar_movimientos') {
+        const inv = db.inventario; if (!inv) continue;
+        // Resetear stock a 0 si se pide limpiar todo, o solo borrar movimientos
+        if (action.resetearStock) { (inv.ingredientes||[]).forEach(i => i.stock = 0); }
+        const antes = (inv.movimientos||[]).length;
+        if (action.ingId) {
+          inv.movimientos = inv.movimientos.filter(m => m.ingId !== action.ingId);
+        } else {
+          inv.movimientos = [];
+        }
+        results.push(`✓ ${antes} movimientos eliminados${action.resetearStock?' y stock a cero':''}`); invChanged = true;
+      }
+
+      if (action.tipo === 'resetear_stock') {
+        const inv = db.inventario; if (!inv) continue;
+        if (action.ingId) {
+          const ing = inv.ingredientes.find(i => i.id === action.ingId);
+          if (ing) { ing.stock = action.valor ?? 0; results.push(`✓ Stock de ${ing.nombre} → ${ing.stock}`); invChanged = true; }
+        } else {
+          (inv.ingredientes||[]).forEach(i => i.stock = action.valor ?? 0);
+          results.push(`✓ Stock de todos los ingredientes → ${action.valor ?? 0}`); invChanged = true;
+        }
+      }
+
+      if (action.tipo === 'eliminar_ingrediente') {
+        const inv = db.inventario; if (!inv) continue;
+        const nk = normS(action.nombre || action.ingId);
+        const ing = action.ingId ? inv.ingredientes.find(i => i.id === action.ingId)
+          : inv.ingredientes.find(i => normS(i.nombre) === nk || normS(i.nombre).includes(nk));
+        if (ing) {
+          inv.ingredientes = inv.ingredientes.filter(i => i.id !== ing.id);
+          inv.movimientos = inv.movimientos.filter(m => m.ingId !== ing.id);
+          results.push(`✓ Ingrediente "${ing.nombre}" eliminado`); invChanged = true;
+        } else results.push(`⚠ Ingrediente no encontrado`);
+      }
+
+      if (action.tipo === 'modificar_ingrediente') {
+        const inv = db.inventario; if (!inv) continue;
+        const nk = normS(action.nombre || '');
+        const ing = action.ingId ? inv.ingredientes.find(i => i.id === action.ingId)
+          : inv.ingredientes.find(i => normS(i.nombre) === nk || normS(i.nombre).includes(nk));
+        if (ing) {
+          if (action.nuevoNombre) ing.nombre = action.nuevoNombre;
+          if (action.categoria) ing.categoria = action.categoria;
+          if (action.unidad) ing.unidad = action.unidad;
+          if (action.precio != null) ing.precio = action.precio;
+          if (action.stockMin != null) ing.stockMin = action.stockMin;
+          if (action.ivaPct != null) ing.ivaPct = action.ivaPct;
+          if (action.notas != null) ing.notas = action.notas;
+          results.push(`✓ Ingrediente "${ing.nombre}" actualizado`); invChanged = true;
+        } else results.push(`⚠ Ingrediente no encontrado`);
+      }
+
+      if (action.tipo === 'crear_proveedor') {
+        const inv = db.inventario || (db.inventario = { ingredientes:[], movimientos:[], proveedores:[], pedidos:[], platos:[], albaranes:[], lotes:[], recuentos:[] });
+        const nk = normS(action.nombre||'');
+        let pv = inv.proveedores.find(p => normS(p.nombre) === nk);
+        if (!pv) {
+          pv = { id: uidS('pv'), nombre: action.nombre||'Nuevo proveedor', cif: action.cif||'', tel: action.tel||'', email: action.email||'', categoria: action.categoria||'', dias: action.dias||'', pago: action.pago||'', notas: action.notas||'' };
+          inv.proveedores.push(pv);
+          results.push(`✓ Proveedor "${pv.nombre}" creado`); invChanged = true;
+        } else results.push(`⚠ Ya existe un proveedor con ese nombre`);
+      }
+
+      if (action.tipo === 'eliminar_proveedor') {
+        const inv = db.inventario; if (!inv) continue;
+        const nk = normS(action.nombre||'');
+        const pv = action.provId ? inv.proveedores.find(p => p.id === action.provId)
+          : inv.proveedores.find(p => normS(p.nombre) === nk || normS(p.nombre).includes(nk));
+        if (pv) {
+          inv.proveedores = inv.proveedores.filter(p => p.id !== pv.id);
+          results.push(`✓ Proveedor "${pv.nombre}" eliminado`); invChanged = true;
+        } else results.push(`⚠ Proveedor no encontrado`);
+      }
+
+      if (action.tipo === 'eliminar_pedido') {
+        const inv = db.inventario; if (!inv) continue;
+        const ped = action.pedId ? inv.pedidos.find(p => p.id === action.pedId)
+          : inv.pedidos.find(p => p.ref === action.ref);
+        if (ped) {
+          if (ped.estado === 'recibido') {
+            (ped.lineas||[]).forEach(l => { const i = inv.ingredientes.find(x => x.id === l.ingId); if (i && l.cantidad > 0) i.stock = Math.max(0,(i.stock||0)-l.cantidad); });
+            inv.movimientos = inv.movimientos.filter(m => m.motivo !== 'Pedido ' + ped.ref);
+          }
+          inv.pedidos = inv.pedidos.filter(p => p.id !== ped.id);
+          results.push(`✓ Pedido ${ped.ref} eliminado`); invChanged = true;
+        } else results.push(`⚠ Pedido no encontrado`);
+      }
+
+      if (action.tipo === 'avanzar_pedido') {
+        const inv = db.inventario; if (!inv) continue;
+        const ped = action.pedId ? inv.pedidos.find(p => p.id === action.pedId)
+          : inv.pedidos.find(p => p.ref === action.ref);
+        if (ped) {
+          if (ped.estado === 'pendiente') ped.estado = 'enviado';
+          else if (ped.estado === 'enviado') {
+            ped.estado = 'recibido';
+            (ped.lineas||[]).forEach(l => { const i = inv.ingredientes.find(x => x.id === l.ingId); if (i && l.cantidad > 0) { i.stock = (i.stock||0)+l.cantidad; inv.movimientos.push({id:uidS('mov'),ingId:i.id,tipo:'entrada',cantidad:l.cantidad,fecha:new Date().toISOString().slice(0,10),coste:l.cantidad*(i.precio||0),motivo:'Pedido '+ped.ref}); } });
+          }
+          results.push(`✓ Pedido ${ped.ref} → ${ped.estado}`); invChanged = true;
+        } else results.push(`⚠ Pedido no encontrado`);
+      }
+
+      if (action.tipo === 'eliminar_albaran') {
+        const inv = db.inventario; if (!inv) continue;
+        const alb = action.albId ? inv.albaranes.find(a => a.id === action.albId)
+          : inv.albaranes.find(a => a.ref === action.ref);
+        if (alb) {
+          const motivo = 'Albarán ' + (alb.ref || alb.fecha);
+          inv.movimientos.filter(m => m.motivo === motivo && m.tipo === 'entrada').forEach(m => {
+            const i = inv.ingredientes.find(x => x.id === m.ingId);
+            if (i) i.stock = Math.max(0,(i.stock||0)-(m.cantidad||0));
+          });
+          inv.movimientos = inv.movimientos.filter(m => m.motivo !== motivo || m.tipo !== 'entrada');
+          inv.albaranes = inv.albaranes.filter(a => a.id !== alb.id);
+          results.push(`✓ Albarán ${alb.ref||alb.fecha} eliminado y stock revertido`); invChanged = true;
+        } else results.push(`⚠ Albarán no encontrado`);
+      }
+
+      if (action.tipo === 'eliminar_extra') {
+        const rrhh = ensureRRHH();
+        let found = false;
+        Object.keys(rrhh.semanas||{}).forEach(wid => {
+          const w = rrhh.semanas[wid];
+          if (!w.extras) return;
+          const antes = w.extras.length;
+          if (action.extraId) w.extras = w.extras.filter(e => e.id !== action.extraId);
+          else if (action.nombre) { const nk = normS(action.nombre); const emp = findEmp(rrhh, action.nombre); if (emp) w.extras = w.extras.filter(e => e.empId !== emp.id); }
+          if (w.extras.length < antes) { found = true; rrhhChanged = true; }
+        });
+        results.push(found ? '✓ Extra eliminado' : '⚠ Extra no encontrado');
       }
 
     } catch (e) {
