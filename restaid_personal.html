@@ -618,30 +618,55 @@ async function aplicarTodos(){
   const pend=albQueue.filter(x=>x.status==='ready');
   if(!pend.length)return;
   const btn=$('btn-alb-aplicar');btn.disabled=true;btn.innerHTML='<span class="spin"></span>';
+  // PASO 1: leer del DOM las líneas editadas de cada tarjeta ANTES de repintar nada
+  albQueue.forEach((item,idx)=>{ if(item.status==='ready'){ item.lineasEditadas=leerLineasDOM(item,idx); } });
+  // PASO 2: aplicar en memoria y marcar estados
   let totalOK=0;
-  for(let idx=0;idx<albQueue.length;idx++){
-    const item=albQueue[idx];
+  for(const item of albQueue){
     if(item.status!=='ready')continue;
     item.status='applying';renderCola();
     try{
-      const n=aplicarUnoEnMemoria(item,idx);
+      const n=aplicarUnoEnMemoria(item);
       item.aplicados=n;item.status='done';totalOK+=n;
     }catch(e){item.status='error';item.error=e.message;}
     renderCola();
   }
-  // Guardar una sola vez al final (más eficiente)
+  // PASO 3: guardar una sola vez al final
   try{await sbWrite('inventario',INV);}
   catch(e){$('alb-queue').insertAdjacentHTML('afterbegin',`<div class="alert alert-red">Error guardando: ${esc(e.message)}</div>`);}
   btn.disabled=false;btn.innerHTML='Aplicar a stock';
   actualizarApplyBar();
-  // Mensaje resumen
   const hechos=albQueue.filter(x=>x.status==='done').length;
   if(hechos){$('alb-queue').insertAdjacentHTML('afterbegin',`<div class="alert alert-green" style="margin-bottom:12px">&#10003; ${hechos} ${hechos>1?'albaranes aplicados':'albarán aplicado'} &middot; ${totalOK} movimientos de stock. ¡Gracias!</div>`);}
 }
 
+/* Lee las líneas editadas del DOM de una tarjeta concreta (antes de repintar). */
+function leerLineasDOM(item,idx){
+  const p=item.parsed;
+  return (p.lineas||[]).map((l,i)=>{
+    const g=id=>$(`a${idx}-${id}-${i}`);
+    const cantCompra=parseFloat(g('aq')?.value)||0;
+    const factor=parseFloat(g('af')?.value)||1;
+    const cantBase=parseFloat(g('ab')?.value)||(cantCompra*factor);
+    const precioCompra=parseFloat(g('ap')?.value)||null;
+    return {
+      nombre:g('an')?.value||l.descripcion||l.nombre,
+      cantidadCompra:cantCompra,
+      unidadCompra:g('au')?.value||l.unidad_compra||'ud',
+      factor,
+      cantidad:Math.round(cantBase*1000)/1000,
+      unidad:g('aub')?.value||l.unidad_base||'ud',
+      precioCompra,
+      precio:(precioCompra!=null&&factor>0)?Math.round(precioCompra/factor*1e4)/1e4:precioCompra,
+      iva:parseFloat(g('av')?.value)||l.iva_pct||null,
+      lote:l.lote||null,categoria:l.categoria||null
+    };
+  }).filter(l=>l.cantidad>0);
+}
+
 /* Aplica un albarán al objeto INV en memoria (sin guardar). Devuelve nº de líneas aplicadas.
    Reusa exactamente la misma lógica que RESTAID. */
-function aplicarUnoEnMemoria(item,idx){
+function aplicarUnoEnMemoria(item){
   const p=item.parsed;let provId=item.provId||'';const fecha=item.fecha||hoy();
   if(!provId&&p.proveedor){
     const _pNom=typeof p.proveedor==='object'?p.proveedor.nombre:p.proveedor;
@@ -651,12 +676,11 @@ function aplicarUnoEnMemoria(item,idx){
     if(_pNom){let pv=INV.proveedores.find(x=>x.nombre.toLowerCase().includes(_pNom.toLowerCase().slice(0,8)));if(!pv&&_pCif)pv=INV.proveedores.find(x=>x.cif&&x.cif===_pCif);if(!pv){pv={id:uid(),nombre:_pNom,cif:_pCif||'',tel:_pTel||'',email:'',categoria:_pCat||'',dias:'',pago:'',notas:'Creado desde app personal'};INV.proveedores.push(pv);}provId=pv.id;}
   }
   const _ref=(p.documento&&p.documento.numero)||null;
-  const lf=(p.lineas||[]).map((l,i)=>{
-    const cantCompra=parseFloat($(`a${idx}-aq-${i}`)?.value)||0;
-    const factor=parseFloat($(`a${idx}-af-${i}`)?.value)||1;
-    const cantBase=parseFloat($(`a${idx}-ab-${i}`)?.value)||(cantCompra*factor);
-    const precioCompra=parseFloat($(`a${idx}-ap-${i}`)?.value)||null;
-    return {nombre:$(`a${idx}-an-${i}`)?.value||l.descripcion||l.nombre,cantidadCompra:cantCompra,unidadCompra:$(`a${idx}-au-${i}`)?.value||l.unidad_compra||'ud',factor,cantidad:Math.round(cantBase*1000)/1000,unidad:$(`a${idx}-aub-${i}`)?.value||l.unidad_base||'ud',precioCompra,precio:(precioCompra!=null&&factor>0)?Math.round(precioCompra/factor*1e4)/1e4:precioCompra,iva:parseFloat($(`a${idx}-av-${i}`)?.value)||l.iva_pct||null,lote:l.lote||null,categoria:l.categoria||null,caducidad:null};
+  // Usa las líneas leídas del DOM antes del repintado; si no las hay, cae a las parseadas.
+  const lf=(item.lineasEditadas&&item.lineasEditadas.length)?item.lineasEditadas:(p.lineas||[]).map(l=>{
+    const cc=l.cantidad_compra!=null?l.cantidad_compra:(l.cantidad||0);const f=l.factor!=null?l.factor:1;
+    const cb=l.cantidad_base!=null?l.cantidad_base:(cc*f);
+    return {nombre:l.descripcion||l.nombre,cantidadCompra:cc,unidadCompra:l.unidad_compra||'ud',factor:f,cantidad:Math.round(cb*1000)/1000,unidad:l.unidad_base||'ud',precioCompra:l.precio_unitario!=null?l.precio_unitario:null,precio:(l.precio_unitario!=null&&f>0)?Math.round(l.precio_unitario/f*1e4)/1e4:l.precio_unitario,iva:l.iva_pct||null,lote:l.lote||null,categoria:l.categoria||null};
   }).filter(l=>l.cantidad>0);
   lf.forEach(l=>{
     let ing=INV.ingredientes.find(x=>x.nombre.toLowerCase().includes(l.nombre.toLowerCase())||l.nombre.toLowerCase().includes(x.nombre.toLowerCase().split(' ')[0]));
