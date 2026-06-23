@@ -54,3 +54,7 @@ module.exports = async (req, res) => {
     res.status(502).json({ error: { message: 'Error al contactar con la IA' } });
   }
 };
+
+// Permite que el análisis de visión (que puede tardar) no se corte a los 10s.
+// En plan Hobby de Vercel el máximo es 60s.
+module.exports.config = { maxDuration: 60 };
