@@ -2028,6 +2028,27 @@ function buildSystemPrompt(db) {
 
   const platosEsc = Object.keys(db.escandallo?.platos || {}).join(', ');
 
+  // Movimientos recientes (últimos 50) con id para poder eliminarlos
+  const movCtx = (db.inventario?.movimientos || []).slice(0, 50).map(m => {
+    const ing = (db.inventario?.ingredientes || []).find(i => i.id === m.ingId);
+    return `id:${m.id}|${m.fecha}|${m.tipo}|${m.cantidad}${m.unidad||''}|${ing?.nombre||m.ingId}|${m.motivo||''}`;
+  }).join('\n');
+
+  // Pedidos con id y ref
+  const pedCtx = (db.inventario?.pedidos || []).slice(0, 20).map(p =>
+    `id:${p.id}|ref:${p.ref||'—'}|${p.estado}|${p.fecha}|${(p.lineas||[]).length} líneas`
+  ).join('\n');
+
+  // Albaranes con id y ref
+  const albCtx = (db.inventario?.albaranes || []).slice(0, 20).map(a =>
+    `id:${a.id}|ref:${a.ref||'sin ref'}|${a.fecha}|prov:${a.proveedorId||'—'}|${(a.lineas||[]).length} líneas`
+  ).join('\n');
+
+  // Proveedores con id
+  const provCtx = (db.inventario?.proveedores || []).map(p =>
+    `id:${p.id}|${p.nombre}|${p.categoria||'—'}|${p.tel||''}|${p.email||''}`
+  ).join('\n');
+
   return `Eres el Copiloto de RESTAID, el asistente de gestión de un restaurante español. Eres inteligente, perspicaz y proactivo: no te limitas a responder lo que se te pregunta, sino que piensas como un consultor de restauración experto que conoce a fondo este negocio concreto.
 
 TU FORMA DE PENSAR:
@@ -2048,6 +2069,18 @@ ${dataStr}
 
 INGREDIENTES (para acciones de stock):
 ${invIng || 'Sin ingredientes'}
+
+MOVIMIENTOS RECIENTES (últimos 50 — usa el id para eliminar_movimiento):
+${movCtx || 'Sin movimientos'}
+
+PEDIDOS (usa id o ref para eliminar_pedido / avanzar_pedido):
+${pedCtx || 'Sin pedidos'}
+
+ALBARANES (usa id o ref para eliminar_albaran):
+${albCtx || 'Sin albaranes'}
+
+PROVEEDORES (usa id para acciones sobre proveedores):
+${provCtx || 'Sin proveedores'}
 
 EMPLEADOS:
 ${emps || 'Sin empleados'}
@@ -2073,16 +2106,16 @@ Cuando el gestor pida modificar datos, responde con el texto normal y añade al 
 [ACTION]{"tipo":"registrar_extra","nombre":"nombre del empleado","fecha":"YYYY-MM-DD","horas":NUMERO,"motivo":"texto","estado":"pendiente"}[/ACTION]
 [ACTION]{"tipo":"ventas_previstas","dias":{"Lun":{"Comida":NUMERO,"Cena":NUMERO}}}[/ACTION]
 [ACTION]{"tipo":"crear_ingrediente","nombre":"texto","categoria":"Carne|Pescado|Verdura|etc","unidad":"kg|l|ud","precio":PRECIO_POR_UNIDAD,"stock":NUMERO,"stockMin":NUMERO,"ivaPct":10,"proveedor":"nombre opcional"}[/ACTION]
-[ACTION]{"tipo":"modificar_ingrediente","ingId":"ID_o_usar_nombre","nombre":"nombre a buscar","nuevoNombre":"opcional","categoria":"opcional","precio":OPCIONAL,"stockMin":OPCIONAL,"unidad":"opcional","notas":"opcional"}[/ACTION]
+[ACTION]{"tipo":"modificar_ingrediente","ingId":"ID","nombre":"nombre a buscar si no tienes ID","nuevoNombre":"opcional","categoria":"opcional","precio":OPCIONAL,"stockMin":OPCIONAL}[/ACTION]
 [ACTION]{"tipo":"eliminar_ingrediente","ingId":"ID_si_lo_tienes","nombre":"nombre si no tienes ID"}[/ACTION]
-[ACTION]{"tipo":"eliminar_movimiento","movId":"ID_si_lo_tienes","motivo":"texto del motivo si no tienes ID","ingId":"ID_ingrediente_opcional"}[/ACTION]
+[ACTION]{"tipo":"eliminar_movimiento","movId":"ID_del_movimiento"}[/ACTION]
 [ACTION]{"tipo":"limpiar_movimientos","ingId":"ID_ingrediente_para_limpiar_solo_ese_OPCIONAL","resetearStock":false}[/ACTION]
 [ACTION]{"tipo":"resetear_stock","ingId":"ID_para_uno_solo_OPCIONAL","valor":0}[/ACTION]
-[ACTION]{"tipo":"crear_proveedor","nombre":"texto","cif":"opcional","tel":"opcional","email":"opcional","categoria":"opcional","pago":"opcional"}[/ACTION]
+[ACTION]{"tipo":"crear_proveedor","nombre":"texto","cif":"opcional","tel":"opcional","email":"opcional","categoria":"opcional"}[/ACTION]
 [ACTION]{"tipo":"eliminar_proveedor","provId":"ID_si_lo_tienes","nombre":"nombre si no tienes ID"}[/ACTION]
-[ACTION]{"tipo":"eliminar_pedido","pedId":"ID_si_lo_tienes","ref":"REF-XXXXXX_si_no_tienes_ID"}[/ACTION]
+[ACTION]{"tipo":"eliminar_pedido","pedId":"ID_si_lo_tienes","ref":"REF si no tienes ID"}[/ACTION]
 [ACTION]{"tipo":"avanzar_pedido","pedId":"ID_si_lo_tienes","ref":"REF si no tienes ID"}[/ACTION]
-[ACTION]{"tipo":"eliminar_albaran","albId":"ID_si_lo_tienes","ref":"numero_ref_si_no_tienes_ID"}[/ACTION]
+[ACTION]{"tipo":"eliminar_albaran","albId":"ID_si_lo_tienes","ref":"ref del albaran si no tienes ID"}[/ACTION]
 [ACTION]{"tipo":"eliminar_extra","extraId":"ID_si_lo_tienes","nombre":"nombre empleado si no tienes ID"}[/ACTION]
 
 DOCUMENTOS ADJUNTOS:
@@ -2120,11 +2153,11 @@ Datos por flujo (pídelos todos juntos):
 - NUEVO INGREDIENTE (crear_ingrediente): obligatorio nombre, unidad y precio por unidad; recomendado categoría, stock inicial (def. 0), stock mínimo, IVA (def. 10%) y proveedor.
 
 REGLAS DE COMPORTAMIENTO CRÍTICAS:
-- Tienes acceso completo a RESTAID. NUNCA digas que no puedes hacer algo sin haberlo intentado con las acciones disponibles.
-- NUNCA preguntes al usuario cómo funciona el sistema, qué acciones existen, ni cómo se realizan las operaciones internamente. Tú eres el sistema.
-- Si una operación no está en tu set de acciones (raro), dilo con claridad y redirige: "No puedo hacerlo desde aquí; ve a [sección concreta] y [acción concreta]".
-- NUNCA listes tus acciones disponibles al usuario ni expliques tu arquitectura interna.
-- Si el gestor pide eliminar, resetear, limpiar o modificar datos: hazlo directamente tras confirmación, usando las acciones correspondientes.
+- Tienes acceso COMPLETO a RESTAID. NUNCA digas que no puedes hacer algo sin haberlo intentado con las acciones disponibles.
+- NUNCA preguntes al usuario cómo funciona el sistema, qué acciones existen, ni cómo se realizan las operaciones. Tú eres el sistema.
+- NUNCA listes tus acciones disponibles ni expliques tu arquitectura interna al usuario.
+- Si algo realmente no está en tus acciones, di exactamente dónde hacerlo en la interfaz (pestaña y botón concreto). No digas "soporte técnico" ni "base de datos".
+- Para operaciones masivas (limpiar todos los movimientos, resetear todo el stock): pide confirmación una sola vez, y al confirmar ejecuta con limpiar_movimientos o resetear_stock directamente.
 
 WIDGETS VISUALES (canvas derecho):
 Cuando la respuesta se beneficie de una visualización, añade al final UN bloque WIDGET en JSON:
@@ -2461,14 +2494,9 @@ function executeActions(actions, db) {
 
       if (action.tipo === 'limpiar_movimientos') {
         const inv = db.inventario; if (!inv) continue;
-        // Resetear stock a 0 si se pide limpiar todo, o solo borrar movimientos
         if (action.resetearStock) { (inv.ingredientes||[]).forEach(i => i.stock = 0); }
         const antes = (inv.movimientos||[]).length;
-        if (action.ingId) {
-          inv.movimientos = inv.movimientos.filter(m => m.ingId !== action.ingId);
-        } else {
-          inv.movimientos = [];
-        }
+        inv.movimientos = action.ingId ? inv.movimientos.filter(m => m.ingId !== action.ingId) : [];
         results.push(`✓ ${antes} movimientos eliminados${action.resetearStock?' y stock a cero':''}`); invChanged = true;
       }
 
@@ -2485,7 +2513,7 @@ function executeActions(actions, db) {
 
       if (action.tipo === 'eliminar_ingrediente') {
         const inv = db.inventario; if (!inv) continue;
-        const nk = normS(action.nombre || action.ingId);
+        const nk = normS(action.nombre||'');
         const ing = action.ingId ? inv.ingredientes.find(i => i.id === action.ingId)
           : inv.ingredientes.find(i => normS(i.nombre) === nk || normS(i.nombre).includes(nk));
         if (ing) {
@@ -2497,7 +2525,7 @@ function executeActions(actions, db) {
 
       if (action.tipo === 'modificar_ingrediente') {
         const inv = db.inventario; if (!inv) continue;
-        const nk = normS(action.nombre || '');
+        const nk = normS(action.nombre||'');
         const ing = action.ingId ? inv.ingredientes.find(i => i.id === action.ingId)
           : inv.ingredientes.find(i => normS(i.nombre) === nk || normS(i.nombre).includes(nk));
         if (ing) {
@@ -2572,21 +2600,19 @@ function executeActions(actions, db) {
             const i = inv.ingredientes.find(x => x.id === m.ingId);
             if (i) i.stock = Math.max(0,(i.stock||0)-(m.cantidad||0));
           });
-          inv.movimientos = inv.movimientos.filter(m => m.motivo !== motivo || m.tipo !== 'entrada');
+          inv.movimientos = inv.movimientos.filter(m => !(m.motivo === motivo && m.tipo === 'entrada'));
           inv.albaranes = inv.albaranes.filter(a => a.id !== alb.id);
           results.push(`✓ Albarán ${alb.ref||alb.fecha} eliminado y stock revertido`); invChanged = true;
         } else results.push(`⚠ Albarán no encontrado`);
       }
 
       if (action.tipo === 'eliminar_extra') {
-        const rrhh = ensureRRHH();
-        let found = false;
+        const rrhh = ensureRRHH(); let found = false;
         Object.keys(rrhh.semanas||{}).forEach(wid => {
-          const w = rrhh.semanas[wid];
-          if (!w.extras) return;
+          const w = rrhh.semanas[wid]; if (!w.extras) return;
           const antes = w.extras.length;
           if (action.extraId) w.extras = w.extras.filter(e => e.id !== action.extraId);
-          else if (action.nombre) { const nk = normS(action.nombre); const emp = findEmp(rrhh, action.nombre); if (emp) w.extras = w.extras.filter(e => e.empId !== emp.id); }
+          else if (action.nombre) { const emp = findEmp(rrhh, action.nombre); if (emp) w.extras = w.extras.filter(e => e.empId !== emp.id); }
           if (w.extras.length < antes) { found = true; rrhhChanged = true; }
         });
         results.push(found ? '✓ Extra eliminado' : '⚠ Extra no encontrado');
@@ -2600,10 +2626,12 @@ function executeActions(actions, db) {
 
   // Guardar cambios
   if (invChanged && db.inventario) {
+    db.inventario._ts = Date.now();
     localStorage.setItem('restaid_inv_v1', JSON.stringify(db.inventario));
     const frame = document.getElementById('frame-inventario');
     if (frame && frame.src) {
       try { frame.contentWindow.postMessage({ type: 'restaid_refresh' }, '*'); } catch {}
+      try { frame.contentWindow.postMessage({ type: 'restaid_sync_to_cloud' }, '*'); } catch {}
     }
   }
   if (escChanged && db.escandallo) {
