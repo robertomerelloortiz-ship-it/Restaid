@@ -418,7 +418,7 @@ async function sbGetInv(){
 let SB_TIMER=null;
 function sbSetInv(){
   clearTimeout(SB_TIMER);
-  SB_TIMER=setTimeout(sbWriteNow,1500);
+  SB_TIMER=setTimeout(sbWriteNow,300);
 }
 async function sbWriteNow(){
   try{
@@ -446,7 +446,7 @@ async function loadFromDB(){
   if(!remote||typeof remote!=='object')return;
   if(LOCAL_DIRTY){console.log('[RESTAID inv] Remoto ignorado: hay cambios locales de esta sesión');return;}
   const remoteTs=Number(remote._ts)||0,localTs=Number(E._ts)||0;
-  if(remoteTs<localTs){console.log('[RESTAID inv] Remoto ignorado: lo local es más reciente');return;}
+  if(remoteTs<=localTs){console.log('[RESTAID inv] Remoto ignorado: lo local es igual o más reciente');return;}
   E={...empty(),...remote};
   if(sanitizeE()){console.log('[RESTAID inv] Datos remotos reparados, subiendo versión corregida');sbSetInv();}
   try{localStorage.setItem(KEY,JSON.stringify(E));}catch(e){}
@@ -470,11 +470,7 @@ function refreshFromStorage(){
   // el prime cost del shell no quede con el valor anterior.
   if(typeof pushInvPub==='function')pushInvPub();
 }
-window.addEventListener('message',e=>{
-  if(!e||!e.data)return;
-  if(e.data.type==='restaid_refresh')refreshFromStorage();
-  if(e.data.type==='restaid_sync_to_cloud')sbSetInv();
-});
+window.addEventListener('message',e=>{if(e&&e.data&&e.data.type==='restaid_refresh')refreshFromStorage();});
 window.addEventListener('storage',e=>{if(e.key===KEY)refreshFromStorage();});
 // La carta vive en Ventas (escandallo). Si cambia, refrescamos Ingeniería de menú
 // para que el aviso de "platos sin receta" y los vínculos estén al día.
@@ -1586,24 +1582,23 @@ function aplicarLote(){
   const validos=LOTE.filter(x=>x.estado==='ok');
   const grupos={};
   validos.forEach(x=>{(grupos[x.grupo]=grupos[x.grupo]||[]).push(x);});
-  let aplicados=0,actualizados=0;
+  let aplicados=0;
   Object.keys(grupos).forEach(gid=>{
     const chk=$('lote-chk-'+gid);
-    if(chk&&!chk.checked)return;
+    if(chk&&!chk.checked)return; // no seleccionado
     const items=grupos[gid];
+    // Construir un albParsed combinado del grupo
     const lineas=items.flatMap(x=>x.data.lineas||[]);
     const doc=items[0].data.documento||{};
     const prov=items[0].data.proveedor||{};
     const provSel=$('lote-prov-'+gid)?.value||'';
     const combinado={documento:doc,proveedor:prov,lineas,totales:items[0].data.totales};
-    const resultado=aplicarAlbaranSilencioso(combinado, provSel, toISO(doc.fecha)||hoy());
-    if(resultado==='actualizado')actualizados++;else aplicados++;
+    aplicarAlbaranSilencioso(combinado, provSel, toISO(doc.fecha)||hoy());
+    aplicados++;
   });
   save();closeM('modal-albaran');rMovs&&rMovs();upTopbar();
-  const partes=[];
-  if(aplicados)partes.push(`${aplicados} nuevo${aplicados>1?'s':''}`);
-  if(actualizados)partes.push(`${actualizados} actualizado${actualizados>1?'s':''}`);
-  toast(`Albaranes aplicados: ${partes.join(', ')}`);
+  toast(`${aplicados} albaranes aplicados al stock`);
+  LOTE=[];
 }
 
 // Versión de aplicarAlbaran sin UI (para el lote). Reutiliza la lógica de conversión.
@@ -1624,35 +1619,6 @@ function aplicarAlbaranSilencioso(p, provIdSel, fecha){
     if(pv){if(!pv.cif&&_pCif)pv.cif=_pCif;if(!pv.tel&&_pTel)pv.tel=_pTel;if(!pv.categoria&&_pCat)pv.categoria=_pCat;}
   }
   const _ref=(p.documento&&p.documento.numero)||null;
-
-  // ── Detección de duplicado: mismo ref + mismo proveedor (o misma fecha si sin ref) ──
-  let esActualizacion=false;
-  if(_ref){
-    const existing=E.albaranes.find(a=>a.ref&&a.ref===_ref&&(a.proveedorId===provId||(provId==null&&a.proveedorId==null)||(!provId)));
-    if(existing){
-      esActualizacion=true;
-      // Revertir movimientos del albarán anterior
-      const motivoAnterior='Albarán '+existing.ref;
-      E.movimientos.filter(m=>m.motivo===motivoAnterior&&m.tipo==='entrada').forEach(m=>{
-        const ing=E.ingredientes.find(x=>x.id===m.ingId);
-        if(ing)ing.stock=Math.max(0,(ing.stock||0)-(m.cantidad||0));
-      });
-      E.movimientos=E.movimientos.filter(m=>m.motivo!==motivoAnterior||m.tipo!=='entrada');
-      // Revertir estadísticas del proveedor
-      if(provId){
-        const pv=E.proveedores.find(x=>x.id===(existing.proveedorId||provId));
-        if(pv){
-          const totalAnterior=(existing.totales&&existing.totales.total)||
-            (existing.lineas||[]).reduce((s,l)=>s+(l.precioCompra||0)*(l.cantidadCompra||0),0);
-          pv.totalComprado=Math.max(0,(pv.totalComprado||0)-totalAnterior);
-          pv.numAlbaranes=Math.max(0,(pv.numAlbaranes||0)-1);
-        }
-      }
-      // Eliminar el albarán anterior
-      E.albaranes=E.albaranes.filter(a=>a.id!==existing.id);
-    }
-  }
-
   const lf=(p.lineas||[]).map(l=>{
     const cantCompra=l.cantidad_compra!=null?l.cantidad_compra:(l.cantidad||0);
     const factor=l.factor!=null?l.factor:1;
@@ -1677,7 +1643,6 @@ function aplicarAlbaranSilencioso(p, provIdSel, fecha){
   const totalAlb=(p.totales&&p.totales.total)?p.totales.total:lf.reduce((s,l)=>s+(l.precioCompra||0)*(l.cantidadCompra||0),0);
   E.albaranes.push({id:uid(),proveedorId:provId||null,fecha,ref:_ref,lineas:lf,totales:p.totales||null,formaPago:p.documento?.forma_pago||null});
   if(provId){const pv=E.proveedores.find(x=>x.id===provId);if(pv){if(!pv.ultimoPedido||fecha>pv.ultimoPedido)pv.ultimoPedido=fecha;pv.totalComprado=(pv.totalComprado||0)+totalAlb;pv.numAlbaranes=(pv.numAlbaranes||0)+1;}}
-  return esActualizacion?'actualizado':'nuevo';
 }
 
 function renderAlbPreview(){
@@ -1813,41 +1778,20 @@ function aplicarAlbaran(){
     };
   }).filter(l=>l.cantidad>0);
 
-  // ── Detección de duplicado ──
-  let esActualizacionSimple=false;
-  if(_ref){
-    const existing=E.albaranes.find(a=>a.ref&&a.ref===_ref&&(a.proveedorId===provId||!provId));
-    if(existing){
-      esActualizacionSimple=true;
-      const motivoAnterior='Albarán '+existing.ref;
-      E.movimientos.filter(m=>m.motivo===motivoAnterior&&m.tipo==='entrada').forEach(m=>{
-        const ing=E.ingredientes.find(x=>x.id===m.ingId);
-        if(ing)ing.stock=Math.max(0,(ing.stock||0)-(m.cantidad||0));
-      });
-      E.movimientos=E.movimientos.filter(m=>m.motivo!==motivoAnterior||m.tipo!=='entrada');
-      if(existing.proveedorId){
-        const pv=E.proveedores.find(x=>x.id===existing.proveedorId);
-        if(pv){
-          const totalAnterior=(existing.totales&&existing.totales.total)||
-            (existing.lineas||[]).reduce((s,l)=>s+(l.precioCompra||0)*(l.cantidadCompra||0),0);
-          pv.totalComprado=Math.max(0,(pv.totalComprado||0)-totalAnterior);
-          pv.numAlbaranes=Math.max(0,(pv.numAlbaranes||0)-1);
-        }
-      }
-      E.albaranes=E.albaranes.filter(a=>a.id!==existing.id);
-    }
-  }
-
   lf.forEach(l=>{
     let i=E.ingredientes.find(x=>x.nombre.toLowerCase().includes(l.nombre.toLowerCase())||l.nombre.toLowerCase().includes(x.nombre.toLowerCase().split(' ')[0]));
     if(!i){i={id:uid(),nombre:l.nombre,categoria:l.categoria||'Otros',unidad:l.unidad||'ud',precio:l.precio||0,ivaPct:l.iva||null,stock:0,stockMin:0,proveedorId:provId||null,notas:'',creadoEn:fecha,
       formatoCompra:l.unidadCompra!==l.unidad?{unidad:l.unidadCompra,factor:l.factor}:null};E.ingredientes.push(i);}
+    // precio del ingrediente = precio por unidad BASE (para escandallo correcto)
     if(l.precio&&l.precio>0){i.precio=l.precio;if(provId)i.proveedorId=provId;recordPrecio(i,l.precio,fecha,'albaran',provId||i.proveedorId);}
     if(l.iva!=null&&i.ivaPct==null)i.ivaPct=l.iva;
     if(l.categoria&&(!i.categoria||i.categoria==='Otros'))i.categoria=l.categoria;
+    // Guardar/actualizar el formato de compra para futura trazabilidad
     if(l.unidadCompra!==l.unidad)i.formatoCompra={unidad:l.unidadCompra,factor:l.factor};
     if(provId&&!i.proveedorId)i.proveedorId=provId;
+    // El STOCK se incrementa en unidad BASE (cantidad usable)
     i.stock=(i.stock||0)+l.cantidad;
+    // El movimiento guarda AMBOS registros para trazabilidad
     E.movimientos.push({id:uid(),ingId:i.id,tipo:'entrada',
       cantidad:l.cantidad,unidad:l.unidad,
       cantidadCompra:l.cantidadCompra,unidadCompra:l.unidadCompra,factor:l.factor,
@@ -1857,18 +1801,23 @@ function aplicarAlbaran(){
   });
   const totalAlb=p.totales&&p.totales.total?p.totales.total:lf.reduce((s,l)=>s+(l.precioCompra||0)*(l.cantidadCompra||0),0);
   E.albaranes.push({id:uid(),proveedorId:provId||null,fecha,ref:_ref,lineas:lf,totales:p.totales||null,formaPago:p.documento?.forma_pago||null});
+
+  // Actualizar la ficha del proveedor con datos del albarán
   if(provId){
     const pv=E.proveedores.find(x=>x.id===provId);
     if(pv){
+      // Última fecha de pedido
       if(!pv.ultimoPedido||fecha>pv.ultimoPedido)pv.ultimoPedido=fecha;
+      // Forma de pago habitual (la del último albarán con dato)
       const fp=p.documento&&p.documento.forma_pago;
       if(fp)pv.pago=fp;
+      // Acumular total comprado y nº de albaranes (histórico)
       pv.totalComprado=(pv.totalComprado||0)+totalAlb;
       pv.numAlbaranes=(pv.numAlbaranes||0)+1;
     }
   }
-  save();closeM('modal-albaran');
-  toast(esActualizacionSimple?`Albarán actualizado: ${lf.length} productos`:`Albarán aplicado: ${lf.length} productos`);
+
+  save();closeM('modal-albaran');toast(`Albarán aplicado: ${lf.length} productos`);
   if(provDetId)rProvDet(provDetId);upTopbar();
 }
 
