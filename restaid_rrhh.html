@@ -398,6 +398,15 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
 .img-upload-preview{width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid var(--bdr)}
 /* Vacaciones */
 .vac-list{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.vac-saldo{margin-top:4px}
+.vac-saldo-nums{display:flex;align-items:baseline;gap:6px}
+.vac-saldo-big{font-size:1.5rem;font-weight:800;color:var(--green);line-height:1}
+.vac-saldo-unit{font-size:11.5px;color:var(--tx2)}
+.vac-bar{height:6px;background:var(--bg);border-radius:4px;overflow:hidden;margin:6px 0 4px}
+.vac-bar-fill{height:100%;background:var(--amber);border-radius:4px;transition:width .3s}
+.vac-saldo-foot{font-size:11px;color:var(--tx3)}
+.modal-vac-saldo{font-size:12.5px;color:var(--tx2);background:var(--bg);border-radius:6px;padding:7px 10px;margin-bottom:.7rem}
+.modal-vac-saldo b{color:var(--green);font-size:14px}
 .vac-row{display:flex;align-items:center;gap:8px;font-size:12px;padding:5px 8px;background:var(--bg);border-radius:6px}
 .vac-dates{font-weight:600;flex-shrink:0}.vac-motivo{color:var(--tx2);flex:1}
 .vac-row .btn{flex-shrink:0}
@@ -867,6 +876,7 @@ function renderResumen(){
   else ins.push({type:'opp',label:'Faltan ventas previstas',txt:'Introduce las ventas previstas para ver el coste laboral. Puedes pedírselo a la IA.'});
   if(cel.length)ins.push({type:'info',label:'Próxima celebración',txt:`${cel[0].txt}.`});
   if(horasExtraPend>0)ins.push({type:'opp',label:'Horas extra pendientes',txt:`${fc(horasExtraPend,1)} h sin compensar ni pagar.`});
+  alertasFichaje().forEach(a=>ins.push(a));
   pg.innerHTML=`
   <div class="page-hd"><h2>Resumen</h2><p>Semana ${weekLabel(DB.semanaActual)}</p></div>
   ${insightCards(ins)}
@@ -1241,7 +1251,14 @@ function renderPersonas(){
       </div></div>`:''}
       <div class="pers-block"><div class="pers-block-lbl">Preferencias de descanso</div><div class="pers-block-val">${e.prefs?esc(e.prefs):'<span style="color:var(--tx3)">—</span>'}</div></div>
       <div class="pers-block"><div class="pers-block-lbl">Talentos</div>${e.skills&&e.skills.length?`<div class="pers-skills">${e.skills.map(s=>`<span class="pers-skill">${esc(s)}</span>`).join('')}</div>`:'<div class="pers-block-val" style="color:var(--tx3)">—</div>'}</div>
-      ${vacs.length?`<div class="pers-block"><div class="pers-block-lbl">Vacaciones programadas</div><div class="vac-list">${vacs.map(v=>`<div class="vac-row"><span class="vac-dates">${fmtDay(v.inicio)} – ${fmtDay(v.fin)}</span><span class="vac-motivo">${esc(v.motivo||'')}</span></div>`).join('')}</div></div>`:''}
+      <div class="pers-block"><div class="pers-block-lbl">Vacaciones ${new Date().getFullYear()}</div>
+        <div class="vac-saldo">
+          <div class="vac-saldo-nums"><span class="vac-saldo-big">${vacSaldo(e)}</span><span class="vac-saldo-unit">de ${vacTotalAnual(e)} días disponibles</span></div>
+          <div class="vac-bar"><div class="vac-bar-fill" style="width:${Math.max(0,Math.min(100,vacConsumidas(e)/vacTotalAnual(e)*100))}%"></div></div>
+          <div class="vac-saldo-foot">${vacConsumidas(e)} disfrutados${vacSaldo(e)<0?' · <span style="color:var(--red)">excedido</span>':''}</div>
+        </div>
+      </div>
+      ${vacs.length?`<div class="pers-block"><div class="pers-block-lbl">Periodos programados</div><div class="vac-list">${vacs.map(v=>`<div class="vac-row"><span class="vac-dates">${fmtDay(v.inicio)} – ${fmtDay(v.fin)} <span style="color:var(--tx3)">(${vacDiasPeriodo(v)}d)</span></span><span class="vac-motivo">${esc(v.motivo||'')}</span></div>`).join('')}</div></div>`:''}
       ${(e.personal||{}).notas?`<div class="pers-block"><div class="pers-block-lbl">Notas</div><div class="pers-block-val">${esc(e.personal.notas)}</div></div>`:''}
       <button class="btn btn-ghost btn-sm" style="width:100%;justify-content:center;margin-top:.5rem" onclick="openPersModal('${e.id}')">Editar ficha</button>
     </div>`;
@@ -1277,7 +1294,11 @@ function openPersModal(id){
       <div class="field"><label>Dirección</label><input id="pe-dir" value="${esc(p.direccion||'')}"></div>
     </div>
     <div style="border-top:1px solid var(--bdr);padding-top:1rem;margin-top:.5rem">
-      <p class="panel-title" style="margin-bottom:.7rem">Vacaciones</p>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.7rem">
+        <p class="panel-title" style="margin:0">Vacaciones</p>
+        <div class="field" style="margin:0;display:flex;align-items:center;gap:.5rem"><label style="margin:0;white-space:nowrap">Días/año</label><input type="number" id="pe-vacdias" value="${vacTotalAnual(e)}" min="0" max="40" style="width:64px;padding:5px;border:1px solid var(--bdr-strong);border-radius:5px"></div>
+      </div>
+      <div id="pe-vac-saldo" class="modal-vac-saldo">Saldo ${new Date().getFullYear()}: <b>${vacSaldo(e)}</b> de ${vacTotalAnual(e)} días &middot; ${vacConsumidas(e)} disfrutados</div>
       <div id="pe-vacs-list">${renderVacRows(e.vacaciones||[])}</div>
       <button class="btn btn-ghost btn-sm" onclick="addVacRow()" style="margin-top:.5rem">+ Añadir periodo</button>
     </div>
@@ -1297,8 +1318,14 @@ function savePers(id){
   e.personal={telefono:$('pe-tel').value.trim(),estadoCivil:$('pe-ecivil').value,hijos:$('pe-hijos').value.trim(),contactoEmergencia:$('pe-emergencia').value.trim(),direccion:$('pe-dir').value.trim(),notas:$('pe-notas').value.trim()};
   const vacRows=$$('#pe-vacs-list .vac-row');
   e.vacaciones=vacRows.map(r=>{const ini=r.querySelector('.vac-ini')?.value,fin=r.querySelector('.vac-fin')?.value,mot=r.querySelector('.vac-mot')?.value;return ini&&fin?{inicio:ini,fin:fin,motivo:mot||''}:null;}).filter(Boolean);
+  e.diasVacacionesAnuales=Number($('pe-vacdias').value)||30;
   saveDB();closeModal();renderPersonas();toast('Ficha actualizada');
 }
+/* ── Saldo de vacaciones (estándar España: 30 días naturales/año por defecto) ── */
+function vacDiasPeriodo(v){if(!v||!v.inicio||!v.fin)return 0;const a=new Date(v.inicio),b=new Date(v.fin);if(isNaN(a)||isNaN(b)||b<a)return 0;return Math.round((b-a)/86400000)+1;}
+function vacTotalAnual(e){return Number(e.diasVacacionesAnuales)>0?Number(e.diasVacacionesAnuales):30;}
+function vacConsumidas(e,year){year=year||new Date().getFullYear();return(e.vacaciones||[]).filter(v=>v.inicio&&new Date(v.inicio).getFullYear()===year).reduce((s,v)=>s+vacDiasPeriodo(v),0);}
+function vacSaldo(e,year){return vacTotalAnual(e)-vacConsumidas(e,year);}
 function tenure(fecha){if(!fecha)return'';const d=new Date(fecha),now=new Date();let m=(now.getFullYear()-d.getFullYear())*12+(now.getMonth()-d.getMonth());if(m<0)return'';if(m<1)return'<1 mes';if(m<12)return m+' mes'+(m>1?'es':'');const y=Math.floor(m/12),rm=m%12;return y+' año'+(y>1?'s':'')+(rm?' '+rm+'m':'');}
 function fmtDay(iso){const d=new Date(iso);return d.getDate()+' '+['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'][d.getMonth()];}
 function fmtDate(iso){const d=new Date(iso);return d.getDate()+' '+['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'][d.getMonth()]+' '+d.getFullYear();}
@@ -1520,6 +1547,36 @@ function fpEnter(){
   if(!e){ FICHAJE_MSG={err:'PIN no reconocido'}; FICHAJE_PIN=''; renderPad(); return; }
   ficharAhora(e.id);
 }
+/* Detecta olvidos de fichaje para avisar al gestor (patrón del mercado:
+   alertas cuando alguien olvida fichar). Dos casos:
+   1) Jornada abierta anómala: fichó entrada hace >10h sin cerrar salida.
+   2) Tenía turno planificado hoy y, pasada la hora + margen, no ha fichado entrada. */
+function alertasFichaje(){
+  const out=[];const now=new Date();
+  const w=DB.semanas[DB.semanaActual];
+  const dowIdx=(now.getDay()||7)-1;
+  const diaHoy=DIAS[dowIdx];
+  (DB.empleados||[]).forEach(e=>{
+    const st=estadoFichaje(e.id);
+    if(st.dentro && st.min>10*60){
+      out.push({type:'warn',label:'Posible olvido de salida',txt:`${e.nombre} lleva ${fmtHM(st.min)} fichado sin cerrar. Revisa si olvidó fichar la salida.`});
+    }
+    if(w && diaHoy && !st.fichajes.length){
+      const turnoHoy=(w.asignaciones||[]).filter(a=>a.empId===e.id&&a.dia===diaHoy);
+      turnoHoy.forEach(a=>{
+        if(a.ini){
+          const[hh,mm]=a.ini.split(':').map(Number);
+          const inicio=new Date(now.getFullYear(),now.getMonth(),now.getDate(),hh,mm);
+          if(now-inicio>30*60000 && now-inicio<8*3600000){
+            out.push({type:'warn',label:'Sin fichar con turno asignado',txt:`${e.nombre} tenía turno a las ${a.ini} y aún no ha fichado entrada.`});
+          }
+        }
+      });
+    }
+  });
+  const seen=new Set();
+  return out.filter(a=>{const k=a.label+a.txt.slice(0,20);if(seen.has(k))return false;seen.add(k);return true;}).slice(0,4);
+}
 function ficharAhora(empId){
   const e=emp(empId); if(!e)return;
   const tipo=estadoFichaje(empId).dentro?'salida':'entrada';
@@ -1610,7 +1667,7 @@ function renderFichajeRecords(){
         <span style="font-size:11.5px;color:var(--tx3);font-weight:400">${weekLabel(wid)}</span></div>
       ${semRows?`<div class="tbl-wrap"><table><thead><tr><th>Empleado</th><th class="td-num">Planificado</th><th class="td-num">Fichado</th><th class="td-num">Desvío</th></tr></thead><tbody>${semRows}</tbody></table></div>
       <p class="fich-note">Planificado = horas del cuadrante. Fichado = horas reales registradas. El desvío te avisa de horas de más o de menos.</p>`:`<p class="fich-empty">Sin horas planificadas ni fichadas esta semana.</p>`}
-      <div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="exportFichajesCSV()">⬇ Exportar registro (CSV)</button></div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="exportFichajesCSV()">⬇ CSV</button><button class="btn btn-amber btn-sm" onclick="abrirInformeMensual()">📄 Informe mensual (Inspección)</button></div>
     </div>`;
 }
 function exportFichajesCSV(){
@@ -1624,6 +1681,113 @@ function exportFichajesCSV(){
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download='fichajes_'+new Date().toISOString().slice(0,10)+'.csv'; a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),1000); toast('Registro exportado');
+}
+
+/* ════════════════════════════════════════════════════════════════
+   INFORME MENSUAL DE JORNADA (Inspección de Trabajo · RD 8/2019)
+   Genera un documento imprimible que se guarda como PDF desde el navegador.
+═══════════════════════════════════════════════════════════════════ */
+function abrirInformeMensual(){
+  const now=new Date();
+  const meses=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const optsMes=meses.map((m,i)=>`<option value="${i}" ${i===now.getMonth()?'selected':''}>${m}</option>`).join('');
+  const years=[];for(let y=now.getFullYear();y>=now.getFullYear()-2;y--)years.push(y);
+  const optsYear=years.map(y=>`<option value="${y}">${y}</option>`).join('');
+  const optsEmp=`<option value="__all__">Toda la plantilla</option>`+(DB.empleados||[]).map(e=>`<option value="${e.id}">${esc(e.nombre)}</option>`).join('');
+  $('modal-host').innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()"><div class="modal">
+    <h3>Informe mensual de jornada</h3>
+    <p class="modal-desc">Documento oficial de registro horario (RD-ley 8/2019). Se abre listo para imprimir o guardar como PDF.</p>
+    <div class="field-row">
+      <div class="field"><label>Mes</label><select id="inf-mes">${optsMes}</select></div>
+      <div class="field"><label>Año</label><select id="inf-year">${optsYear}</select></div>
+    </div>
+    <div class="field"><label>Empleado</label><select id="inf-emp">${optsEmp}</select></div>
+    <div class="modal-actions"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-amber btn-sm" onclick="generarInformeMensual()">Generar documento</button></div>
+  </div></div>`;
+}
+function _difMinFichajes(fs){let min=0,lastIn=null;fs.slice().sort((a,b)=>a.ts.localeCompare(b.ts)).forEach(f=>{if(f.tipo==='entrada')lastIn=f.ts;else if(f.tipo==='salida'&&lastIn){min+=(new Date(f.ts)-new Date(lastIn))/60000;lastIn=null;}});return min;}
+function generarInformeMensual(){
+  const mes=Number($('inf-mes').value),year=Number($('inf-year').value),empSel=$('inf-emp').value;
+  closeModal();
+  const meses=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const empresa=(DB.config&&DB.config.empresa)||'Hostelería Merello S.L. · TalaBar';
+  const cif=(DB.config&&DB.config.cif)||'';
+  const lista=empSel==='__all__'?DB.empleados:DB.empleados.filter(e=>e.id===empSel);
+  if(!lista.length){toast('Sin empleados');return;}
+  const diasMes=new Date(year,mes+1,0).getDate();
+  const nombreMes=meses[mes];
+  const secciones=lista.map(e=>{
+    let totMin=0;let filas='';
+    for(let d=1;d<=diasMes;d++){
+      const fecha=`${year}-${String(mes+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const fs=(DB.fichajes||[]).filter(f=>f.empId===e.id&&f.fecha===fecha).sort((a,b)=>a.ts.localeCompare(b.ts));
+      const dow=new Date(year,mes,d).getDay();
+      const finde=dow===0||dow===6;
+      if(!fs.length){
+        filas+=`<tr class="${finde?'we':''}"><td>${String(d).padStart(2,'0')}/${String(mes+1).padStart(2,'0')}</td><td class="dn">${['D','L','M','X','J','V','S'][dow]}</td><td colspan="4" class="empty-day">—</td></tr>`;
+        continue;
+      }
+      const min=_difMinFichajes(fs);totMin+=min;
+      const marcas=fs.map(f=>`${f.tipo==='entrada'?'E':'S'} ${fmtHora(f.ts)}`).join(' · ');
+      const ent=fs.find(f=>f.tipo==='entrada');const sal=[...fs].reverse().find(f=>f.tipo==='salida');
+      filas+=`<tr class="${finde?'we':''}"><td>${String(d).padStart(2,'0')}/${String(mes+1).padStart(2,'0')}</td><td class="dn">${['D','L','M','X','J','V','S'][dow]}</td><td>${ent?fmtHora(ent.ts):'—'}</td><td>${sal?fmtHora(sal.ts):'—'}</td><td class="marcas">${marcas}</td><td class="tot">${(min/60).toFixed(2)} h</td></tr>`;
+    }
+    const totH=Math.floor(totMin/60),totM=Math.round(totMin%60);
+    return `<section class="emp-sec">
+      <div class="emp-hd">
+        <div><div class="emp-nm">${esc(e.nombre)}</div><div class="emp-meta">${esc(e.rol||'')} · ${e.contrato||''} · ${e.horasContrato||'—'} h/semana contratadas</div></div>
+        <div class="emp-tot"><span class="emp-tot-lbl">Total mes</span><span class="emp-tot-val">${totH}h ${String(totM).padStart(2,'0')}m</span></div>
+      </div>
+      <table class="reg-tbl"><thead><tr><th>Fecha</th><th>Día</th><th>Entrada</th><th>Salida</th><th>Marcajes del día</th><th>Horas</th></tr></thead><tbody>${filas}</tbody></table>
+      <div class="firma"><div class="firma-box"><span>Firma de la persona trabajadora</span></div><div class="firma-box"><span>Firma de la empresa</span></div></div>
+    </section>`;
+  }).join('');
+  const hoyStr=new Date().toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'});
+  const doc=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Registro jornada ${nombreMes} ${year}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1a1a1a;font-size:11px;line-height:1.4;padding:24px}
+    .doc-hd{border-bottom:2px solid #1A2B3C;padding-bottom:12px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:flex-end}
+    .doc-hd h1{font-size:17px;color:#1A2B3C}
+    .doc-hd .sub{font-size:11px;color:#555;margin-top:3px}
+    .doc-hd .emp-info{text-align:right;font-size:11px}
+    .doc-hd .emp-info b{font-size:12px}
+    .legal{font-size:9.5px;color:#666;background:#f4f4f2;border:1px solid #e0e0dc;border-radius:5px;padding:7px 10px;margin-bottom:18px}
+    .emp-sec{margin-bottom:26px;page-break-inside:avoid}
+    .emp-hd{display:flex;justify-content:space-between;align-items:center;background:#1A2B3C;color:#fff;padding:8px 12px;border-radius:5px 5px 0 0}
+    .emp-nm{font-size:13px;font-weight:700}
+    .emp-meta{font-size:10px;opacity:.85;margin-top:2px}
+    .emp-tot{text-align:right}
+    .emp-tot-lbl{display:block;font-size:9px;text-transform:uppercase;letter-spacing:.05em;opacity:.8}
+    .emp-tot-val{font-size:16px;font-weight:700}
+    table.reg-tbl{width:100%;border-collapse:collapse;font-size:10px}
+    .reg-tbl th{background:#eceae5;text-align:left;padding:5px 7px;border:1px solid #d5d2cc;font-size:9px;text-transform:uppercase;letter-spacing:.03em}
+    .reg-tbl td{padding:4px 7px;border:1px solid #e2e0da}
+    .reg-tbl tr.we td{background:#faf8f4}
+    .reg-tbl td.dn{color:#888;font-weight:600;text-align:center;width:28px}
+    .reg-tbl td.tot{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+    .reg-tbl td.marcas{color:#555;font-size:9px}
+    .reg-tbl td.empty-day{color:#bbb;text-align:center}
+    .firma{display:flex;gap:40px;margin-top:14px}
+    .firma-box{flex:1;border-top:1px solid #999;padding-top:5px;text-align:center;font-size:9.5px;color:#666;height:48px;display:flex;align-items:flex-end;justify-content:center}
+    .doc-ft{margin-top:24px;font-size:9px;color:#999;text-align:center;border-top:1px solid #e0e0dc;padding-top:10px}
+    @media print{body{padding:0}@page{margin:14mm}.no-print{display:none}}
+    .toolbar{position:sticky;top:0;background:#1A2B3C;color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;margin:-24px -24px 18px;border-radius:0}
+    .toolbar button{background:#F0A04B;color:#1a1207;border:none;padding:8px 18px;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer}
+    .toolbar .t-info{font-size:12px}
+  </style></head><body>
+  <div class="toolbar no-print"><span class="t-info">Documento listo. Usa "Guardar como PDF" en el destino de impresión.</span><button onclick="window.print()">🖨 Imprimir / Guardar PDF</button></div>
+  <div class="doc-hd">
+    <div><h1>Registro de jornada laboral</h1><div class="sub">${nombreMes.charAt(0).toUpperCase()+nombreMes.slice(1)} de ${year}</div></div>
+    <div class="emp-info"><b>${esc(empresa)}</b>${cif?`<br>CIF: ${esc(cif)}`:''}<br>Expedido: ${hoyStr}</div>
+  </div>
+  <div class="legal">Registro diario de jornada conforme al artículo 34.9 del Estatuto de los Trabajadores y al Real Decreto-ley 8/2019. Incluye hora de inicio y fin de cada jornada. La empresa conservará estos registros durante cuatro años a disposición de la persona trabajadora, sus representantes y la Inspección de Trabajo y Seguridad Social.</div>
+  ${secciones}
+  <div class="doc-ft">Generado por RESTAID · ${hoyStr} · Documento de control horario interno</div>
+  </body></html>`;
+  const wv=window.open('','_blank');
+  if(!wv){toast('Permite ventanas emergentes para ver el informe');return;}
+  wv.document.write(doc);wv.document.close();
 }
 
 /* ── Edición manual de fichajes (corregir olvidos) ── */
