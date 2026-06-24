@@ -476,7 +476,14 @@ function refreshFromStorage(){
   // el prime cost del shell no quede con el valor anterior.
   if(typeof pushInvPub==='function')pushInvPub();
 }
-window.addEventListener('message',e=>{if(e&&e.data&&e.data.type==='restaid_refresh')refreshFromStorage();});
+window.addEventListener('message',e=>{
+  if(e&&e.data&&e.data.type==='restaid_refresh')refreshFromStorage();
+  if(e&&e.data&&e.data.type==='restaid_save_inv'){
+    // El Copiloto modificó el localStorage y pide sincronizar a Supabase
+    refreshFromStorage();
+    sbSetInv();
+  }
+});
 window.addEventListener('storage',e=>{if(e.key===KEY)refreshFromStorage();});
 // La carta vive en Ventas (escandallo). Si cambia, refrescamos Ingeniería de menú
 // para que el aviso de "platos sin receta" y los vínculos estén al día.
