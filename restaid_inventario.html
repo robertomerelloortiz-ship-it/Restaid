@@ -95,12 +95,17 @@ tr:hover td{background:rgba(26,43,60,.025)}
 .modal h3{font-family:var(--ff-head);font-size:20px;margin-bottom:18px}
 .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid var(--bdr)}
 .hp-list{display:flex;flex-direction:column;gap:4px;max-height:180px;overflow-y:auto}
-.hp-row{display:grid;grid-template-columns:auto 1fr auto auto;align-items:center;gap:10px;padding:5px 8px;background:var(--surf,#fff);border:1px solid var(--bdr);border-radius:6px;font-size:12px}
+.hp-row{display:grid;grid-template-columns:auto auto 1fr auto auto;align-items:center;gap:10px;padding:5px 8px;background:var(--surf,#fff);border:1px solid var(--bdr);border-radius:6px;font-size:12px}
+.hp-row.hp-anom{border-color:rgba(192,48,32,.4);background:rgba(192,48,32,.05)}
 .hp-fecha{font-weight:600;color:var(--tx2);font-variant-numeric:tabular-nums}
-.hp-precio{font-weight:700;color:var(--tx1);font-variant-numeric:tabular-nums}
+.hp-precio{font-weight:700;color:var(--tx1);font-variant-numeric:tabular-nums;white-space:nowrap}
+.hp-flag{color:#C03020;cursor:help}
 .hp-fuente{font-size:11px;color:var(--tx3);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hp-only{border:1px solid var(--bdr);background:transparent;color:var(--tx2);cursor:pointer;border-radius:5px;font-size:10.5px;padding:3px 7px;white-space:nowrap;flex-shrink:0}
+.hp-only:hover{border-color:var(--amber);color:var(--amber)}
 .hp-del{width:24px;height:24px;border:none;background:transparent;color:var(--tx3);cursor:pointer;border-radius:5px;font-size:13px;flex-shrink:0}
 .hp-del:hover{background:rgba(192,48,32,.12);color:#C03020}
+.hp-warn{font-size:11.5px;color:#C03020;background:rgba(192,48,32,.07);border:1px solid rgba(192,48,32,.25);border-radius:6px;padding:7px 10px;margin-bottom:10px}
 .modal-lg{max-width:760px}
 .alert{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border-radius:var(--r);font-size:12.5px;margin-bottom:12px}
 .alert-red{background:#FDECEA;border:1px solid #F5C6C2;color:var(--red)}
@@ -1582,7 +1587,7 @@ function aplicarLote(){
   const validos=LOTE.filter(x=>x.estado==='ok');
   const grupos={};
   validos.forEach(x=>{(grupos[x.grupo]=grupos[x.grupo]||[]).push(x);});
-  let aplicados=0,actualizados=0;
+  let aplicados=0;
   Object.keys(grupos).forEach(gid=>{
     const chk=$('lote-chk-'+gid);
     if(chk&&!chk.checked)return; // no seleccionado
@@ -1593,35 +1598,15 @@ function aplicarLote(){
     const prov=items[0].data.proveedor||{};
     const provSel=$('lote-prov-'+gid)?.value||'';
     const combinado={documento:doc,proveedor:prov,lineas,totales:items[0].data.totales};
-    const _res=aplicarAlbaranSilencioso(combinado, provSel, toISO(doc.fecha)||hoy());
-    if(_res==='actualizado')actualizados++;else aplicados++;
+    aplicarAlbaranSilencioso(combinado, provSel, toISO(doc.fecha)||hoy());
+    aplicados++;
   });
   save();closeM('modal-albaran');rMovs&&rMovs();upTopbar();
-  const _partes=[];if(aplicados)_partes.push(aplicados+' nuevo'+(aplicados>1?'s':''));if(actualizados)_partes.push(actualizados+' actualizado'+(actualizados>1?'s':''));  toast('Albaranes: '+(_partes.join(', ')||'ninguno'));
+  toast(`${aplicados} albaranes aplicados al stock`);
   LOTE=[];
 }
 
 // Versión de aplicarAlbaran sin UI (para el lote). Reutiliza la lógica de conversión.
-
-// Revierte y elimina un albarán existente (para deduplicación al resubir)
-function _revertirAlbaran(existing){
-  const motivo='Albarán '+existing.ref;
-  E.movimientos.filter(m=>m.motivo===motivo&&m.tipo==='entrada').forEach(m=>{
-    const ing=E.ingredientes.find(x=>x.id===m.ingId);
-    if(ing)ing.stock=Math.max(0,(ing.stock||0)-(m.cantidad||0));
-  });
-  E.movimientos=E.movimientos.filter(m=>!(m.motivo===motivo&&m.tipo==='entrada'));
-  if(existing.proveedorId){
-    const pv=E.proveedores.find(x=>x.id===existing.proveedorId);
-    if(pv){
-      const tot=(existing.totales&&existing.totales.total)||(existing.lineas||[]).reduce((s,l)=>s+(l.precioCompra||0)*(l.cantidadCompra||0),0);
-      pv.totalComprado=Math.max(0,(pv.totalComprado||0)-tot);
-      pv.numAlbaranes=Math.max(0,(pv.numAlbaranes||0)-1);
-    }
-  }
-  E.albaranes=E.albaranes.filter(a=>a.id!==existing.id);
-}
-
 function aplicarAlbaranSilencioso(p, provIdSel, fecha){
   let provId=provIdSel;
   const prov=p.proveedor||{};
@@ -1639,9 +1624,6 @@ function aplicarAlbaranSilencioso(p, provIdSel, fecha){
     if(pv){if(!pv.cif&&_pCif)pv.cif=_pCif;if(!pv.tel&&_pTel)pv.tel=_pTel;if(!pv.categoria&&_pCat)pv.categoria=_pCat;}
   }
   const _ref=(p.documento&&p.documento.numero)||null;
-  // Deduplicación: si ya existe un albarán con la misma ref, revertirlo antes de aplicar
-  let _esActualizacion=false;
-  if(_ref){const _ex=E.albaranes.find(a=>a.ref===_ref);if(_ex){_revertirAlbaran(_ex);_esActualizacion=true;}}
   const lf=(p.lineas||[]).map(l=>{
     const cantCompra=l.cantidad_compra!=null?l.cantidad_compra:(l.cantidad||0);
     const factor=l.factor!=null?l.factor:1;
@@ -1666,7 +1648,6 @@ function aplicarAlbaranSilencioso(p, provIdSel, fecha){
   const totalAlb=(p.totales&&p.totales.total)?p.totales.total:lf.reduce((s,l)=>s+(l.precioCompra||0)*(l.cantidadCompra||0),0);
   E.albaranes.push({id:uid(),proveedorId:provId||null,fecha,ref:_ref,lineas:lf,totales:p.totales||null,formaPago:p.documento?.forma_pago||null});
   if(provId){const pv=E.proveedores.find(x=>x.id===provId);if(pv){if(!pv.ultimoPedido||fecha>pv.ultimoPedido)pv.ultimoPedido=fecha;pv.totalComprado=(pv.totalComprado||0)+totalAlb;pv.numAlbaranes=(pv.numAlbaranes||0)+1;}}
-  return _esActualizacion?'actualizado':'nuevo';
 }
 
 function renderAlbPreview(){
@@ -1778,9 +1759,6 @@ function aplicarAlbaran(){
 
   // Extraer ref del documento
   const _ref=p.referencia||(p.documento&&p.documento.numero)||null;
-  // Deduplicación: si ya existe un albarán con la misma ref, revertirlo
-  let _esActualizacionSimple=false;
-  if(_ref){const _ex=E.albaranes.find(a=>a.ref===_ref);if(_ex){_revertirAlbaran(_ex);_esActualizacionSimple=true;}}
 
   // Leer líneas con DOBLE REGISTRO (compra + base usable)
   const lf=p.lineas.map((l,i)=>{
@@ -1844,7 +1822,7 @@ function aplicarAlbaran(){
     }
   }
 
-  save();closeM('modal-albaran');toast(_esActualizacionSimple?`Albarán actualizado: ${lf.length} productos`:`Albarán aplicado: ${lf.length} productos`);
+  save();closeM('modal-albaran');toast(`Albarán aplicado: ${lf.length} productos`);
   if(provDetId)rProvDet(provDetId);upTopbar();
 }
 
