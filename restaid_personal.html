@@ -462,7 +462,21 @@ function showDone(tipo,now){
 function goAlb(){albQueue=[];renderCola();$('alb-applybar').classList.remove('on');show('s-alb');}
 function backFromAlb(){albQueue=[];renderCola();$('alb-applybar').classList.remove('on');if(USER){renderUserState();show('s-user');}else goRest();}
 
-/* ── ALBARÁN (idéntico a RESTAID) ── */
+/* ── Emparejamiento robusto de ingredientes ──
+   Regla: normalizar (sin acentos/mayúsculas), luego exigir que uno contenga
+   al otro completo con longitud ≥7 chars. Evita fundir productos distintos
+   que solo comparten una categoría ("GINEBRA LARIOS" ≠ "GINEBRA BEEFEATER"). */
+function normNombreAlb(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();}
+function mismoIngAlb(a,b){
+  const na=normNombreAlb(a),nb=normNombreAlb(b);
+  if(!na||!nb)return false;
+  if(na===nb)return true;
+  const corto=na.length<=nb.length?na:nb,largo=na.length<=nb.length?nb:na;
+  // El nombre corto debe tener ≥7 chars Y estar completo en el largo
+  // (evita que "Gin" o "Ron" emparejen con cualquier cosa)
+  return corto.length>=7&&largo.includes(corto);
+}
+function buscarIngAlb(nombre){return INV.ingredientes.find(x=>mismoIngAlb(x.nombre,nombre));}
 function llenarProveedores(){const sel=$('alb-prov');if(!INV||!sel)return;sel.innerHTML='<option value="">\u2014 Seleccionar \u2014</option>'+(INV.proveedores||[]).map(p=>`<option value="${p.id}">${esc(p.nombre)}</option>`).join('');}
 function f2b64(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.onerror=()=>rej(new Error('Error lectura'));r.readAsDataURL(file);});}
 /* Redimensiona y comprime imágenes grandes antes de enviarlas a la IA.
@@ -683,7 +697,7 @@ function aplicarUnoEnMemoria(item){
     return {nombre:l.descripcion||l.nombre,cantidadCompra:cc,unidadCompra:l.unidad_compra||'ud',factor:f,cantidad:Math.round(cb*1000)/1000,unidad:l.unidad_base||'ud',precioCompra:l.precio_unitario!=null?l.precio_unitario:null,precio:(l.precio_unitario!=null&&f>0)?Math.round(l.precio_unitario/f*1e4)/1e4:l.precio_unitario,iva:l.iva_pct||null,lote:l.lote||null,categoria:l.categoria||null};
   }).filter(l=>l.cantidad>0);
   lf.forEach(l=>{
-    let ing=INV.ingredientes.find(x=>x.nombre.toLowerCase().includes(l.nombre.toLowerCase())||l.nombre.toLowerCase().includes(x.nombre.toLowerCase().split(' ')[0]));
+    let ing=buscarIngAlb(l.nombre);
     if(!ing){ing={id:uid(),nombre:l.nombre,categoria:l.categoria||'Otros',unidad:l.unidad||'ud',precio:l.precio||0,ivaPct:l.iva||null,stock:0,stockMin:0,proveedorId:provId||null,notas:'',creadoEn:fecha,historialPrecios:[],formatoCompra:l.unidadCompra!==l.unidad?{unidad:l.unidadCompra,factor:l.factor}:null};INV.ingredientes.push(ing);}
     if(l.precio&&l.precio>0){ing.precio=l.precio;if(provId)ing.proveedorId=provId;ing.historialPrecios=ing.historialPrecios||[];ing.historialPrecios.push({fecha,precio:l.precio,proveedorId:provId||ing.proveedorId,fuente:'albaran'});}
     if(l.iva!=null&&ing.ivaPct==null)ing.ivaPct=l.iva;

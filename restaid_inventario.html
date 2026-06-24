@@ -1635,7 +1635,7 @@ function aplicarAlbaranSilencioso(p, provIdSel, fecha){
       iva:l.iva_pct||l.iva||null,lote:l.lote||null,categoria:l.categoria||null};
   }).filter(l=>l.cantidad>0);
   lf.forEach(l=>{
-    let i=E.ingredientes.find(x=>x.nombre.toLowerCase().includes(l.nombre.toLowerCase())||l.nombre.toLowerCase().includes(x.nombre.toLowerCase().split(' ')[0]));
+    let i=buscarIngredienteInv(l.nombre);
     if(!i){i={id:uid(),nombre:l.nombre,categoria:l.categoria||'Otros',unidad:l.unidad||'ud',precio:l.precio||0,ivaPct:l.iva||null,stock:0,stockMin:0,proveedorId:provId||null,notas:'',creadoEn:fecha,formatoCompra:l.unidadCompra!==l.unidad?{unidad:l.unidadCompra,factor:l.factor}:null};E.ingredientes.push(i);}
     if(l.precio&&l.precio>0){i.precio=l.precio;if(provId)i.proveedorId=provId;recordPrecio(i,l.precio,fecha,'albaran',provId||i.proveedorId);}
     if(l.iva!=null&&i.ivaPct==null)i.ivaPct=l.iva;
@@ -1687,7 +1687,7 @@ function renderAlbPreview(){
   // Mostrar alertas si las hay
   const _alertas=p.alertas&&p.alertas.length?'<div class="alert alert-amber" style="margin-bottom:8px">⚠ '+p.alertas.map(a=>esc(a)).join('<br>')+'</div>':'';
   const filas=p.lineas.map((l,i)=>{
-    const match=E.ingredientes.find(x=>x.nombre.toLowerCase().includes(l.nombre.toLowerCase())||l.nombre.toLowerCase().includes(x.nombre.toLowerCase().split(' ')[0]));
+    const match=buscarIngredienteInv(l.nombre);
     // ¿Hay conversión de formato? (compra distinta de base)
     const hayConversion = l.factor!==1 || l.unidadCompra!==l.unidadBase;
     const convChip = hayConversion
@@ -1784,7 +1784,7 @@ function aplicarAlbaran(){
   }).filter(l=>l.cantidad>0);
 
   lf.forEach(l=>{
-    let i=E.ingredientes.find(x=>x.nombre.toLowerCase().includes(l.nombre.toLowerCase())||l.nombre.toLowerCase().includes(x.nombre.toLowerCase().split(' ')[0]));
+    let i=buscarIngredienteInv(l.nombre);
     if(!i){i={id:uid(),nombre:l.nombre,categoria:l.categoria||'Otros',unidad:l.unidad||'ud',precio:l.precio||0,ivaPct:l.iva||null,stock:0,stockMin:0,proveedorId:provId||null,notas:'',creadoEn:fecha,
       formatoCompra:l.unidadCompra!==l.unidad?{unidad:l.unidadCompra,factor:l.factor}:null};E.ingredientes.push(i);}
     // precio del ingrediente = precio por unidad BASE (para escandallo correcto)
@@ -1832,6 +1832,8 @@ function aplicarAlbaran(){
    restaid_escandallo_int_v1 con matching difuso de nombres. Respeta los
    escandallos hechos a mano (metodo 'manual'); actualiza el resto. */
 function normNombre(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();}
+function mismoIngrediente(a,b){const na=normNombre(a),nb=normNombre(b);if(!na||!nb)return false;if(na===nb)return true;const corto=na.length<=nb.length?na:nb,largo=na.length<=nb.length?nb:na;return corto.length>=7&&largo.includes(corto);}
+function buscarIngredienteInv(nombre){return E.ingredientes.find(x=>mismoIngrediente(x.nombre,nombre));}
 function matchPlatoEsc(nombre,escNames){
   const nk=normNombre(nombre);
   let m=escNames.find(x=>normNombre(x)===nk);if(m)return m;
