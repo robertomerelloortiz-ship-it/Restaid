@@ -1757,6 +1757,21 @@ function readAllData() {
   };
 }
 
+/* Pide a los iframes que vuelquen sus datos al localStorage antes de que el
+   Copiloto los lea. Espera hasta 600ms para recibir confirmación. */
+function flushIframes() {
+  return new Promise(resolve => {
+    const frames = ['frame-inventario','frame-rrhh','frame-ventas'].map(id => document.getElementById(id)).filter(f=>f&&f.src);
+    if (!frames.length) { resolve(); return; }
+    let pending = frames.length;
+    const done = () => { if (--pending <= 0) resolve(); };
+    const handler = e => { if (e.data && e.data.type === 'restaid_flushed') done(); };
+    window.addEventListener('message', handler, { once: false });
+    setTimeout(() => { window.removeEventListener('message', handler); resolve(); }, 600);
+    frames.forEach(f => { try { f.contentWindow.postMessage({ type: 'restaid_flush' }, '*'); } catch(e) { done(); } });
+  });
+}
+
 /* ── Resumen compacto de datos para el system prompt ── */
 function buildDaySummary(db) {
   const lines = [];
@@ -1978,7 +1993,11 @@ async function sendMessage(text) {
       if (attach) {
         pushPendingReview(clean, actions);
       } else {
-        const results = executeActions(actions, db);
+        // Flush: pedir al iframe de inventario que vuelque sus datos al localStorage
+        // antes de leer y ejecutar acciones (evita operar sobre datos obsoletos)
+        await flushIframes();
+        const freshDb = readAllData();
+        const results = executeActions(actions, freshDb);
         pushMessage('bot', clean, results);
       }
     } else {

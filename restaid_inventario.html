@@ -478,10 +478,26 @@ function refreshFromStorage(){
 }
 window.addEventListener('message',e=>{
   if(e&&e.data&&e.data.type==='restaid_refresh')refreshFromStorage();
+  if(e&&e.data&&e.data.type==='restaid_flush'){
+    // El Copiloto pide los datos más recientes antes de operar
+    try{localStorage.setItem(KEY,JSON.stringify(E));}catch(err){}
+    // Confirmar con el timestamp actual
+    try{window.parent.postMessage({type:'restaid_flushed',key:KEY,ts:E._ts||0},'*');}catch(err){}
+  }
   if(e&&e.data&&e.data.type==='restaid_save_inv'){
-    // El Copiloto modificó el localStorage y pide sincronizar a Supabase
-    refreshFromStorage();
-    sbSetInv();
+    // El Copiloto modificó el localStorage — recarga forzada sin importar timestamps
+    let ext=null;try{ext=JSON.parse(localStorage.getItem(KEY)||'null');}catch(e){}
+    if(ext&&typeof ext==='object'){
+      E=ext;sanitizeE();
+      LOCAL_DIRTY=true; // marcar como cambiado para que Supabase se actualice
+      E._ts=Date.now();
+      try{localStorage.setItem(KEY,JSON.stringify(E));}catch(err){}
+      upTopbar();
+      const act=document.querySelector('.tab[data-page].active');
+      renderPg(act&&act.dataset.page?act.dataset.page:'resumen');
+      sbSetInv(); // sincronizar a Supabase
+      if(typeof pushInvPub==='function')pushInvPub();
+    }
   }
 });
 window.addEventListener('storage',e=>{if(e.key===KEY)refreshFromStorage();});

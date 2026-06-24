@@ -1909,7 +1909,13 @@ function refreshFromStorage(){
   showPage(act&&act.dataset.page?act.dataset.page:'resumen');
   toast('Datos actualizados');
 }
-window.addEventListener('message',e=>{if(e&&e.data&&e.data.type==='restaid_refresh')refreshFromStorage();});
+window.addEventListener('message',e=>{
+  if(e&&e.data&&e.data.type==='restaid_refresh')refreshFromStorage();
+  if(e&&e.data&&e.data.type==='restaid_flush'){
+    try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(err){}
+    try{window.parent.postMessage({type:'restaid_flushed',key:STORE,ts:DB._ts||0},'*');}catch(err){}
+  }
+});
 window.addEventListener('storage',e=>{if(e.key===STORE)refreshFromStorage();if(e.key==='restaid_pub_v1'){const w=DB.semanas[DB.semanaActual];if(w&&Object.keys(w.ventas||{}).length===0&&!w.ventasEditadas){if(prefillVentas(w)){saveDB();updateSidebar();const act=document.querySelector('.tab[data-page].active');if(act&&act.dataset.page==='cuadrante')renderCuadrante();}}}});
 
 RESTAID.register('rrhh',{render:renderResumen});
