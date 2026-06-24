@@ -607,16 +607,29 @@ function calcVariacionPrecios(dias){
   const facturacionPeriodo=(E.platos||[]).reduce((s,pl)=>s+(Number(pl.pvp)||0)*(Number(pl.uds)||0),0)*factorSem;
 
   const rows=E.ingredientes.map(i=>{
-    const actual=+(i.precio||0);
-    const antes=precioEnFecha(i,refIso);
+    const h=Array.isArray(i.historialPrecios)?[...i.historialPrecios].sort((a,b)=>String(a.fecha).localeCompare(String(b.fecha))):[];
+    // Sincronizar: si el precio actual difiere del último del historial, añadirlo
+    // (soluciona desincronías de ediciones manuales sin registro en historial)
+    const ultH=h.length?+(h[h.length-1].precio||0):0;
+    const precioReal=+(i.precio||0);
+    if(precioReal>0&&Math.abs(precioReal-ultH)>1e-4){
+      h.push({fecha:hoy(),precio:precioReal,proveedorId:i.proveedorId||null,fuente:'sync'});
+    }
+    // Solo mostrar variación si hay al menos 2 puntos en el historial Y el punto
+    // "antes" es de una fecha anterior al período de referencia
+    const actual=precioReal>0?precioReal:(h.length?+(h[h.length-1].precio||0):0);
+    // Buscar precio vigente ANTES del período de referencia
+    let antes=null;
+    for(const p of h){if(String(p.fecha)<refIso){antes=+p.precio;}else break;}
+    // Si no hay ningún punto anterior al período → no hay variación demostrable
+    if(antes===null){return{id:i.id,nombre:i.nombre,unidad:i.unidad||'',proveedorId:i.proveedorId||null,actual,antes:actual,delta:0,pct:0,volCompra:compraVol[i.id]||0,consumoPeriodo:(consumoRec[i.id]||0)*factorSem,impactoCompra:0,impactoFoodCost:0,cambio:false};}
     const delta=actual-antes;
     const pct=antes>0?delta/antes*100:null;
     const volCompra=compraVol[i.id]||0;
     const consumoPeriodo=(consumoRec[i.id]||0)*factorSem;
-    const impactoCompra=delta*volCompra;
-    const impactoFoodCost=delta*consumoPeriodo;
     return{id:i.id,nombre:i.nombre,unidad:i.unidad||'',proveedorId:i.proveedorId||null,
-      actual,antes,delta,pct,volCompra,consumoPeriodo,impactoCompra,impactoFoodCost,
+      actual,antes,delta,pct,volCompra,consumoPeriodo,
+      impactoCompra:delta*volCompra,impactoFoodCost:delta*consumoPeriodo,
       cambio:Math.abs(delta)>1e-6};
   });
   const conCambio=rows.filter(r=>r.cambio);
