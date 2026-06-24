@@ -632,6 +632,18 @@ async function aplicarTodos(){
   const pend=albQueue.filter(x=>x.status==='ready');
   if(!pend.length)return;
   const btn=$('btn-alb-aplicar');btn.disabled=true;btn.innerHTML='<span class="spin"></span>';
+
+  // Recargar INV desde Supabase para tener el estado más reciente
+  // (evita trabajar sobre datos obsoletos si el Copiloto u otro módulo los modificó)
+  const fresh=await sbGet('inventario');
+  if(fresh&&typeof fresh==='object'){
+    INV=fresh;
+    INV.proveedores=INV.proveedores||[];
+    INV.ingredientes=INV.ingredientes||[];
+    INV.movimientos=INV.movimientos||[];
+    INV.albaranes=INV.albaranes||[];
+    INV.lotes=INV.lotes||[];
+  }
   // PASO 1: leer del DOM las líneas editadas de cada tarjeta ANTES de repintar nada
   albQueue.forEach((item,idx)=>{ if(item.status==='ready'){ item.lineasEditadas=leerLineasDOM(item,idx); } });
   // PASO 2: aplicar en memoria y marcar estados
