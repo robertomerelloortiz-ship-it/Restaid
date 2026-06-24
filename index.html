@@ -1772,6 +1772,27 @@ function flushIframes() {
   });
 }
 
+/* Escribe directamente a Supabase desde el shell, sin depender del iframe.
+   Misma lógica que sbSetInv/sbWriteNow en los módulos. */
+async function sbWriteFromShell(tabla, datos) {
+  const SB_URL_S = 'https://gtdsqvebuhdndfaiqoyj.supabase.co';
+  const SB_KEY_S = 'sb_publishable_cu53L_4O6Rz-RlGurDI3Kg_CJHqaa8U';
+  const SB_REST  = 'default';
+  const TABLE_MAP = { inventario: 'inventario', rrhh: 'rrhh' };
+  const sbTable = TABLE_MAP[tabla]; if (!sbTable) return;
+  try {
+    const body = JSON.stringify({ datos });
+    const headers = { 'apikey': SB_KEY_S, 'Authorization': 'Bearer ' + SB_KEY_S, 'Content-Type': 'application/json', 'Prefer': 'return=representation' };
+    const rPatch = await fetch(`${SB_URL_S}/rest/v1/${sbTable}?restaurante=eq.${SB_REST}`, { method: 'PATCH', headers, body });
+    const txt = await rPatch.text().catch(() => '');
+    let patched = []; try { patched = JSON.parse(txt); } catch(e) {}
+    if (Array.isArray(patched) && patched.length === 0) {
+      await fetch(`${SB_URL_S}/rest/v1/${sbTable}`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ restaurante: SB_REST, datos }) });
+    }
+    console.log('[SHELL] Supabase write OK:', tabla);
+  } catch(e) { console.warn('[SHELL] Supabase write error:', tabla, e); }
+}
+
 /* ── Resumen compacto de datos para el system prompt ── */
 function buildDaySummary(db) {
   const lines = [];
@@ -2594,12 +2615,14 @@ function executeActions(actions, db) {
     }
   }
 
-  // Guardar cambios
+  // Guardar cambios — escribe en localStorage Y directamente en Supabase
+  // (no depende de que el iframe esté cargado)
   if (invChanged && db.inventario) {
+    db.inventario._ts = Date.now();
     localStorage.setItem('restaid_inv_v1', JSON.stringify(db.inventario));
+    sbWriteFromShell('inventario', db.inventario);
     const frame = document.getElementById('frame-inventario');
     if (frame && frame.src) {
-      // restaid_save_inv: refresca el iframe Y sincroniza a Supabase
       try { frame.contentWindow.postMessage({ type: 'restaid_save_inv' }, '*'); } catch {}
     }
   }
@@ -2613,6 +2636,7 @@ function executeActions(actions, db) {
   if (rrhhChanged && db.rrhh) {
     db.rrhh._ts = Date.now();
     localStorage.setItem('restaid_rrhh_v1', JSON.stringify(db.rrhh));
+    sbWriteFromShell('rrhh', db.rrhh);
     const fr = document.getElementById('frame-rrhh');
     if (fr && fr.src) {
       try { fr.contentWindow.postMessage({ type: 'restaid_refresh' }, '*'); } catch {}
