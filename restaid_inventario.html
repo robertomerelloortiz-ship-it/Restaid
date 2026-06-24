@@ -119,6 +119,7 @@ tr:hover td{background:rgba(26,43,60,.025)}
 .chat-input-row{display:flex;gap:8px;margin-top:12px}
 .chat-input-row input{flex:1;border:1px solid var(--bdr);border-radius:var(--r);padding:10px 12px;font-size:13px}
 .chat-input-row input:focus{outline:none;border-color:var(--amber)}
+.chat-accion-result{margin-top:8px;padding:7px 10px;background:rgba(29,122,74,.1);border-left:3px solid var(--green);border-radius:4px;font-size:12px;font-weight:600;color:var(--green)}
 .chat-suggestions{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .chat-sug{background:var(--card);border:1px solid var(--bdr);border-radius:20px;padding:5px 12px;font-size:11.5px;color:var(--tx2);cursor:pointer;transition:all .15s}
 .chat-sug:hover{border-color:var(--amber);color:var(--amber)}
@@ -2300,18 +2301,101 @@ function ctxInv(){
   return`INVENTARIO:\n- Ingredientes: ${r.total} | Valor: ${fcp(r.val)}\n- Alertas: ${r.alertas.length>0?al:'ninguna'}\n- Caducados: ${r.caducados.length} lote(s) | Caducan ≤3d: ${r.porCaducar.length} lote(s)\n- Merma 30d: ${fc(r.pMerma,1)}% (${fcp(r.mr30)})\n- Pedidos pendientes: ${r.pPend}\n- Proveedores: ${E.proveedores.length}\n- Top por valor: ${tv||'—'}\n- Platos: ${E.platos.length>0?pls:'ninguno'}`+ctxFugas();
 }
 
+/* ═══════════════════════════════════════════════════════════
+   ACCIONES DEL COPILOTO — ejecutables desde el chat
+   La IA responde con ACCION:{...} y este código lo ejecuta.
+
+   Acciones disponibles:
+   - borrar_movimientos          → borra todos los movimientos
+   - borrar_movimientos_ing      → borra movimientos de un ingrediente (nombre)
+   - ajustar_stock               → ajusta stock de un ingrediente (nombre, cantidad)
+   - resetear_stock              → pone stock de TODOS a 0
+   - borrar_historial_precios    → limpia historial de un ingrediente (nombre)
+   - borrar_ingrediente          → elimina un ingrediente (nombre)
+═══════════════════════════════════════════════════════════ */
+const ACCIONES_SISTEMA=`
+CAPACIDADES DE ACCIÓN:
+Cuando el usuario te pida ejecutar una acción sobre los datos, puedes hacerlo. 
+Responde con el texto explicativo Y al final añade exactamente una línea:
+ACCION:{"tipo":"nombre_accion","params":{...}}
+
+Acciones disponibles:
+- borrar_movimientos → borra TODOS los movimientos de inventario
+  ACCION:{"tipo":"borrar_movimientos"}
+- borrar_movimientos_ing → borra movimientos de un ingrediente
+  ACCION:{"tipo":"borrar_movimientos_ing","params":{"nombre":"nombre del ingrediente"}}
+- ajustar_stock → ajusta stock de un ingrediente a un valor exacto
+  ACCION:{"tipo":"ajustar_stock","params":{"nombre":"nombre","cantidad":0}}
+- resetear_stock → pone el stock de TODOS los ingredientes a 0
+  ACCION:{"tipo":"resetear_stock"}
+- borrar_historial_precios → limpia el historial de precios de un ingrediente
+  ACCION:{"tipo":"borrar_historial_precios","params":{"nombre":"nombre"}}
+- borrar_ingrediente → elimina completamente un ingrediente y sus movimientos
+  ACCION:{"tipo":"borrar_ingrediente","params":{"nombre":"nombre"}}
+
+IMPORTANTE: Si la acción es destructiva (borrar datos), primero confirma brevemente qué vas a hacer y ejecuta la acción. Usa SIEMPRE el nombre del ingrediente exactamente como aparece en el inventario.`;
+
+function ejecutarAccion(accion){
+  const {tipo,params}=accion;
+  const p=params||{};
+  switch(tipo){
+    case 'borrar_movimientos':
+      E.movimientos=[];
+      save();rMovs();rResumen();
+      return `✓ Todos los movimientos eliminados (${E.movimientos.length} movimientos).`;
+
+    case 'borrar_movimientos_ing':{
+      const ing=buscarIngredienteInv(p.nombre||'');
+      if(!ing)return `✗ No encontré el ingrediente "${p.nombre}".`;
+      const antes=E.movimientos.length;
+      E.movimientos=E.movimientos.filter(m=>m.ingId!==ing.id);
+      save();rMovs();
+      return `✓ Eliminados ${antes-E.movimientos.length} movimientos de "${ing.nombre}".`;
+    }
+    case 'ajustar_stock':{
+      const ing=buscarIngredienteInv(p.nombre||'');
+      if(!ing)return `✗ No encontré el ingrediente "${p.nombre}".`;
+      const antes=ing.stock||0;ing.stock=+p.cantidad||0;
+      if(ing.stock!==antes)E.movimientos.push({id:uid(),ingId:ing.id,tipo:'ajuste',cantidad:ing.stock-antes,fecha:hoy(),motivo:'Ajuste desde Copiloto'});
+      save();rIngs();rResumen();
+      return `✓ Stock de "${ing.nombre}" ajustado a ${ing.stock} ${ing.unidad}.`;
+    }
+    case 'resetear_stock':
+      E.ingredientes.forEach(i=>{if((i.stock||0)!==0){E.movimientos.push({id:uid(),ingId:i.id,tipo:'ajuste',cantidad:-(i.stock||0),fecha:hoy(),motivo:'Reset desde Copiloto'});i.stock=0;}});
+      save();rIngs();rResumen();
+      return `✓ Stock de todos los ingredientes puesto a 0.`;
+
+    case 'borrar_historial_precios':{
+      const ing=buscarIngredienteInv(p.nombre||'');
+      if(!ing)return `✗ No encontré el ingrediente "${p.nombre}".`;
+      ing.historialPrecios=[];
+      save();
+      return `✓ Historial de precios de "${ing.nombre}" limpiado.`;
+    }
+    case 'borrar_ingrediente':{
+      const ing=buscarIngredienteInv(p.nombre||'');
+      if(!ing)return `✗ No encontré el ingrediente "${p.nombre}".`;
+      E.movimientos=E.movimientos.filter(m=>m.ingId!==ing.id);
+      E.ingredientes=E.ingredientes.filter(x=>x.id!==ing.id);
+      save();rIngs();rResumen();
+      return `✓ Ingrediente "${ing.nombre}" y sus movimientos eliminados.`;
+    }
+    default:return `✗ Acción desconocida: ${tipo}`;
+  }
+}
+
 function rAsistente(){
   const pg=$('pg-asistente');if(pg.dataset.init)return;pg.dataset.init='1';
   pg.innerHTML=`<div class="sec-head"><h2>Asistente IA</h2></div>
     <div class="chat-wrap">
       <div class="chat-msgs" id="chat-msgs">
-        <div class="chat-msg ai">Hola, soy tu asistente de inventario. Puedo ayudarte a analizar stock, detectar anomalías en mermas, optimizar pedidos o mejorar la rentabilidad de tu carta. ¿En qué te puedo ayudar?</div>
+        <div class="chat-msg ai">Hola, soy tu asistente de inventario. Puedo analizar stock, detectar anomalías, optimizar pedidos… y también <strong>ejecutar acciones</strong>: borrar movimientos, ajustar stock, limpiar historiales de precios, etc. ¿En qué te ayudo?</div>
       </div>
       <div class="chat-suggestions">
-        ${['¿Qué ingredientes necesito pedir urgentemente?','¿Cuál es mi food cost global?','¿Qué platos tienen peor rentabilidad?','Analiza mis mermas del último mes','¿Qué proveedor me está subiendo los precios?'].map(s=>`<div class="chat-sug" onclick="sendChat(${JSON.stringify(s)})">${s}</div>`).join('')}
+        ${['¿Qué ingredientes necesito pedir urgentemente?','Elimina todos los movimientos de inventario','Pon el stock de Tomate Pera a 0','¿Cuál es mi food cost global?','Analiza mis mermas del último mes'].map(s=>`<div class="chat-sug" onclick="sendChat(${JSON.stringify(s)})">${s}</div>`).join('')}
       </div>
       <div class="chat-input-row">
-        <input id="chat-in" placeholder="Pregunta sobre tu inventario…" onkeydown="if(event.key==='Enter')sendChat()">
+        <input id="chat-in" placeholder="Pregunta o pide una acción…" onkeydown="if(event.key==='Enter')sendChat()">
         <button class="btn btn-amber" onclick="sendChat()" id="chat-send">Enviar</button>
       </div>
     </div>`;
@@ -2326,9 +2410,25 @@ async function sendChat(msg){
   chatH.push({role:'user',content:txt});chatBusy=true;$('chat-send').disabled=true;
   const ad=document.createElement('div');ad.className='chat-msg ai';ad.innerHTML='<span class="spin"></span>';msgs.appendChild(ad);msgs.scrollTop=msgs.scrollHeight;
   try{
-    const r=await fetch(API,{method:'POST',headers:aiHeaders(),body:JSON.stringify({model:MODEL,max_tokens:400,system:'Eres el asistente de gestión de inventario de un restaurante. Eres conciso, práctico y hablas en español.\n'+ctxInv(),messages:chatH})});
-    if(!r.ok)await aiCheck(r);const d=await r.json();const t=d.content?.find(c=>c.type==='text')?.text||'Sin respuesta.';
-    chatH.push({role:'assistant',content:t});ad.innerHTML=esc(t).replace(/\n/g,'<br>');
+    const sysPrompt='Eres el asistente de gestión de inventario de un restaurante. Eres conciso, práctico y hablas en español.\n'+ctxInv()+'\n\n'+ACCIONES_SISTEMA;
+    const r=await fetch(API,{method:'POST',headers:aiHeaders(),body:JSON.stringify({model:MODEL,max_tokens:600,system:sysPrompt,messages:chatH})});
+    if(!r.ok)await aiCheck(r);
+    const d=await r.json();
+    let t=d.content?.find(c=>c.type==='text')?.text||'Sin respuesta.';
+
+    // Detectar y ejecutar acción si la IA la incluyó
+    const accionMatch=t.match(/ACCION:\s*(\{[\s\S]*?\})\s*$/m);
+    let resultadoAccion='';
+    if(accionMatch){
+      try{
+        const accion=JSON.parse(accionMatch[1]);
+        resultadoAccion=ejecutarAccion(accion);
+        t=t.replace(accionMatch[0],'').trim(); // quitar la línea ACCION: del texto visible
+      }catch(e){resultadoAccion='✗ Error ejecutando acción: '+e.message;}
+    }
+
+    chatH.push({role:'assistant',content:t+(resultadoAccion?'\n'+resultadoAccion:'')});
+    ad.innerHTML=esc(t).replace(/\n/g,'<br>')+(resultadoAccion?`<div class="chat-accion-result">${esc(resultadoAccion)}</div>`:'');
   }catch(e){ad.innerHTML='Error: '+esc(e.message);}
   chatBusy=false;$('chat-send').disabled=false;msgs.scrollTop=msgs.scrollHeight;
 }
