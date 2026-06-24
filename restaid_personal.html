@@ -604,7 +604,7 @@ function renderAlbCard(item,idx){
   if(item.status==='retrying')return `<div class="alb-card">${head}<div class="ac-status"><span class="spin"></span> Reintentando (${item.intento||1}/2)&hellip;</div></div>`;
   if(item.status==='error')return `<div class="alb-card err">${head}<div class="alert alert-red" style="margin:0 0 .7rem">${esc(item.error||'No se pudo leer')}</div>${item.file?`<button class="ac-retry" onclick="reintentarAlb('${item.id}')">&#8635; Reintentar</button>`:''}</div>`;
   if(item.status==='applying')return `<div class="alb-card">${head}<div class="ac-status"><span class="spin"></span> Aplicando&hellip;</div></div>`;
-  if(item.status==='done')return `<div class="alb-card done">${head}<div class="alert alert-green" style="margin:0">&#10003; Aplicado a stock (${item.aplicados||0} productos)</div></div>`;
+  if(item.status==='done')return `<div class="alb-card done">${head}<div class="alert alert-green" style="margin:0">${item.yaExistia?'⚠ Ya estaba aplicado (ignorado)':'&#10003; Aplicado a stock ('+item.aplicados+' productos)'}</div></div>`;
   // ready → editable
   const p=item.parsed;
   const nom=p.proveedor&&(typeof p.proveedor==='object'?p.proveedor.nombre:p.proveedor);
@@ -641,7 +641,8 @@ async function aplicarTodos(){
     item.status='applying';renderCola();
     try{
       const n=aplicarUnoEnMemoria(item);
-      item.aplicados=n;item.status='done';totalOK+=n;
+      if(n===-1){item.status='done';item.aplicados=0;item.yaExistia=true;}
+      else{item.aplicados=n;item.status='done';totalOK+=n;}
     }catch(e){item.status='error';item.error=e.message;}
     renderCola();
   }
@@ -692,14 +693,48 @@ function aplicarUnoEnMemoria(item){
   const _ref=(p.documento&&p.documento.numero)||null;
   // Usa las líneas leídas del DOM antes del repintado; si no las hay, cae a las parseadas.
   const lf=(item.lineasEditadas&&item.lineasEditadas.length)?item.lineasEditadas:(p.lineas||[]).map(l=>{
-    const cc=l.cantidad_compra!=null?l.cantidad_compra:(l.cantidad||0);const f=l.factor!=null?l.factor:1;
+    const cc=l.cantidad_compra!=null?l.cantidad_compra:(l.cantidad||0);
+    const f=l.factor!=null?l.factor:1;
     const cb=l.cantidad_base!=null?l.cantidad_base:(cc*f);
-    return {nombre:l.descripcion||l.nombre,cantidadCompra:cc,unidadCompra:l.unidad_compra||'ud',factor:f,cantidad:Math.round(cb*1000)/1000,unidad:l.unidad_base||'ud',precioCompra:l.precio_unitario!=null?l.precio_unitario:null,precio:(l.precio_unitario!=null&&f>0)?Math.round(l.precio_unitario/f*1e4)/1e4:l.precio_unitario,iva:l.iva_pct||null,lote:l.lote||null,categoria:l.categoria||null};
+    // precio: usamos cantidad_base y precio total de la línea para obtener €/unidad base
+    // Si la IA da precio_unitario, es el precio POR unidad de compra (botella, lata…)
+    // El precio por unidad base = precio_unitario / factor (ej: 10.17€/botella / 0.7L = 14.53€/L)
+    // Pero si ya viene en unidad base (factor=1), no dividir.
+    const precioCompra=l.precio_unitario!=null?+l.precio_unitario:null;
+    const precioPorBase=(precioCompra!=null&&f>0)?Math.round(precioCompra/f*1e4)/1e4:precioCompra;
+    return {nombre:l.descripcion||l.nombre,cantidadCompra:cc,unidadCompra:l.unidad_compra||'ud',factor:f,cantidad:Math.round(cb*1000)/1000,unidad:l.unidad_base||'ud',precioCompra,precio:precioPorBase,iva:l.iva_pct||null,lote:l.lote||null,categoria:l.categoria||null};
   }).filter(l=>l.cantidad>0);
+
+  // ── Deduplicar: si este albarán ya fue aplicado, no volver a aplicarlo ──
+  // Comprueba por número de referencia (si existe) o por proveedor+fecha+nLineas
+  const albaranKey=_ref?`ref:${_ref}`:`${provId}|${fecha}|${lf.length}`;
+  const yaExiste=(INV.albaranes||[]).some(a=>{
+    if(_ref&&a.ref===_ref&&a.proveedorId===provId)return true;
+    if(!_ref&&a.proveedorId===provId&&a.fecha===fecha&&(a.lineas||[]).length===lf.length)return true;
+    return false;
+  });
+  if(yaExiste){
+    console.warn('Albarán ya aplicado anteriormente, ignorando:',albaranKey);
+    return -1; // señal de que fue ignorado
+  }
+
   lf.forEach(l=>{
     let ing=buscarIngAlb(l.nombre);
-    if(!ing){ing={id:uid(),nombre:l.nombre,categoria:l.categoria||'Otros',unidad:l.unidad||'ud',precio:l.precio||0,ivaPct:l.iva||null,stock:0,stockMin:0,proveedorId:provId||null,notas:'',creadoEn:fecha,historialPrecios:[],formatoCompra:l.unidadCompra!==l.unidad?{unidad:l.unidadCompra,factor:l.factor}:null};INV.ingredientes.push(ing);}
-    if(l.precio&&l.precio>0){ing.precio=l.precio;if(provId)ing.proveedorId=provId;ing.historialPrecios=ing.historialPrecios||[];ing.historialPrecios.push({fecha,precio:l.precio,proveedorId:provId||ing.proveedorId,fuente:'albaran'});}
+    if(!ing){
+      ing={id:uid(),nombre:l.nombre,categoria:l.categoria||'Otros',unidad:l.unidad||'ud',precio:l.precio||0,ivaPct:l.iva||null,stock:0,stockMin:0,proveedorId:provId||null,notas:'',creadoEn:fecha,historialPrecios:[],formatoCompra:l.unidadCompra!==l.unidad?{unidad:l.unidadCompra,factor:l.factor}:null};
+      INV.ingredientes.push(ing);
+    }
+    // Actualizar precio usando recordPrecio (evita duplicados si el precio no cambió)
+    if(l.precio&&l.precio>0){
+      ing.precio=l.precio;
+      if(provId)ing.proveedorId=provId;
+      ing.historialPrecios=ing.historialPrecios||[];
+      const ult=ing.historialPrecios[ing.historialPrecios.length-1];
+      if(!ult||Math.abs((+ult.precio||0)-l.precio)>1e-4){
+        ing.historialPrecios.push({fecha,precio:l.precio,proveedorId:provId||ing.proveedorId,fuente:'albaran'});
+        if(ing.historialPrecios.length>200)ing.historialPrecios=ing.historialPrecios.slice(-200);
+      }
+    }
     if(l.iva!=null&&ing.ivaPct==null)ing.ivaPct=l.iva;
     if(l.categoria&&(!ing.categoria||ing.categoria==='Otros'))ing.categoria=l.categoria;
     if(l.unidadCompra!==l.unidad)ing.formatoCompra={unidad:l.unidadCompra,factor:l.factor};
