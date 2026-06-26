@@ -798,7 +798,8 @@ function publishPub(g){
             comensales:ga.allComs||0,
             ticketMedio:Math.round((ga.tickMed||0)*100)/100,
             topPlatos:tp,
-            evolucionMensual:evMes
+            evolucionMensual:evMes,
+            d1:ga.d1||null   // último día con datos reales (YYYY-MM-DD) para comparación justa
           };
         });
       }
@@ -1659,9 +1660,20 @@ function drawComparativaAnual(g,gAnt){
   const dataAnt=idx.map(i=>sAnt[i]>0?sAnt[i]:null);
   const añoActual=g.d0?g.d0.slice(0,4):'Actual';
   const añoAnt=gAnt.d0?gAnt.d0.slice(0,4):'Anterior';
-  // Resumen: en cuántos meses comparables vas por encima
+  // Resumen: en cuántos meses comparables vas por encima.
+  // Se excluyen meses incompletos del año actual (el mes en curso) para no
+  // comparar datos parciales del año actual contra datos completos del anterior.
+  const mesEnCursoIdx=g.d1?(parseInt(g.d1.slice(5,7))-1):-1;
+  const mesEnCursoEsIncompleto=g.d1?(g.d1.slice(8)<new Date(parseInt(g.d1.slice(0,4)),parseInt(g.d1.slice(5,7)),0).getDate().toString().padStart(2,'0')):false;
   let mejor=0,peor=0,sumAct=0,sumAnt=0;
-  idx.forEach(i=>{if(sAct[i]>0&&sAnt[i]>0){if(sAct[i]>=sAnt[i])mejor++;else peor++;sumAct+=sAct[i];sumAnt+=sAnt[i];}});
+  idx.forEach(i=>{
+    if(sAct[i]>0&&sAnt[i]>0){
+      // Saltar el mes en curso si está incompleto (para que el % sea comparable)
+      if(mesEnCursoEsIncompleto&&i===mesEnCursoIdx)return;
+      if(sAct[i]>=sAnt[i])mejor++;else peor++;
+      sumAct+=sAct[i];sumAnt+=sAnt[i];
+    }
+  });
   const box=$('cmpAnualResumen');
   if(box&&(mejor+peor)>0){
     const difPct=sumAnt>0?(sumAct-sumAnt)/sumAnt*100:0;
@@ -2631,14 +2643,9 @@ function escRenderModal(){
     <div class="rec-head"><span>Ingrediente</span><span>Cant.</span><span>Ud.</span><span>Coste €</span><span></span></div>
     <div>${(()=>{
       const _ings=invIngredientes(); const _has=_ings.length>0;
-      // Buscador con datalist: escribe para filtrar, precio y seccion visibles
-      const _catsBarra=new Set(['Bebidas alcohólicas','Bebidas no alcohólicas']);
-      const _dlId='esc-ing-dl';
-      const _dlOpts=_ings.map(g=>`<option value="${escAttr(g.nombre)}">${escAttr(g.nombre)} · ${fc(g.precio||0,2)}€/${escAttr(g.unidad||'ud')} · ${_catsBarra.has(g.categoria||'')?'Barra':'Cocina'}</option>`).join('');
-      const _datalist=`<datalist id="${_dlId}">${_dlOpts}</datalist>`;
-      return _datalist+ESC_LINES.map((l,i)=>{
+      return ESC_LINES.map((l,i)=>{
         const _ingInput=_has
-          ?`<input list="${_dlId}" style="flex:2;padding:5px 7px;border:1px solid var(--bdr-strong);border-radius:6px;font-size:12.5px;font-family:inherit" value="${escAttr(l.ing)}" placeholder="Buscar ingrediente…" onchange="escUpdIng(${i},this.value)">`
+          ?`<select style="flex:2;padding:5px 7px;border:1px solid var(--bdr-strong);border-radius:6px;font-size:12.5px;font-family:inherit" onchange="escUpd(${i},'ing',this.value);escRecalcLine(${i})"><option value="">— Ingrediente —</option>${_ings.map(g=>`<option value="${escAttr(g.nombre)}" ${l.ing===g.nombre?'selected':''}>${escAttr(g.nombre)} (${fc(g.precio||0,2)}€/${escAttr(g.unidad||'ud')})</option>`).join('')}</select>`
           :`<input style="flex:2" value="${escAttr(l.ing)}" placeholder="Ingrediente" onchange="escUpd(${i},'ing',this.value)">`;
         const _calc=calcImporte(l.ing,l.cant,l.ud);
         const _coste=_has&&l.ing&&_calc!==''
@@ -2653,17 +2660,6 @@ function escRenderModal(){
   </div></div>`;
 }
 function escUpd(i,k,v){ESC_LINES[i][k]=v;escRenderModal();}
-/* escUpdIng — actualiza el ingrediente de una línea desde el input+datalist.
-   Guarda el texto siempre (para no perder lo que escribe el usuario),
-   pero solo recalcula el coste cuando el nombre coincide exactamente con
-   un ingrediente del inventario (evita cálculos con texto parcial). */
-function escUpdIng(i,v){
-  ESC_LINES[i].ing=v;
-  const ings=invIngredientes();
-  const match=ings.find(g=>g.nombre===v);
-  if(match){const c=calcImporte(v,ESC_LINES[i].cant,ESC_LINES[i].ud);if(c!=='')ESC_LINES[i].importe=c;}
-  escRenderModal();
-}
 function escRecalcLine(i){const l=ESC_LINES[i];const c=calcImporte(l.ing,l.cant,l.ud);if(c!=='')ESC_LINES[i].importe=c;escRenderModal();}
 function escAdd(){ESC_LINES.push({ing:'',cant:'',ud:'g',importe:''});escRenderModal();}
 function escDel(i){ESC_LINES.splice(i,1);if(!ESC_LINES.length)ESC_LINES=[{ing:'',cant:'',ud:'g',importe:''}];escRenderModal();}

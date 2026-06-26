@@ -1341,9 +1341,9 @@ function renderHomeRevo(box,r,v,pub){
       ventas=a.facturacion;comensales=a.comensales;nTickets=a.tickets;
       perComensal=(a.comensales>0)?Math.round(a.facturacion/a.comensales*100)/100:capRef;
       periodoLbl='Año '+añoAct;
-      // Variación vs año anterior con tramo comparable.
-      // Corrección: el mes en curso puede estar incompleto; se prorratea el mes
-      // equivalente del año anterior por fracción de días transcurridos (comparación justa día a día).
+      // Variación vs año anterior con corte exacto día a día.
+      // Usa a.d1 (último día real de datos del año actual) para recortar el año anterior
+      // al mismo tramo de calendario: manzana con manzana, igual que renderResumen en ventas.
       if(anos.length>=2){
         const añoPrev=anos[anos.length-2];
         const aPrev=pa[añoPrev];
@@ -1351,18 +1351,27 @@ function renderHomeRevo(box,r,v,pub){
           const enCurso=(parseInt(añoAct)===new Date().getFullYear());
           let ventasPrevComparar=aPrev.facturacion;
           if(enCurso&&aPrev.evolucionMensual&&a.evolucionMensual){
-            const hoy=new Date();
-            const mesEnCurso=añoAct+'-'+(String(hoy.getMonth()+1).padStart(2,'0'));
-            const diasHoy=hoy.getDate();
-            const diasTotMes=new Date(parseInt(añoAct),hoy.getMonth()+1,0).getDate();
+            // Corte exacto: usar d1 del año actual si está disponible (YYYY-MM-DD).
+            // Permite saber si el mes en curso está completo o no.
+            const d1Act=a.d1||null; // ej: '2026-06-15'
+            const mmddCorte=d1Act?d1Act.slice(5):null; // 'MM-DD'
             const mesesAct=Object.keys(a.evolucionMensual).sort();
             const sumPrevTramo=mesesAct.reduce((s,m)=>{
               const mm=añoPrev+m.slice(4); // mismo mes, año anterior
               const ventMesAnt=aPrev.evolucionMensual[mm]||0;
               if(!ventMesAnt)return s;
-              // Mes en curso: prorratear según días transcurridos / días totales del mes
-              if(m===mesEnCurso)return s+ventMesAnt*(diasHoy/diasTotMes);
-              return s+ventMesAnt;
+              if(mmddCorte){
+                const mesCorte=mmddCorte.slice(0,2); // 'MM'
+                const diaCorte=parseInt(mmddCorte.slice(3)); // día
+                const mesMes=m.slice(5,7); // 'MM' del mes actual
+                if(mesMes>mesCorte)return s; // mes futuro, no incluir
+                if(mesMes===mesCorte){
+                  // Mes del corte: prorratear por días reales / días totales del mes
+                  const diasTot=new Date(parseInt(añoPrev),parseInt(mesMes),0).getDate();
+                  return s+ventMesAnt*(diaCorte/diasTot);
+                }
+              }
+              return s+ventMesAnt; // mes anterior completo
             },0);
             if(sumPrevTramo>0)ventasPrevComparar=sumPrevTramo;
           }
