@@ -462,21 +462,135 @@ function showDone(tipo,now){
 function goAlb(){albQueue=[];renderCola();$('alb-applybar').classList.remove('on');show('s-alb');}
 function backFromAlb(){albQueue=[];renderCola();$('alb-applybar').classList.remove('on');if(USER){renderUserState();show('s-user');}else goRest();}
 
-/* ── Emparejamiento robusto de ingredientes ──
-   Regla: normalizar (sin acentos/mayúsculas), luego exigir que uno contenga
-   al otro completo con longitud ≥7 chars. Evita fundir productos distintos
-   que solo comparten una categoría ("GINEBRA LARIOS" ≠ "GINEBRA BEEFEATER"). */
-function normNombreAlb(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();}
-function mismoIngAlb(a,b){
-  const na=normNombreAlb(a),nb=normNombreAlb(b);
+/* ── Motor unificado de albaranes (misma lógica que restaid_inventario.html) ──
+   normNombre, mismoIngrediente, normalizarLineas, aplicarAlbaranCore
+   Fuente única de verdad: si se corrige un bug aquí, corregirlo también en inventario. */
+function normNombre(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();}
+function mismoIngrediente(a,b){
+  const na=normNombre(a),nb=normNombre(b);
   if(!na||!nb)return false;
   if(na===nb)return true;
   const corto=na.length<=nb.length?na:nb,largo=na.length<=nb.length?nb:na;
-  // El nombre corto debe tener ≥7 chars Y estar completo en el largo
-  // (evita que "Gin" o "Ron" emparejen con cualquier cosa)
-  return corto.length>=7&&largo.includes(corto);
+  if(corto.length<7)return false;
+  if(!largo.includes(corto))return false;
+  const palabrasCorto=new Set(corto.split(' ').filter(w=>w.length>1));
+  const palabrasExtra=largo.split(' ').filter(w=>w.length>=4&&!palabrasCorto.has(w));
+  return palabrasExtra.length===0;
 }
-function buscarIngAlb(nombre){return INV.ingredientes.find(x=>mismoIngAlb(x.nombre,nombre));}
+function buscarIngAlb(nombre){return (INV.ingredientes||[]).find(x=>mismoIngrediente(x.nombre,nombre));}
+
+function normalizarLineas(lineasIA){
+  return (lineasIA||[]).map(l=>{
+    const nombre=l.descripcion||l.nombre||'';
+    const cantCompra=l.cantidad_compra!=null?+l.cantidad_compra:+(l.cantidad||0);
+    const unidadCompra=((l.unidad_compra||l.unidad||'ud').trim())||'ud';
+    const factor=l.factor!=null?+l.factor:1;
+    const unidadBase=((l.unidad_base||(factor===1?unidadCompra:''))||'ud').trim()||'ud';
+    if(factor===0||!isFinite(factor)||factor<0){
+      return{nombre,cantidadCompra:cantCompra,unidadCompra,factor:0,cantidad:0,unidad:unidadBase,
+        precioCompra:null,precio:null,
+        iva:l.iva_pct!=null?+l.iva_pct:(l.iva!=null?+l.iva:null),
+        lote:l.lote||null,categoria:l.categoria||null,sinPrecio:true,
+        incidencia:`factor 0 o inválido en "${nombre}" — línea no aplicada`};
+    }
+    const cantBase=l.cantidad_base!=null?+l.cantidad_base:Math.round(cantCompra*factor*1e3)/1e3;
+    const precioRaw=l.precio_unitario!=null?+l.precio_unitario:(l.precio!=null?+l.precio:null);
+    const sinPrecio=precioRaw==null||precioRaw===0||!isFinite(precioRaw);
+    const precioCompra=sinPrecio?null:precioRaw;
+    const precio=(!sinPrecio&&factor>0)?Math.round(precioCompra/factor*1e4)/1e4:null;
+    return{nombre,cantidadCompra:cantCompra,unidadCompra,factor,
+      cantidad:Math.round(cantBase*1e3)/1e3,unidad:unidadBase,
+      precioCompra,precio,
+      iva:l.iva_pct!=null?+l.iva_pct:(l.iva!=null?+l.iva:null),
+      lote:l.lote||null,caducidad:l.caducidad||null,categoria:l.categoria||null,
+      sinPrecio,incidencia:null};
+  });
+}
+
+function _recordPrecioAlb(ing,precio,fecha,proveedorId){
+  if(!ing||!(precio>0)||!isFinite(precio))return;
+  if(!Array.isArray(ing.historialPrecios))ing.historialPrecios=[];
+  const ult=ing.historialPrecios[ing.historialPrecios.length-1];
+  if(ult&&Math.abs((+ult.precio||0)-precio)<1e-6)return;
+  ing.historialPrecios.push({fecha,precio:Math.round(precio*1e4)/1e4,proveedorId:proveedorId||ing.proveedorId||null,fuente:'albaran'});
+  if(ing.historialPrecios.length>200)ing.historialPrecios=ing.historialPrecios.slice(-200);
+}
+
+function aplicarAlbaranCore(albaran,INV,opciones){
+  opciones=opciones||{};
+  const{lineas=[],ref=null,fecha=hoy(),provId=null,alertas=[],totales=null}=albaran;
+  const saltarSiDevo=opciones.saltarSiDevo||false;
+  const esDevo=alertas.some(a=>/devoluci|devo\b/i.test(a));
+  if(esDevo&&saltarSiDevo)return{duplicado:false,aplicados:0,requiereConfirmacion:true,alertasCuadre:[],incidencias:[]};
+  const lineasAplicables=lineas.filter(l=>l.cantidad>0&&!l.incidencia);
+  const yaExiste=(INV.albaranes||[]).some(a=>{
+    if(ref&&a.ref===ref&&a.proveedorId===(provId||null))return true;
+    if(!ref&&a.proveedorId===(provId||null)&&a.fecha===fecha&&(a.lineas||[]).length===lineasAplicables.length)return true;
+    return false;
+  });
+  if(yaExiste)return{duplicado:true,aplicados:0,requiereConfirmacion:false,alertasCuadre:[],incidencias:[]};
+  const alertasCuadre=[];
+  if(totales&&totales.total!=null){
+    const suma=lineasAplicables.reduce((s,l)=>s+(l.cantidadCompra||0)*(l.precioCompra||0),0);
+    const diff=Math.abs(suma-(+totales.total));
+    if(diff>0.05)alertasCuadre.push(`Total (${(+totales.total).toFixed(2)}€) difiere de líneas (${suma.toFixed(2)}€) en ${diff.toFixed(2)}€`);
+  }
+  const incidencias=lineas.filter(l=>l.incidencia).map(l=>l.incidencia);
+  let aplicados=0;
+  for(const l of lineasAplicables){
+    let ing=buscarIngAlb(l.nombre);
+    if(!ing){
+      ing={id:uid(),nombre:l.nombre,categoria:l.categoria||'Otros',unidad:l.unidad||'ud',
+        precio:l.precio||0,ivaPct:l.iva!=null?l.iva:null,stock:0,stockMin:0,
+        proveedorId:provId||null,notas:'',creadoEn:fecha,historialPrecios:[],
+        formatoCompra:(l.unidadCompra!==l.unidad)?{unidad:l.unidadCompra,factor:l.factor}:null};
+      INV.ingredientes.push(ing);
+    } else {
+      if(!l.sinPrecio&&l.precio>0){
+        ing.precio=l.precio;
+        if(provId)ing.proveedorId=ing.proveedorId||provId;
+        _recordPrecioAlb(ing,l.precio,fecha,provId||ing.proveedorId);
+      }
+      if(l.iva!=null&&ing.ivaPct==null)ing.ivaPct=l.iva;
+      if(l.categoria&&(!ing.categoria||ing.categoria==='Otros'))ing.categoria=l.categoria;
+      if(l.unidadCompra!==l.unidad&&!ing.formatoCompra)ing.formatoCompra={unidad:l.unidadCompra,factor:l.factor};
+      if(provId&&!ing.proveedorId)ing.proveedorId=provId;
+    }
+    if(!l.sinPrecio&&l.precio>0)_recordPrecioAlb(ing,l.precio,fecha,provId||ing.proveedorId);
+    ing.stock=Math.round(((ing.stock||0)+l.cantidad)*1e3)/1e3;
+    INV.movimientos.push({id:uid(),ingId:ing.id,tipo:'entrada',
+      cantidad:l.cantidad,unidad:l.unidad,cantidadCompra:l.cantidadCompra,
+      unidadCompra:l.unidadCompra,factor:l.factor,fecha,
+      coste:l.sinPrecio?0:Math.round(l.cantidadCompra*(l.precioCompra||0)*1e4)/1e4,
+      sinPrecio:l.sinPrecio||false,
+      motivo:'Albarán '+(ref||fecha),iva:l.iva!=null?l.iva:null,caducidad:l.caducidad||null});
+    if(l.lote||l.caducidad){INV.lotes=INV.lotes||[];INV.lotes.push({id:uid(),ingId:ing.id,cantidad:l.cantidad,lote:l.lote||null,caducidad:l.caducidad||null,fecha});}
+    aplicados++;
+  }
+  INV.albaranes=INV.albaranes||[];
+  INV.albaranes.push({id:uid(),proveedorId:provId||null,fecha,ref,lineas:lineasAplicables,totales:totales||null});
+  return{duplicado:false,aplicados,requiereConfirmacion:esDevo,alertasCuadre,incidencias};
+}
+
+function _resolverProveedorAlb(provIdSel,provData,INV){
+  let provId=provIdSel||'';
+  const prov=provData||{};
+  const _pNom=typeof prov==='object'?prov.nombre:prov;
+  const _pCif=typeof prov==='object'?prov.cif:null;
+  const _pTel=typeof prov==='object'?prov.telefono:null;
+  const _pCat=typeof prov==='object'?prov.categoria_sugerida:null;
+  if(!provId&&_pNom){
+    let pv=_pCif?(INV.proveedores||[]).find(x=>x.cif&&x.cif===_pCif):null;
+    if(!pv){const nn=normNombre(_pNom);pv=(INV.proveedores||[]).find(x=>normNombre(x.nombre)===nn);}
+    if(!pv){pv={id:uid(),nombre:_pNom,cif:_pCif||'',tel:_pTel||'',email:'',categoria:_pCat||'',dias:'',pago:'',notas:'Creado desde app personal'};INV.proveedores.push(pv);}
+    provId=pv.id;
+  } else if(provId&&_pNom){
+    const pv=(INV.proveedores||[]).find(x=>x.id===provId);
+    if(pv){if(!pv.cif&&_pCif)pv.cif=_pCif;if(!pv.tel&&_pTel)pv.tel=_pTel;if(!pv.categoria&&_pCat)pv.categoria=_pCat;}
+  }
+  return provId;
+}
+
 function llenarProveedores(){const sel=$('alb-prov');if(!INV||!sel)return;sel.innerHTML='<option value="">\u2014 Seleccionar \u2014</option>'+(INV.proveedores||[]).map(p=>`<option value="${p.id}">${esc(p.nombre)}</option>`).join('');}
 function f2b64(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.onerror=()=>rej(new Error('Error lectura'));r.readAsDataURL(file);});}
 /* Redimensiona y comprime imágenes grandes antes de enviarlas a la IA.
@@ -667,96 +781,49 @@ async function aplicarTodos(){
   if(hechos){$('alb-queue').insertAdjacentHTML('afterbegin',`<div class="alert alert-green" style="margin-bottom:12px">&#10003; ${hechos} ${hechos>1?'albaranes aplicados':'albarán aplicado'} &middot; ${totalOK} movimientos de stock. ¡Gracias!</div>`);}
 }
 
-/* Lee las líneas editadas del DOM de una tarjeta concreta (antes de repintar). */
+/* leerLineasDOM — lee correcciones del usuario del DOM y las pasa por normalizarLineas.
+   DEBE llamarse antes de cualquier renderCola() para no perder los valores editados. */
 function leerLineasDOM(item,idx){
   const p=item.parsed;
-  return (p.lineas||[]).map((l,i)=>{
+  const lineasDOM=(p.lineas||[]).map((l,i)=>{
     const g=id=>$(`a${idx}-${id}-${i}`);
-    const cantCompra=parseFloat(g('aq')?.value)||0;
-    const factor=parseFloat(g('af')?.value)||1;
-    const cantBase=parseFloat(g('ab')?.value)||(cantCompra*factor);
-    const precioCompra=parseFloat(g('ap')?.value)||null;
-    return {
-      nombre:g('an')?.value||l.descripcion||l.nombre,
-      cantidadCompra:cantCompra,
-      unidadCompra:g('au')?.value||l.unidad_compra||'ud',
-      factor,
-      cantidad:Math.round(cantBase*1000)/1000,
-      unidad:g('aub')?.value||l.unidad_base||'ud',
-      precioCompra,
-      precio:(precioCompra!=null&&factor>0)?Math.round(precioCompra/factor*1e4)/1e4:precioCompra,
-      iva:parseFloat(g('av')?.value)||l.iva_pct||null,
+    return{
+      descripcion:g('an')?.value||l.descripcion||l.nombre||'',
+      cantidad_compra:parseFloat(g('aq')?.value)||0,
+      unidad_compra:g('au')?.value||l.unidad_compra||'ud',
+      factor:parseFloat(g('af')?.value)||1,
+      cantidad_base:parseFloat(g('ab')?.value)||0,
+      unidad_base:g('aub')?.value||l.unidad_base||'ud',
+      precio_unitario:parseFloat(g('ap')?.value)||null,
+      iva_pct:parseFloat(g('av')?.value)||l.iva_pct||null,
       lote:l.lote||null,categoria:l.categoria||null
     };
-  }).filter(l=>l.cantidad>0);
+  });
+  return normalizarLineas(lineasDOM);
 }
 
-/* Aplica un albarán al objeto INV en memoria (sin guardar). Devuelve nº de líneas aplicadas.
-   Reusa exactamente la misma lógica que RESTAID. */
+/* aplicarUnoEnMemoria — wrapper del motor para la cola de la app personal.
+   Devuelve el nº de líneas aplicadas, o -1 si era duplicado. */
 function aplicarUnoEnMemoria(item){
-  const p=item.parsed;let provId=item.provId||'';const fecha=item.fecha||hoy();
-  if(!provId&&p.proveedor){
-    const _pNom=typeof p.proveedor==='object'?p.proveedor.nombre:p.proveedor;
-    const _pCif=typeof p.proveedor==='object'?p.proveedor.cif:null;
-    const _pTel=typeof p.proveedor==='object'?p.proveedor.telefono:null;
-    const _pCat=typeof p.proveedor==='object'?p.proveedor.categoria_sugerida:null;
-    if(_pNom){let pv=INV.proveedores.find(x=>x.nombre.toLowerCase().includes(_pNom.toLowerCase().slice(0,8)));if(!pv&&_pCif)pv=INV.proveedores.find(x=>x.cif&&x.cif===_pCif);if(!pv){pv={id:uid(),nombre:_pNom,cif:_pCif||'',tel:_pTel||'',email:'',categoria:_pCat||'',dias:'',pago:'',notas:'Creado desde app personal'};INV.proveedores.push(pv);}provId=pv.id;}
-  }
+  const p=item.parsed;
+  const fecha=item.fecha||hoy();
+  const provId=_resolverProveedorAlb(item.provId||'',p.proveedor,INV);
   const _ref=(p.documento&&p.documento.numero)||null;
-  // Usa las líneas leídas del DOM antes del repintado; si no las hay, cae a las parseadas.
-  const lf=(item.lineasEditadas&&item.lineasEditadas.length)?item.lineasEditadas:(p.lineas||[]).map(l=>{
-    const cc=l.cantidad_compra!=null?l.cantidad_compra:(l.cantidad||0);
-    const f=l.factor!=null?l.factor:1;
-    const cb=l.cantidad_base!=null?l.cantidad_base:(cc*f);
-    // precio: usamos cantidad_base y precio total de la línea para obtener €/unidad base
-    // Si la IA da precio_unitario, es el precio POR unidad de compra (botella, lata…)
-    // El precio por unidad base = precio_unitario / factor (ej: 10.17€/botella / 0.7L = 14.53€/L)
-    // Pero si ya viene en unidad base (factor=1), no dividir.
-    const precioCompra=l.precio_unitario!=null?+l.precio_unitario:null;
-    const precioPorBase=(precioCompra!=null&&f>0)?Math.round(precioCompra/f*1e4)/1e4:precioCompra;
-    return {nombre:l.descripcion||l.nombre,cantidadCompra:cc,unidadCompra:l.unidad_compra||'ud',factor:f,cantidad:Math.round(cb*1000)/1000,unidad:l.unidad_base||'ud',precioCompra,precio:precioPorBase,iva:l.iva_pct||null,lote:l.lote||null,categoria:l.categoria||null};
-  }).filter(l=>l.cantidad>0);
 
-  // ── Deduplicar: si este albarán ya fue aplicado, no volver a aplicarlo ──
-  // Comprueba por número de referencia (si existe) o por proveedor+fecha+nLineas
-  const albaranKey=_ref?`ref:${_ref}`:`${provId}|${fecha}|${lf.length}`;
-  const yaExiste=(INV.albaranes||[]).some(a=>{
-    if(_ref&&a.ref===_ref&&a.proveedorId===provId)return true;
-    if(!_ref&&a.proveedorId===provId&&a.fecha===fecha&&(a.lineas||[]).length===lf.length)return true;
-    return false;
-  });
-  if(yaExiste){
-    console.warn('Albarán ya aplicado anteriormente, ignorando:',albaranKey);
-    return -1; // señal de que fue ignorado
-  }
+  // Usar líneas leídas del DOM (si existen) o las parseadas de la IA
+  const lineas=(item.lineasEditadas&&item.lineasEditadas.length)
+    ?item.lineasEditadas
+    :normalizarLineas(p.lineas||[]);
 
-  lf.forEach(l=>{
-    let ing=buscarIngAlb(l.nombre);
-    if(!ing){
-      ing={id:uid(),nombre:l.nombre,categoria:l.categoria||'Otros',unidad:l.unidad||'ud',precio:l.precio||0,ivaPct:l.iva||null,stock:0,stockMin:0,proveedorId:provId||null,notas:'',creadoEn:fecha,historialPrecios:[],formatoCompra:l.unidadCompra!==l.unidad?{unidad:l.unidadCompra,factor:l.factor}:null};
-      INV.ingredientes.push(ing);
-    }
-    // Actualizar precio usando recordPrecio (evita duplicados si el precio no cambió)
-    if(l.precio&&l.precio>0){
-      ing.precio=l.precio;
-      if(provId)ing.proveedorId=provId;
-      ing.historialPrecios=ing.historialPrecios||[];
-      const ult=ing.historialPrecios[ing.historialPrecios.length-1];
-      if(!ult||Math.abs((+ult.precio||0)-l.precio)>1e-4){
-        ing.historialPrecios.push({fecha,precio:l.precio,proveedorId:provId||ing.proveedorId,fuente:'albaran'});
-        if(ing.historialPrecios.length>200)ing.historialPrecios=ing.historialPrecios.slice(-200);
-      }
-    }
-    if(l.iva!=null&&ing.ivaPct==null)ing.ivaPct=l.iva;
-    if(l.categoria&&(!ing.categoria||ing.categoria==='Otros'))ing.categoria=l.categoria;
-    if(l.unidadCompra!==l.unidad)ing.formatoCompra={unidad:l.unidadCompra,factor:l.factor};
-    if(provId&&!ing.proveedorId)ing.proveedorId=provId;
-    ing.stock=(ing.stock||0)+l.cantidad;
-    INV.movimientos.push({id:uid(),ingId:ing.id,tipo:'entrada',cantidad:l.cantidad,unidad:l.unidad,cantidadCompra:l.cantidadCompra,unidadCompra:l.unidadCompra,factor:l.factor,fecha,coste:l.cantidadCompra*(l.precioCompra||0),motivo:'Albar\u00e1n '+(_ref||fecha),iva:l.iva||null});
-    if(l.lote){INV.lotes=INV.lotes||[];INV.lotes.push({id:uid(),ingId:ing.id,cantidad:l.cantidad,lote:l.lote||null,caducidad:null,fecha});}
-  });
-  INV.albaranes.push({id:uid(),proveedorId:provId||null,fecha,ref:_ref,lineas:lf,totales:p.totales||null});
-  return lf.length;
+  const resultado=aplicarAlbaranCore(
+    {lineas,ref:_ref,fecha,provId,alertas:p.alertas||[],totales:p.totales||null},INV
+  );
+  if(resultado.duplicado){console.warn('Albarán ya aplicado, ignorando:',_ref||fecha);return -1;}
+  if(resultado.alertasCuadre&&resultado.alertasCuadre.length)
+    resultado.alertasCuadre.forEach(a=>console.warn('[CUADRE]',a));
+  if(resultado.incidencias&&resultado.incidencias.length)
+    resultado.incidencias.forEach(i=>console.warn('[INCIDENCIA]',i));
+  return resultado.aplicados;
 }
 
 init();
