@@ -347,7 +347,9 @@ tr:hover td{background:rgba(26,43,60,.025)}
 // MODEL: uno de los 4 puntos a editar al cambiar de versión de IA (ventas, rrhh, inventario, shell deben coincidir).
 const API='/api/claude',MODEL='claude-haiku-4-5',ALB_MODEL='claude-sonnet-4-6',KEY='restaid_inv_v1';
 let E=load(),editId=null,albParsed=null,chatH=[],chatBusy=false,movEditId=null;
-let ingSearch='',ingCatF='',ingSort='nombre',ingDir=1;
+let ingSearch='',ingCatF='',ingSort='nombre',ingDir=1,ingSeccion='cocina';
+// Categorías que pertenecen a Barra
+const CATS_BARRA=new Set(['Bebidas alcohólicas','Bebidas no alcohólicas']);
 let movTipoF='',movSearch='',movD='',movH='';
 let provDetId=null,recRows=[];
 let precioRango=30; // rango del comparativo de precios en Resumen: 7 / 30 / 365 días
@@ -777,15 +779,24 @@ function rResumen(){
 // ═══════════ INGREDIENTES ═══════════
 function rIngs(){
   const pg=$('pg-ingredientes');
-  const cats=[...new Set(E.ingredientes.map(i=>i.categoria||'Sin categoría').sort())];
+
+  // Filtrar por sección (Cocina vs Barra) según categoría
+  const esBarra=i=>CATS_BARRA.has(i.categoria||'');
+  const todosSec=E.ingredientes.filter(i=>ingSeccion==='barra'?esBarra(i):!esBarra(i));
+
+  // Categorías de la sección activa para el desplegable de filtro
+  const cats=[...new Set(todosSec.map(i=>i.categoria||'Sin categoría').sort())];
+  // Si el filtro activo no existe en esta sección, resetearlo
+  if(ingCatF&&!cats.includes(ingCatF))ingCatF='';
   const catOpts=['<option value="">Todas</option>',...cats.map(c=>`<option value="${esc(c)}"${ingCatF===c?' selected':''}>${esc(c)}</option>`)].join('');
-  let ings=E.ingredientes.filter(i=>{
+
+  let ings=todosSec.filter(i=>{
     const q=ingSearch.toLowerCase();
     return(!q||i.nombre.toLowerCase().includes(q)||(i.categoria||'').toLowerCase().includes(q))&&(!ingCatF||i.categoria===ingCatF);
   }).sort((a,b)=>{let va=a[ingSort]||0,vb=b[ingSort]||0;if(typeof va==='string')va=va.toLowerCase();if(typeof vb==='string')vb=vb.toLowerCase();return ingDir*(va>vb?1:va<vb?-1:0);});
 
   const filas=ings.length===0
-    ?`<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--tx3)">${E.ingredientes.length===0?'Sin ingredientes. Añade el primero →':'Sin resultados.'}</td></tr>`
+    ?`<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--tx3)">${todosSec.length===0?'Sin ingredientes en esta sección.':'Sin resultados.'}</td></tr>`
     :ings.map(i=>{
       const pv=E.proveedores.find(p=>p.id===i.proveedorId);
       const al=(i.stock||0)<(i.stockMin||0);
@@ -808,18 +819,29 @@ function rIngs(){
       </tr>`;
     }).join('');
 
+  const nCocina=E.ingredientes.filter(i=>!esBarra(i)).length;
+  const nBarra=E.ingredientes.filter(i=>esBarra(i)).length;
+  const tabStyle=(sec)=>ingSeccion===sec
+    ?'padding:5px 18px;border-radius:20px;background:var(--navy);color:#fff;font-weight:600;font-size:12.5px;border:none;cursor:pointer'
+    :'padding:5px 18px;border-radius:20px;background:transparent;color:var(--tx2);font-size:12.5px;border:1px solid var(--bdr);cursor:pointer';
+
   const thS=(col,lbl)=>`<th class="sort ${ingSort===col?(ingDir===1?'asc':'desc'):''}" onclick="sortI('${col}')" style="cursor:pointer">${lbl}${ingSort===col?(ingDir===1?' ↑':' ↓'):' ↕'}</th>`;
-  pg.innerHTML=`<div class="sec-head"><h2>Ingredientes</h2><div class="actions">
+  pg.innerHTML=`
+  <div class="sec-head"><h2>Ingredientes</h2><div class="actions">
     <div class="search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
     <input placeholder="Buscar…" value="${esc(ingSearch)}" oninput="ingSearch=this.value;rIngs()"></div>
     <select style="border:1px solid var(--bdr);border-radius:var(--r);padding:7px 10px;font-size:12.5px" onchange="ingCatF=this.value;rIngs()">${catOpts}</select>
     <button class="btn btn-amber btn-sm" onclick="openIngModal()">+ Ingrediente</button>
   </div></div>
+  <div style="display:flex;gap:6px;margin-bottom:14px;background:var(--surf-alt);border-radius:22px;padding:4px;width:fit-content">
+    <button style="${tabStyle('cocina')}" onclick="ingSeccion='cocina';ingCatF='';rIngs()">🍳 Cocina <span style="opacity:.6;font-weight:400">${nCocina}</span></button>
+    <button style="${tabStyle('barra')}" onclick="ingSeccion='barra';ingCatF='';rIngs()">🍺 Barra <span style="opacity:.6;font-weight:400">${nBarra}</span></button>
+  </div>
   <div class="tbl-wrap"><table><thead><tr>
     ${thS('nombre','Ingrediente')}${thS('categoria','Categoría')}<th>Unidad</th>${thS('precio','Precio/ud')}<th title="IVA en compras">IVA%</th>${thS('stock','Stock actual')}
     <th>Stock mín.</th><th>Proveedor</th><th title="Nº platos donde aparece">Platos</th><th>Acciones</th>
   </tr></thead><tbody>${filas}</tbody></table></div>
-  <div style="margin-top:10px;font-size:11.5px;color:var(--tx3)">${ings.length} de ${E.ingredientes.length} ingredientes</div>`;
+  <div style="margin-top:10px;font-size:11.5px;color:var(--tx3)">${ings.length} de ${todosSec.length} ingredientes · ${ingSeccion==='cocina'?'Cocina':'Barra'}</div>`;
 }
 
 function sortI(col){if(ingSort===col)ingDir*=-1;else{ingSort=col;ingDir=1;}rIngs();}
@@ -1445,38 +1467,11 @@ REGLAS CRITICAS:
 7. ALERTAS: anota manuscritos (DEVO, firmas), tachaduras, sellos, devoluciones, y avisa si tienes BAJA CONFIANZA en alguna conversion.`; }
 
 // Extrae el JSON de UN archivo (foto/PDF). Reutilizable por modo simple y lote.
-/* comprimirImagen — redimensiona fotos grandes antes de enviarlas a la IA.
-   Las fotos de móvil pesan varios MB; esto evita timeouts y errores de payload.
-   Los PDF se envían tal cual. */
-function comprimirImagen(file,maxLado=1600,calidad=0.82){
-  return new Promise((resolve)=>{
-    if(!file||file.type==='application/pdf'||!/^image\//.test(file.type||'')){resolve({blob:file,type:file.type});return;}
-    const img=new Image();const url=URL.createObjectURL(file);
-    img.onload=()=>{
-      URL.revokeObjectURL(url);
-      let w=img.naturalWidth||img.width,h=img.naturalHeight||img.height;
-      if(!w||!h){resolve({blob:file,type:file.type});return;}
-      if(Math.max(w,h)>maxLado){const r=maxLado/Math.max(w,h);w=Math.round(w*r);h=Math.round(h*r);}
-      try{
-        const c=document.createElement('canvas');c.width=w;c.height=h;
-        const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h);ctx.drawImage(img,0,0,w,h);
-        c.toBlob(b=>resolve({blob:b||file,type:'image/jpeg'}),'image/jpeg',calidad);
-      }catch(e){resolve({blob:file,type:file.type});}
-    };
-    img.onerror=()=>{URL.revokeObjectURL(url);resolve({blob:file,type:file.type});};
-    img.src=url;
-  });
-}
-
 async function extraerAlbaranDeFile(file){
+  const b64=await f2b64(file);
   const isPDF=file.type==='application/pdf';
-  const{blob,type}=isPDF?{blob:file,type:'application/pdf'}:await comprimirImagen(file);
-  const b64=await f2b64(blob);
-  const mt=isPDF?'application/pdf':(type||'image/jpeg');
-  // max_tokens 4000: cubre albaranes largos (20+ líneas con razonamiento)
-  // sin este margen el JSON puede quedar truncado y JSON.parse lanza error
-  const body={model:ALB_MODEL,max_tokens:4000,system:_albSysPrompt(),messages:[{role:'user',content:[
-    isPDF?{type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}}:{type:'image',source:{type:'base64',media_type:mt,data:b64}},
+  const body={model:ALB_MODEL,max_tokens:2500,system:_albSysPrompt(),messages:[{role:'user',content:[
+    isPDF?{type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}}:{type:'image',source:{type:'base64',media_type:file.type,data:b64}},
     {type:'text',text:'Digitaliza este albaran o factura. RAZONA sobre el formato de cada producto y convierte a unidad base. Devuelve SOLO el JSON, sin texto adicional.'}
   ]}]};
   const r=await fetch(API,{method:'POST',headers:aiHeaders(),body:JSON.stringify(body)});
@@ -1670,119 +1665,48 @@ function aplicarLote(){
   LOTE=[];
 }
 
-// ── Motor unificado de albaranes ─────────────────────────────────────────────
-// normNombre · mismoIngrediente · normalizarLineas · aplicarAlbaranCore
-// Fuente única de verdad para las tres rutas (manual, lote, app personal).
-function normNombre(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();}
-function mismoIngrediente(a,b){
-  const na=normNombre(a),nb=normNombre(b);
-  if(!na||!nb)return false;
-  if(na===nb)return true;
-  const corto=na.length<=nb.length?na:nb,largo=na.length<=nb.length?nb:na;
-  if(corto.length<7)return false;
-  if(!largo.includes(corto))return false;
-  const palabrasCorto=new Set(corto.split(' ').filter(w=>w.length>1));
-  const palabrasExtra=largo.split(' ').filter(w=>w.length>=4&&!palabrasCorto.has(w));
-  return palabrasExtra.length===0;
-}
-function buscarIngredienteInv(nombre){return (E.ingredientes||[]).find(x=>mismoIngrediente(x.nombre,nombre));}
-function normalizarLineas(lineasIA){
-  return (lineasIA||[]).map(l=>{
-    const nombre=l.descripcion||l.nombre||'';
-    const cantCompra=l.cantidad_compra!=null?+l.cantidad_compra:+(l.cantidad||0);
-    const unidadCompra=((l.unidad_compra||l.unidad||'ud').trim())||'ud';
-    const factor=l.factor!=null?+l.factor:1;
-    const unidadBase=((l.unidad_base||(factor===1?unidadCompra:''))||'ud').trim()||'ud';
-    if(factor===0||!isFinite(factor)||factor<0){
-      return{nombre,cantidadCompra:cantCompra,unidadCompra,factor:0,cantidad:0,unidad:unidadBase,
-        precioCompra:null,precio:null,
-        iva:l.iva_pct!=null?+l.iva_pct:(l.iva!=null?+l.iva:null),
-        lote:l.lote||null,categoria:l.categoria||null,sinPrecio:true,
-        incidencia:`factor 0 o inválido en "${nombre}" — línea no aplicada`};
-    }
-    const cantBase=l.cantidad_base!=null?+l.cantidad_base:Math.round(cantCompra*factor*1e3)/1e3;
-    const precioRaw=l.precio_unitario!=null?+l.precio_unitario:(l.precio!=null?+l.precio:null);
-    const sinPrecio=precioRaw==null||precioRaw===0||!isFinite(precioRaw);
-    const precioCompra=sinPrecio?null:precioRaw;
-    const precio=(!sinPrecio&&factor>0)?Math.round(precioCompra/factor*1e4)/1e4:null;
-    return{nombre,cantidadCompra:cantCompra,unidadCompra,factor,
-      cantidad:Math.round(cantBase*1e3)/1e3,unidad:unidadBase,
-      precioCompra,precio,
-      iva:l.iva_pct!=null?+l.iva_pct:(l.iva!=null?+l.iva:null),
-      lote:l.lote||null,caducidad:l.caducidad||null,categoria:l.categoria||null,
-      sinPrecio,incidencia:null};
-  });
-}
-function aplicarAlbaranCore(albaran,INV,opciones){
-  opciones=opciones||{};
-  const{lineas=[],ref=null,fecha=hoy(),provId=null,alertas=[],totales=null}=albaran;
-  const saltarSiDevo=opciones.saltarSiDevo||false;
-  const esDevo=alertas.some(a=>/devoluci|devo\b/i.test(a));
-  if(esDevo&&saltarSiDevo)return{duplicado:false,aplicados:0,requiereConfirmacion:true,alertasCuadre:[],incidencias:[]};
-  const lineasAplicables=lineas.filter(l=>l.cantidad>0&&!l.incidencia);
-  const yaExiste=(INV.albaranes||[]).some(a=>{
-    if(ref&&a.ref===ref&&a.proveedorId===(provId||null))return true;
-    if(!ref&&a.proveedorId===(provId||null)&&a.fecha===fecha&&(a.lineas||[]).length===lineasAplicables.length)return true;
-    return false;
-  });
-  if(yaExiste)return{duplicado:true,aplicados:0,requiereConfirmacion:false,alertasCuadre:[],incidencias:[]};
-  const alertasCuadre=[];
-  if(totales&&totales.total!=null){
-    const suma=lineasAplicables.reduce((s,l)=>s+(l.cantidadCompra||0)*(l.precioCompra||0),0);
-    const diff=Math.abs(suma-(+totales.total));
-    if(diff>0.05)alertasCuadre.push(`Total del documento (${(+totales.total).toFixed(2)}€) difiere de la suma de líneas (${suma.toFixed(2)}€) en ${diff.toFixed(2)}€`);
-  }
-  const incidencias=lineas.filter(l=>l.incidencia).map(l=>l.incidencia);
-  let aplicados=0;
-  for(const l of lineasAplicables){
-    let ing=(INV.ingredientes||[]).find(x=>mismoIngrediente(x.nombre,l.nombre));
-    if(!ing){
-      ing={id:uid(),nombre:l.nombre,categoria:l.categoria||'Otros',unidad:l.unidad||'ud',
-        precio:l.precio||0,ivaPct:l.iva!=null?l.iva:null,stock:0,stockMin:0,
-        proveedorId:provId||null,notas:'',creadoEn:fecha,historialPrecios:[],
-        formatoCompra:(l.unidadCompra!==l.unidad)?{unidad:l.unidadCompra,factor:l.factor}:null};
-      INV.ingredientes.push(ing);
-    } else {
-      if(!l.sinPrecio&&l.precio>0){ing.precio=l.precio;if(provId)ing.proveedorId=ing.proveedorId||provId;recordPrecio(ing,l.precio,fecha,'albaran',provId||ing.proveedorId);}
-      if(l.iva!=null&&ing.ivaPct==null)ing.ivaPct=l.iva;
-      if(l.categoria&&(!ing.categoria||ing.categoria==='Otros'))ing.categoria=l.categoria;
-      if(l.unidadCompra!==l.unidad&&!ing.formatoCompra)ing.formatoCompra={unidad:l.unidadCompra,factor:l.factor};
-      if(provId&&!ing.proveedorId)ing.proveedorId=provId;
-    }
-    if(!l.sinPrecio&&l.precio>0)recordPrecio(ing,l.precio,fecha,'albaran',provId||ing.proveedorId);
-    ing.stock=Math.round(((ing.stock||0)+l.cantidad)*1e3)/1e3;
-    INV.movimientos.push({id:uid(),ingId:ing.id,tipo:'entrada',
-      cantidad:l.cantidad,unidad:l.unidad,cantidadCompra:l.cantidadCompra,
-      unidadCompra:l.unidadCompra,factor:l.factor,fecha,
-      coste:l.sinPrecio?0:Math.round(l.cantidadCompra*(l.precioCompra||0)*1e4)/1e4,
-      sinPrecio:l.sinPrecio||false,
-      motivo:'Albarán '+(ref||fecha),iva:l.iva!=null?l.iva:null,caducidad:l.caducidad||null});
-    if(l.lote||l.caducidad){INV.lotes=INV.lotes||[];INV.lotes.push({id:uid(),ingId:ing.id,cantidad:l.cantidad,lote:l.lote||null,caducidad:l.caducidad||null,fecha});}
-    aplicados++;
-  }
-  INV.albaranes=INV.albaranes||[];
-  INV.albaranes.push({id:uid(),proveedorId:provId||null,fecha,ref,lineas:lineasAplicables,totales:totales||null});
-  return{duplicado:false,aplicados,requiereConfirmacion:esDevo,alertasCuadre,incidencias};
-}
-
 // Versión de aplicarAlbaran sin UI (para el lote). Reutiliza la lógica de conversión.
-/* aplicarAlbaranSilencioso — wrapper del motor para el modo lote.
-   A diferencia del modo manual NO lee del DOM: las líneas vienen
-   directamente del JSON de la IA. Por eso normalizarLineas recibe
-   el array crudo y hace la conversión precio/factor en un único sitio. */
 function aplicarAlbaranSilencioso(p, provIdSel, fecha){
-  const provId=_resolverProveedor(provIdSel,p.proveedor,E,'Creado desde albarán (lote)');
+  let provId=provIdSel;
+  const prov=p.proveedor||{};
+  const _pNom=typeof prov==='object'?prov.nombre:prov;
+  const _pCif=typeof prov==='object'?prov.cif:null;
+  const _pTel=typeof prov==='object'?prov.telefono:null;
+  const _pCat=typeof prov==='object'?prov.categoria_sugerida:null;
+  if(!provId&&_pNom){
+    let pv=E.proveedores.find(x=>x.nombre.toLowerCase().includes(_pNom.toLowerCase().slice(0,8)));
+    if(!pv&&_pCif)pv=E.proveedores.find(x=>x.cif&&x.cif===_pCif);
+    if(!pv){pv={id:uid(),nombre:_pNom,cif:_pCif||'',tel:_pTel||'',email:'',categoria:_pCat||'',dias:'',pago:'',notas:'Creado desde albarán (lote)'};E.proveedores.push(pv);}
+    provId=pv.id;
+  } else if(provId){
+    const pv=E.proveedores.find(x=>x.id===provId);
+    if(pv){if(!pv.cif&&_pCif)pv.cif=_pCif;if(!pv.tel&&_pTel)pv.tel=_pTel;if(!pv.categoria&&_pCat)pv.categoria=_pCat;}
+  }
   const _ref=(p.documento&&p.documento.numero)||null;
-  const lineasNorm=normalizarLineas(p.lineas||[]);
-  const resultado=aplicarAlbaranCore(
-    {lineas:lineasNorm,ref:_ref,fecha,provId,alertas:p.alertas||[],totales:p.totales||null},E
-  );
-  if(resultado.alertasCuadre&&resultado.alertasCuadre.length)
-    resultado.alertasCuadre.forEach(a=>console.warn('[LOTE CUADRE]',a));
-  if(resultado.incidencias&&resultado.incidencias.length)
-    resultado.incidencias.forEach(i=>console.warn('[LOTE INCIDENCIA]',i));
-  if(!resultado.duplicado)_actualizarFichaProveedor(provId,{documento:p.documento,totales:p.totales,lineas:lineasNorm},E,fecha);
-  return resultado;
+  const lf=(p.lineas||[]).map(l=>{
+    const cantCompra=l.cantidad_compra!=null?l.cantidad_compra:(l.cantidad||0);
+    const factor=l.factor!=null?l.factor:1;
+    const cantBase=l.cantidad_base!=null?l.cantidad_base:(cantCompra*factor);
+    const precioCompra=l.precio_unitario!=null?l.precio_unitario:(l.precio||null);
+    return {nombre:l.descripcion||l.nombre||'',cantidadCompra:cantCompra,unidadCompra:l.unidad_compra||l.unidad||'ud',
+      factor:factor,cantidad:Math.round(cantBase*1000)/1000,unidad:l.unidad_base||l.unidad||'ud',
+      precioCompra:precioCompra,precio:(precioCompra!=null&&factor>0)?Math.round(precioCompra/factor*10000)/10000:precioCompra,
+      iva:l.iva_pct||l.iva||null,lote:l.lote||null,categoria:l.categoria||null};
+  }).filter(l=>l.cantidad>0);
+  lf.forEach(l=>{
+    let i=buscarIngredienteInv(l.nombre);
+    if(!i){i={id:uid(),nombre:l.nombre,categoria:l.categoria||'Otros',unidad:l.unidad||'ud',precio:l.precio||0,ivaPct:l.iva||null,stock:0,stockMin:0,proveedorId:provId||null,notas:'',creadoEn:fecha,formatoCompra:l.unidadCompra!==l.unidad?{unidad:l.unidadCompra,factor:l.factor}:null};E.ingredientes.push(i);}
+    if(l.precio&&l.precio>0){i.precio=l.precio;if(provId)i.proveedorId=provId;recordPrecio(i,l.precio,fecha,'albaran',provId||i.proveedorId);}
+    if(l.iva!=null&&i.ivaPct==null)i.ivaPct=l.iva;
+    if(l.categoria&&(!i.categoria||i.categoria==='Otros'))i.categoria=l.categoria;
+    if(l.unidadCompra!==l.unidad)i.formatoCompra={unidad:l.unidadCompra,factor:l.factor};
+    if(provId&&!i.proveedorId)i.proveedorId=provId;
+    i.stock=(i.stock||0)+l.cantidad;
+    E.movimientos.push({id:uid(),ingId:i.id,tipo:'entrada',cantidad:l.cantidad,unidad:l.unidad,cantidadCompra:l.cantidadCompra,unidadCompra:l.unidadCompra,factor:l.factor,fecha,coste:l.cantidadCompra*(l.precioCompra||0),motivo:'Albarán '+(_ref||fecha),iva:l.iva||null});
+  });
+  const totalAlb=(p.totales&&p.totales.total)?p.totales.total:lf.reduce((s,l)=>s+(l.precioCompra||0)*(l.cantidadCompra||0),0);
+  E.albaranes.push({id:uid(),proveedorId:provId||null,fecha,ref:_ref,lineas:lf,totales:p.totales||null,formaPago:p.documento?.forma_pago||null});
+  if(provId){const pv=E.proveedores.find(x=>x.id===provId);if(pv){if(!pv.ultimoPedido||fecha>pv.ultimoPedido)pv.ultimoPedido=fecha;pv.totalComprado=(pv.totalComprado||0)+totalAlb;pv.numAlbaranes=(pv.numAlbaranes||0)+1;}}
 }
 
 function renderAlbPreview(){
@@ -1861,92 +1785,103 @@ function albRecalcBase(i){
   if($('ab-'+i))$('ab-'+i).value=base;
 }
 
-/* ── Helpers de proveedor compartidos entre las tres rutas de albarán ─────────
-   _resolverProveedor: devuelve el provId definitivo (existente o recién creado).
-   Busca primero por CIF (determinista), luego por nombre normalizado completo.
-   NO usa slice(0,8) para evitar duplicados por coincidencia parcial.
-   _actualizarFichaProveedor: sincroniza fecha, forma de pago y acumulados. */
-function _resolverProveedor(provIdSel, provData, INV, notaCreacion){
-  let provId=provIdSel||'';
-  const prov=provData||{};
-  const _pNom=typeof prov==='object'?prov.nombre:prov;
-  const _pCif=typeof prov==='object'?prov.cif:null;
-  const _pTel=typeof prov==='object'?prov.telefono:null;
-  const _pCat=typeof prov==='object'?prov.categoria_sugerida:null;
-  if(!provId&&_pNom){
-    // 1. Buscar por CIF (exacto)
-    let pv=_pCif?(INV.proveedores||[]).find(x=>x.cif&&x.cif===_pCif):null;
-    // 2. Buscar por nombre normalizado completo
-    if(!pv){const nn=normNombre(_pNom);pv=(INV.proveedores||[]).find(x=>normNombre(x.nombre)===nn);}
-    if(!pv){
-      pv={id:uid(),nombre:_pNom,cif:_pCif||'',tel:_pTel||'',email:'',
-        categoria:_pCat||'',dias:'',pago:'',notas:notaCreacion||'Creado desde albarán'};
-      INV.proveedores.push(pv);
-      toast('Proveedor "'+_pNom+'" creado'+(_pCat?' · '+_pCat:''));
-    }
-    provId=pv.id;
-  } else if(provId&&_pNom){
-    const pv=(INV.proveedores||[]).find(x=>x.id===provId);
-    if(pv){
-      if(!pv.cif&&_pCif)pv.cif=_pCif;
-      if(!pv.tel&&_pTel)pv.tel=_pTel;
-      if(!pv.categoria&&_pCat)pv.categoria=_pCat;
-    }
-  }
-  return provId;
-}
-function _actualizarFichaProveedor(provId, parsed, INV, fecha){
-  if(!provId)return;
-  const pv=(INV.proveedores||[]).find(x=>x.id===provId);
-  if(!pv)return;
-  if(!pv.ultimoPedido||fecha>pv.ultimoPedido)pv.ultimoPedido=fecha;
-  const fp=parsed.documento&&parsed.documento.forma_pago;
-  if(fp)pv.pago=fp;
-  const totalAlb=(parsed.totales&&parsed.totales.total)
-    ?+parsed.totales.total
-    :(parsed.lineas||[]).reduce((s,l)=>s+(l.cantidadCompra||0)*(l.precioCompra||0),0);
-  pv.totalComprado=(pv.totalComprado||0)+totalAlb;
-  pv.numAlbaranes=(pv.numAlbaranes||0)+1;
-}
-
 function aplicarAlbaran(){
   let provId=$('alb-prov').value;
   const fecha=$('alb-fecha').value||hoy(),p=albParsed;
   if(!p||!p.lineas)return;
 
-  // Resolver/crear proveedor con la nueva lógica (sin slice(0,8))
-  provId=_resolverProveedor(provId,p.proveedor,E,'Creado automáticamente desde albarán');
+  // Crear proveedor automáticamente si la IA lo detectó y no existe en el sistema
+  if(!provId && p.proveedor) {
+    const _pNom=typeof p.proveedor==='object'?p.proveedor.nombre:p.proveedor;
+    const _pCif=typeof p.proveedor==='object'?p.proveedor.cif:null;
+    const _pTel=typeof p.proveedor==='object'?p.proveedor.telefono:null;
+    const _pCat=typeof p.proveedor==='object'?p.proveedor.categoria_sugerida:null;
+    if(_pNom) {
+      let pv=E.proveedores.find(x=>x.nombre.toLowerCase().includes(_pNom.toLowerCase().slice(0,8)));
+      if(!pv&&_pCif)pv=E.proveedores.find(x=>x.cif&&x.cif===_pCif);
+      if(!pv){
+        pv={id:uid(),nombre:_pNom,cif:_pCif||'',tel:_pTel||'',email:'',categoria:_pCat||'',dias:'',pago:'',notas:'Creado automáticamente desde albarán'};
+        E.proveedores.push(pv);
+        toast('Proveedor "'+_pNom+'" creado'+(_pCat?' · '+_pCat:''));
+      }
+      provId=pv.id;
+    }
+  } else if(provId && p.proveedor) {
+    // Enriquecer proveedor existente
+    const pv=E.proveedores.find(x=>x.id===provId);
+    if(pv){
+      if(!pv.cif&&p.proveedor.cif)pv.cif=p.proveedor.cif;
+      if(!pv.tel&&p.proveedor.telefono)pv.tel=p.proveedor.telefono;
+      if(!pv.categoria&&p.proveedor.categoria_sugerida)pv.categoria=p.proveedor.categoria_sugerida;
+    }
+  }
 
+  // Extraer ref del documento
   const _ref=p.referencia||(p.documento&&p.documento.numero)||null;
 
-  // Leer correcciones del usuario en el DOM y pasarlas por normalizarLineas
-  const lineasDOM=p.lineas.map((l,i)=>({
-    descripcion:$('an-'+i)?.value||l.nombre||l.descripcion||'',
-    cantidad_compra:parseFloat($('aq-'+i)?.value)||0,
-    unidad_compra:$('au-'+i)?.value||l.unidadCompra||'ud',
-    factor:parseFloat($('af-'+i)?.value)||1,
-    cantidad_base:parseFloat($('ab-'+i)?.value)||0,
-    unidad_base:$('aub-'+i)?.value||l.unidadBase||'ud',
-    precio_unitario:parseFloat($('ap-'+i)?.value)||null,
-    iva_pct:parseFloat($('av-'+i)?.value)||l.iva||null,
-    lote:l.lote||null,caducidad:$('ac-'+i)?.value||null,categoria:l.categoria||null
-  }));
-  const lineasNorm=normalizarLineas(lineasDOM);
+  // Leer líneas con DOBLE REGISTRO (compra + base usable)
+  const lf=p.lineas.map((l,i)=>{
+    const cantCompra=parseFloat($('aq-'+i)?.value)||0;
+    const factor=parseFloat($('af-'+i)?.value)||1;
+    const cantBase=parseFloat($('ab-'+i)?.value)|| (cantCompra*factor);
+    const precioCompra=parseFloat($('ap-'+i)?.value)||null; // €/unidad de compra
+    return {
+      nombre:$('an-'+i)?.value||l.nombre,
+      cantidadCompra:cantCompra,
+      unidadCompra:$('au-'+i)?.value||l.unidadCompra||'ud',
+      factor:factor,
+      cantidad:Math.round(cantBase*1000)/1000,   // cantidad BASE (lo que entra a stock)
+      unidad:$('aub-'+i)?.value||l.unidadBase||'ud',
+      precioCompra:precioCompra,
+      // precio por unidad base = precio compra / factor (para que el escandallo cuadre)
+      precio:(precioCompra!=null&&factor>0)?Math.round(precioCompra/factor*10000)/10000:precioCompra,
+      iva:parseFloat($('av-'+i)?.value)||l.iva||null,
+      lote:l.lote||null,
+      categoria:l.categoria||null,
+      caducidad:$('ac-'+i)?.value||null
+    };
+  }).filter(l=>l.cantidad>0);
 
-  const resultado=aplicarAlbaranCore(
-    {lineas:lineasNorm,ref:_ref,fecha,provId,alertas:p.alertas||[],totales:p.totales||null},E
-  );
-  if(resultado.duplicado){toast('Este albarán ya estaba aplicado','a');return;}
-  if(resultado.alertasCuadre&&resultado.alertasCuadre.length)
-    resultado.alertasCuadre.forEach(a=>{console.warn('[CUADRE]',a);toast('⚠ '+a,'a');});
-  if(resultado.incidencias&&resultado.incidencias.length)
-    resultado.incidencias.forEach(i=>console.warn('[INCIDENCIA]',i));
+  lf.forEach(l=>{
+    let i=buscarIngredienteInv(l.nombre);
+    if(!i){i={id:uid(),nombre:l.nombre,categoria:l.categoria||'Otros',unidad:l.unidad||'ud',precio:l.precio||0,ivaPct:l.iva||null,stock:0,stockMin:0,proveedorId:provId||null,notas:'',creadoEn:fecha,
+      formatoCompra:l.unidadCompra!==l.unidad?{unidad:l.unidadCompra,factor:l.factor}:null};E.ingredientes.push(i);}
+    // precio del ingrediente = precio por unidad BASE (para escandallo correcto)
+    if(l.precio&&l.precio>0){i.precio=l.precio;if(provId)i.proveedorId=provId;recordPrecio(i,l.precio,fecha,'albaran',provId||i.proveedorId);}
+    if(l.iva!=null&&i.ivaPct==null)i.ivaPct=l.iva;
+    if(l.categoria&&(!i.categoria||i.categoria==='Otros'))i.categoria=l.categoria;
+    // Guardar/actualizar el formato de compra para futura trazabilidad
+    if(l.unidadCompra!==l.unidad)i.formatoCompra={unidad:l.unidadCompra,factor:l.factor};
+    if(provId&&!i.proveedorId)i.proveedorId=provId;
+    // El STOCK se incrementa en unidad BASE (cantidad usable)
+    i.stock=(i.stock||0)+l.cantidad;
+    // El movimiento guarda AMBOS registros para trazabilidad
+    E.movimientos.push({id:uid(),ingId:i.id,tipo:'entrada',
+      cantidad:l.cantidad,unidad:l.unidad,
+      cantidadCompra:l.cantidadCompra,unidadCompra:l.unidadCompra,factor:l.factor,
+      fecha,coste:l.cantidadCompra*(l.precioCompra||0),
+      motivo:'Albarán '+(_ref||fecha),iva:l.iva||null,caducidad:l.caducidad});
+    if(l.lote||l.caducidad){E.lotes=E.lotes||[];E.lotes.push({id:uid(),ingId:i.id,cantidad:l.cantidad,lote:l.lote||null,caducidad:l.caducidad||null,fecha});}
+  });
+  const totalAlb=p.totales&&p.totales.total?p.totales.total:lf.reduce((s,l)=>s+(l.precioCompra||0)*(l.cantidadCompra||0),0);
+  E.albaranes.push({id:uid(),proveedorId:provId||null,fecha,ref:_ref,lineas:lf,totales:p.totales||null,formaPago:p.documento?.forma_pago||null});
 
-  _actualizarFichaProveedor(provId,{documento:p.documento,totales:p.totales,lineas:resultado.aplicados?lineasNorm:[]},E,fecha);
+  // Actualizar la ficha del proveedor con datos del albarán
+  if(provId){
+    const pv=E.proveedores.find(x=>x.id===provId);
+    if(pv){
+      // Última fecha de pedido
+      if(!pv.ultimoPedido||fecha>pv.ultimoPedido)pv.ultimoPedido=fecha;
+      // Forma de pago habitual (la del último albarán con dato)
+      const fp=p.documento&&p.documento.forma_pago;
+      if(fp)pv.pago=fp;
+      // Acumular total comprado y nº de albaranes (histórico)
+      pv.totalComprado=(pv.totalComprado||0)+totalAlb;
+      pv.numAlbaranes=(pv.numAlbaranes||0)+1;
+    }
+  }
 
-  save();closeM('modal-albaran');
-  const inc=resultado.incidencias.length;
-  toast(`Albarán aplicado: ${resultado.aplicados} productos`+(inc?' ('+inc+' línea(s) con incidencia)':''));
+  save();closeM('modal-albaran');toast(`Albarán aplicado: ${lf.length} productos`);
   if(provDetId)rProvDet(provDetId);upTopbar();
 }
 
@@ -1955,6 +1890,9 @@ function aplicarAlbaran(){
    Al guardar, los costes reales (receta × precios actuales) se vuelcan a
    restaid_escandallo_int_v1 con matching difuso de nombres. Respeta los
    escandallos hechos a mano (metodo 'manual'); actualiza el resto. */
+function normNombre(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();}
+function mismoIngrediente(a,b){const na=normNombre(a),nb=normNombre(b);if(!na||!nb)return false;if(na===nb)return true;const corto=na.length<=nb.length?na:nb,largo=na.length<=nb.length?nb:na;return corto.length>=7&&largo.includes(corto);}
+function buscarIngredienteInv(nombre){return E.ingredientes.find(x=>mismoIngrediente(x.nombre,nombre));}
 function matchPlatoEsc(nombre,escNames){
   const nk=normNombre(nombre);
   let m=escNames.find(x=>normNombre(x)===nk);if(m)return m;

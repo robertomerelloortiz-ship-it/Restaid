@@ -2631,9 +2631,14 @@ function escRenderModal(){
     <div class="rec-head"><span>Ingrediente</span><span>Cant.</span><span>Ud.</span><span>Coste €</span><span></span></div>
     <div>${(()=>{
       const _ings=invIngredientes(); const _has=_ings.length>0;
+      // Separar en Cocina y Barra para los optgroup
+      const _catsBarra=new Set(['Bebidas alcohólicas','Bebidas no alcohólicas']);
+      const _ingsCocina=_ings.filter(g=>!_catsBarra.has(g.categoria||''));
+      const _ingsBarra=_ings.filter(g=>_catsBarra.has(g.categoria||''));
+      const _optIng=(g,sel)=>`<option value="${escAttr(g.nombre)}" ${sel===g.nombre?'selected':''}>${escAttr(g.nombre)} (${fc(g.precio||0,2)}€/${escAttr(g.unidad||'ud')})</option>`;
       return ESC_LINES.map((l,i)=>{
         const _ingInput=_has
-          ?`<select style="flex:2;padding:5px 7px;border:1px solid var(--bdr-strong);border-radius:6px;font-size:12.5px;font-family:inherit" onchange="escUpd(${i},'ing',this.value);escRecalcLine(${i})"><option value="">— Ingrediente —</option>${_ings.map(g=>`<option value="${escAttr(g.nombre)}" ${l.ing===g.nombre?'selected':''}>${escAttr(g.nombre)} (${fc(g.precio||0,2)}€/${escAttr(g.unidad||'ud')})</option>`).join('')}</select>`
+          ?`<select style="flex:2;padding:5px 7px;border:1px solid var(--bdr-strong);border-radius:6px;font-size:12.5px;font-family:inherit" onchange="escUpd(${i},'ing',this.value);escRecalcLine(${i})"><option value="">— Ingrediente —</option>${_ingsCocina.length?`<optgroup label="🍳 Cocina">${_ingsCocina.map(g=>_optIng(g,l.ing)).join('')}</optgroup>`:''} ${_ingsBarra.length?`<optgroup label="🍺 Barra">${_ingsBarra.map(g=>_optIng(g,l.ing)).join('')}</optgroup>`:''}</select>`
           :`<input style="flex:2" value="${escAttr(l.ing)}" placeholder="Ingrediente" onchange="escUpd(${i},'ing',this.value)">`;
         const _calc=calcImporte(l.ing,l.cant,l.ud);
         const _coste=_has&&l.ing&&_calc!==''
