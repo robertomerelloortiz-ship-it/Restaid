@@ -2638,7 +2638,7 @@ function escRenderModal(){
       const _datalist=`<datalist id="${_dlId}">${_dlOpts}</datalist>`;
       return _datalist+ESC_LINES.map((l,i)=>{
         const _ingInput=_has
-          ?`<input list="${_dlId}" style="flex:2;padding:5px 7px;border:1px solid var(--bdr-strong);border-radius:6px;font-size:12.5px;font-family:inherit" value="${escAttr(l.ing)}" placeholder="Buscar ingrediente…" onchange="escUpdIng(${i},this.value)" oninput="escUpdIng(${i},this.value)">`
+          ?`<input list="${_dlId}" style="flex:2;padding:5px 7px;border:1px solid var(--bdr-strong);border-radius:6px;font-size:12.5px;font-family:inherit" value="${escAttr(l.ing)}" placeholder="Buscar ingrediente…" onchange="escUpdIng(${i},this.value)">`
           :`<input style="flex:2" value="${escAttr(l.ing)}" placeholder="Ingrediente" onchange="escUpd(${i},'ing',this.value)">`;
         const _calc=calcImporte(l.ing,l.cant,l.ud);
         const _coste=_has&&l.ing&&_calc!==''
