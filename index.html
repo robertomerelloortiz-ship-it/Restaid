@@ -1341,28 +1341,35 @@ function renderHomeRevo(box,r,v,pub){
       ventas=a.facturacion;comensales=a.comensales;nTickets=a.tickets;
       perComensal=(a.comensales>0)?Math.round(a.facturacion/a.comensales*100)/100:capRef;
       periodoLbl='Año '+añoAct;
-      // Variación vs año anterior. Si el año actual está en curso, comparar mismo tramo.
+      // Variación vs año anterior con tramo comparable.
+      // Corrección: el mes en curso puede estar incompleto; se prorratea el mes
+      // equivalente del año anterior por fracción de días transcurridos (comparación justa día a día).
       if(anos.length>=2){
         const añoPrev=anos[anos.length-2];
         const aPrev=pa[añoPrev];
         if(aPrev&&aPrev.facturacion>0){
-          // ¿El año actual está en curso? (es el año natural actual)
           const enCurso=(parseInt(añoAct)===new Date().getFullYear());
           let ventasPrevComparar=aPrev.facturacion;
-          let notaComp='';
           if(enCurso&&aPrev.evolucionMensual&&a.evolucionMensual){
-            // Comparar solo los meses transcurridos del año actual contra los mismos del anterior
-            const mesesAct=Object.keys(a.evolucionMensual);
+            const hoy=new Date();
+            const mesEnCurso=añoAct+'-'+(String(hoy.getMonth()+1).padStart(2,'0'));
+            const diasHoy=hoy.getDate();
+            const diasTotMes=new Date(parseInt(añoAct),hoy.getMonth()+1,0).getDate();
+            const mesesAct=Object.keys(a.evolucionMensual).sort();
             const sumPrevTramo=mesesAct.reduce((s,m)=>{
               const mm=añoPrev+m.slice(4); // mismo mes, año anterior
-              return s+(aPrev.evolucionMensual[mm]||0);
+              const ventMesAnt=aPrev.evolucionMensual[mm]||0;
+              if(!ventMesAnt)return s;
+              // Mes en curso: prorratear según días transcurridos / días totales del mes
+              if(m===mesEnCurso)return s+ventMesAnt*(diasHoy/diasTotMes);
+              return s+ventMesAnt;
             },0);
-            if(sumPrevTramo>0){ventasPrevComparar=sumPrevTramo;}
+            if(sumPrevTramo>0)ventasPrevComparar=sumPrevTramo;
           }
           varAnual={
             pct:Math.round((ventas-ventasPrevComparar)/ventasPrevComparar*1000)/10,
             añoPrev:añoPrev,
-            nota:notaComp
+            nota:''
           };
         }
       }
