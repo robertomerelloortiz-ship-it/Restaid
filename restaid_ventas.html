@@ -1105,7 +1105,8 @@ async function runAnalysis(){
   // Publicar en el core para otros módulos
   RESTAID.ventas=G;
   RESTAID.emit('ventas:ready',G);
-  publishPub(G);
+  // publishPub se llama DESPUÉS del merge (más abajo) para que index.html
+  // reciba el G completo (enero–hoy) y no solo el tramo del CSV nuevo
 
   RESTAID.emit('carta:ready');
   updateCartaUI();initSeatInputs();
@@ -1123,39 +1124,28 @@ async function runAnalysis(){
   if(_gExistente&&_gExistente.byDate&&G.byDate){
     const _d0Ext=_gExistente.d0||'',_d1Ext=_gExistente.d1||'';
     const _d0New=G.d0||'',_d1New=G.d1||'';
-    // Solo mergear si los rangos no se solapan completamente (el nuevo no cubre ya todo)
+    // Solo mergear si el nuevo no cubre ya todo el rango anterior
     const _noSolapa=(_d0New>_d0Ext||_d1New<_d1Ext);
     if(_noSolapa){
-      // Combinar byDate: los días del existente que el nuevo no cubre
       const _byDateMerged=Object.assign({},_gExistente.byDate,G.byDate);
-      // Recalcular los agregados que dependen de byDate
       const _allDates=Object.keys(_byDateMerged).sort();
       const _totVenMerged=Object.values(_byDateMerged).reduce((s,v)=>s+v,0);
-      // Recalcular byMonth desde byDate merged
       const _byMonthMerged={};
       _allDates.forEach(d=>{const m=d.slice(0,7);_byMonthMerged[m]=(_byMonthMerged[m]||0)+_byDateMerged[d];});
-      // Aplicar el merge a G
       G.byDate=_byDateMerged;
       G.byMonth=_byMonthMerged;
       G.d0=_allDates[0]||G.d0;
       G.d1=_allDates[_allDates.length-1]||G.d1;
       G.nDays=_allDates.length;
+      G.totVen=_totVenMerged;
       const _fmtD=s=>s?s.split('-').reverse().join('/'):'';
       G.periodStr=G.d0===G.d1?_fmtD(G.d0):`${_fmtD(G.d0)} – ${_fmtD(G.d1)}`;
-      // totVen: usar el del merged (byDate es la fuente de verdad)
-      // Los demás agregados (byPE, byPC, etc.) vienen del CSV nuevo; si el merge es
-      // parcial (solo un mes extra) no se pueden recalcular sin las rows originales.
-      // Se mantienen del análisis nuevo y se suma la facturación anterior no cubierta.
-      const _ventasNoCubiertas=Object.entries(_gExistente.byDate||{})
-        .filter(([d])=>!G.byDate[d]||(G.byDate[d]===_byDateMerged[d]&&!Object.keys(G.byDate).includes(d)))
-        .reduce((s,[,v])=>s+v,0);
-      G.totVen=_totVenMerged;
-      console.log('[RESTAID] Merge aplicado:',_d0Ext,'→',_d1Ext,'+ nuevo',_d0New,'→',_d1New,'= total',_allDates.length,'días',Math.round(_totVenMerged),'€');
-      // Actualizar UI con el periodo ampliado
       if($('tbSub'))$('tbSub').textContent=G.periodStr;
-      toast&&toast('Datos fusionados: '+G.periodStr);
+      console.log('[RESTAID] Merge aplicado:',_d0Ext,'–',_d1Ext,'+ nuevo',_d0New,'–',_d1New,'=',_allDates.length,'días',Math.round(_totVenMerged)+'€');
     }
   }
+  // publishPub DESPUÉS del merge: index.html recibe el G completo (todo el año)
+  publishPub(G);
   saveVentasToDB(_añoAnalisis);
 }
 function updateCartaUI(){}
