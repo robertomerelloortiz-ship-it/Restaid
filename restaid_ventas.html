@@ -1114,9 +1114,48 @@ async function runAnalysis(){
   $('btnReset').style.display='';$('btnSettings').style.display='';$('btnPrint').style.display='';
   $('upload-screen').style.display='none';$('pages').style.display='';$('tabbar').style.display='flex';if($('tbSub'))$('tbSub').textContent=G&&G.periodStr?G.periodStr:'';document.body.classList.add('has-data');
   renderAll();showPage('resumen');
-  // Guardar con el año correcto del análisis actual
+  // Guardar con el año correcto del análisis actual.
+  // MERGE: si ya existía un G para este año con fechas distintas, fusionar byDate
+  // día a día antes de guardar. Así subir solo junio no borra enero-mayo.
   const _añoAnalisis=G.d0?G.d0.slice(0,4):String(new Date().getFullYear());
   console.log('[RESTAID] Año del análisis:',_añoAnalisis);
+  const _gExistente=AÑOS_DISPONIBLES[_añoAnalisis];
+  if(_gExistente&&_gExistente.byDate&&G.byDate){
+    const _d0Ext=_gExistente.d0||'',_d1Ext=_gExistente.d1||'';
+    const _d0New=G.d0||'',_d1New=G.d1||'';
+    // Solo mergear si los rangos no se solapan completamente (el nuevo no cubre ya todo)
+    const _noSolapa=(_d0New>_d0Ext||_d1New<_d1Ext);
+    if(_noSolapa){
+      // Combinar byDate: los días del existente que el nuevo no cubre
+      const _byDateMerged=Object.assign({},_gExistente.byDate,G.byDate);
+      // Recalcular los agregados que dependen de byDate
+      const _allDates=Object.keys(_byDateMerged).sort();
+      const _totVenMerged=Object.values(_byDateMerged).reduce((s,v)=>s+v,0);
+      // Recalcular byMonth desde byDate merged
+      const _byMonthMerged={};
+      _allDates.forEach(d=>{const m=d.slice(0,7);_byMonthMerged[m]=(_byMonthMerged[m]||0)+_byDateMerged[d];});
+      // Aplicar el merge a G
+      G.byDate=_byDateMerged;
+      G.byMonth=_byMonthMerged;
+      G.d0=_allDates[0]||G.d0;
+      G.d1=_allDates[_allDates.length-1]||G.d1;
+      G.nDays=_allDates.length;
+      const _fmtD=s=>s?s.split('-').reverse().join('/'):'';
+      G.periodStr=G.d0===G.d1?_fmtD(G.d0):`${_fmtD(G.d0)} – ${_fmtD(G.d1)}`;
+      // totVen: usar el del merged (byDate es la fuente de verdad)
+      // Los demás agregados (byPE, byPC, etc.) vienen del CSV nuevo; si el merge es
+      // parcial (solo un mes extra) no se pueden recalcular sin las rows originales.
+      // Se mantienen del análisis nuevo y se suma la facturación anterior no cubierta.
+      const _ventasNoCubiertas=Object.entries(_gExistente.byDate||{})
+        .filter(([d])=>!G.byDate[d]||(G.byDate[d]===_byDateMerged[d]&&!Object.keys(G.byDate).includes(d)))
+        .reduce((s,[,v])=>s+v,0);
+      G.totVen=_totVenMerged;
+      console.log('[RESTAID] Merge aplicado:',_d0Ext,'→',_d1Ext,'+ nuevo',_d0New,'→',_d1New,'= total',_allDates.length,'días',Math.round(_totVenMerged),'€');
+      // Actualizar UI con el periodo ampliado
+      if($('tbSub'))$('tbSub').textContent=G.periodStr;
+      toast&&toast('Datos fusionados: '+G.periodStr);
+    }
+  }
   saveVentasToDB(_añoAnalisis);
 }
 function updateCartaUI(){}
@@ -2543,11 +2582,11 @@ function escComidaRow(nombre,item){
     <td class="num"><span class="fc-badge ${cls}">${fcPct!=null?fc(fcPct,0)+'%':'—'}</span></td>
     <td class="num">${cm!=null?fc(cm)+' €':'—'}</td>
     <td class="num" title="Total del plato (todas las porciones): ${salesVolName(nombre)} ud">${salesVolVar(nombre,sel)}</td>
-    <td class="num"><button class="mini-btn" onclick="escEditar('${escEsc(nombre)}','${sel}')">✎ Editar</button></td></tr>`;
+    <td class="num"><button class="mini-btn" onclick="escEditar('${escEsc(nombre)}','${sel}')">✎ Editar</button> <button class="mini-btn" onclick="escEstimarUno('${escEsc(nombre)}','${sel}',this)">✨ IA</button></td></tr>`;
 }
 function renderEscComida(){
   const c=cartaStruct();const items=escFoodItems();
-  const head=`<div class="esc-bar"><p>${c?`Estructura de tu carta: <strong>${items.length} platos</strong> en ${c.secciones.length} apartados, en su orden. Cada plato muestra solo las porciones que ofrece, con su precio de carta.`:`<strong>Aviso:</strong> aún no hay una carta estructurada cargada, así que se listan los platos del TPV. Sube la carta (imagen o PDF) en la pantalla de carga para ver solo tus platos, ordenados por apartados.`} Introduce el coste de cada plato editando su escandallo.</p></div>`;
+  const head=`<div class="esc-bar"><p>${c?`Estructura de tu carta: <strong>${items.length} platos</strong> en ${c.secciones.length} apartados, en su orden. Cada plato muestra solo las porciones que ofrece, con su precio de carta.`:`<strong>Aviso:</strong> aún no hay una carta estructurada cargada, así que se listan los platos del TPV. Sube la carta (imagen o PDF) en la pantalla de carga para ver solo tus platos, ordenados por apartados.`} La IA puede rellenar un borrador y tú solo ajustas.</p><button class="btn btn-amber btn-sm" id="btnEscAll" onclick="escEstimarTodos()">✨ Rellenar raciones con IA</button></div>`;
   if(!items.length){$('esc-tab-body').innerHTML=head+`<div class="panel"><div class="empty">No hay platos. Sube la carta (imagen/PDF) en la pantalla de carga para generar la lista.</div></div>`;return;}
   let body='';
   if(c){
@@ -2580,7 +2619,7 @@ function bevRow(d){
     <td class="num"><span class="fc-badge ${cls}">${fcPct!=null?fc(fcPct,0)+'%':'—'}</span></td>
     <td class="num">${cm!=null?fc(cm)+' €':'—'}</td>
     <td class="num">${G.byPU[d]||0}</td>
-    <td class="num"><button class="mini-btn" onclick="escEditar('${escEsc(d)}','${sel}')">✎ Editar</button></td></tr>`;
+    <td class="num"><button class="mini-btn" onclick="escEditar('${escEsc(d)}','${sel}')">✎ Editar</button> <button class="mini-btn" onclick="escEstimarUno('${escEsc(d)}','${sel}',this)">✨ IA</button></td></tr>`;
 }
 function renderEscBebida(dishes){
   if(!dishes.length){$('esc-tab-body').innerHTML='<div class="esc-bar"><p>No se detectaron bebidas.</p></div>';return;}
@@ -2588,7 +2627,7 @@ function renderEscBebida(dishes){
   dishes.forEach(d=>{const c=G.byPC[d]||'Sin categoría';(catMap[c]=catMap[c]||[]).push(d);});
   const cats=Object.keys(catMap).sort((a,b)=>catMap[b].reduce((s,d)=>s+(G.byPE[d]||0),0)-catMap[a].reduce((s,d)=>s+(G.byPE[d]||0),0));
   const totalWithC=dishes.filter(d=>{const fmts=bevFormatos(G.byPC[d]);return fmts.some(f=>vcoste(d,f.id)!=null);}).length;
-  let html=`<div class="esc-bar"><p>Tus <strong>${dishes.length} bebidas</strong> en <strong>${cats.length} categorías</strong>. ${totalWithC} con coste introducido.</p></div>`;
+  let html=`<div class="esc-bar"><p>Tus <strong>${dishes.length} bebidas</strong> en <strong>${cats.length} categorías</strong>. ${totalWithC} con coste introducido.</p><button class="btn btn-amber btn-sm" id="btnEscAll" onclick="escEstimarTodos()">✨ Rellenar bebidas con IA</button></div>`;
   cats.forEach(cat=>{
     const items=catMap[cat].slice().sort((a,b)=>(G.byPE[b]||0)-(G.byPE[a]||0));
     html+=`<div class="panel" style="padding:0;overflow-x:auto;margin-bottom:12px">
@@ -2627,7 +2666,7 @@ function escRenderModal(){
   host.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)escCerrar()"><div class="modal wide">
     <h3>${ESC_CUR} · ${vidLabel}</h3><div class="modal-sub">Escandallo de ${esBebida?'este formato':'esta porción'}</div>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:1rem"><label style="font-size:12px;color:var(--tx2);font-weight:600">PVP (€)</label><input style="width:90px;padding:7px 9px;border:1px solid var(--bdr-strong);border-radius:6px;font-size:13px;font-family:inherit;text-align:right" value="${escAttr(ESC_PVP)}" placeholder="0,00" onchange="ESC_PVP=this.value;escRenderModal()"><span style="font-size:11px;color:var(--tx3)">${ESC_VID==='racion'&&!esBebida?'(por defecto, tu precio medio de venta)':''}</span></div>
-    <div class="ai-hint">Indica el coste en € de cada ingrediente en esta porción (la herramienta los suma).</div>
+    <div class="ai-hint">Indica el coste en € de cada ingrediente en esta porción (la herramienta los suma). O pulsa «Rellenar con IA» y luego ajusta.</div>
     <div class="rec-head"><span>Ingrediente</span><span>Cant.</span><span>Ud.</span><span>Coste €</span><span></span></div>
     <div>${(()=>{
       const _ings=invIngredientes(); const _has=_ings.length>0;
@@ -2644,7 +2683,7 @@ function escRenderModal(){
     })()}</div>
     <button class="mini-btn" style="margin-top:4px" onclick="escAdd()">+ Añadir ingrediente</button>
     <div class="rec-total"><span>Coste total · food cost <span class="fc-badge ${fcp<=33?'fc-good':fcp<=40?'fc-mid':'fc-bad'}">${pvp>0?fc(fcp,0)+'%':'—'}</span></span><strong>${fc(total)} €</strong></div>
-    <div class="modal-actions"><button class="btn btn-ghost btn-sm" onclick="escCerrar()">Cancelar</button><button class="btn btn-amber btn-sm" onclick="escGuardar()">Guardar</button></div>
+    <div class="modal-actions"><button class="btn btn-ghost btn-sm" id="btnEscRecIA" onclick="escEstimarReceta()">✨ Rellenar con IA</button><button class="btn btn-ghost btn-sm" onclick="escCerrar()">Cancelar</button><button class="btn btn-amber btn-sm" onclick="escGuardar()">Guardar</button></div>
   </div></div>`;
 }
 function escUpd(i,k,v){ESC_LINES[i][k]=v;escRenderModal();}
@@ -2664,7 +2703,18 @@ function escGuardar(){
 }
 
 function escJson(txt){const t=txt.replace(/```json\s*/g,'').replace(/```\s*/g,'').trim();try{return JSON.parse(t);}catch(e){const m=t.match(/\{[\s\S]*\}/);if(m)try{return JSON.parse(m[0]);}catch(e2){}return null;}}
+async function escEstimarReceta(){const btn=$('btnEscRecIA');if(!btn)return;btn.innerHTML='<span class="spin"></span> Estimando...';btn.disabled=true;const esBebida=isBev(G.byPC[ESC_CUR]);const porcion=esBebida?'una unidad servida':`una ${vlbl(ESC_VID).toLowerCase()}`;try{const res=await fetch(API_URL,{method:'POST',headers:aiHeaders(),body:JSON.stringify({model:MODEL,max_tokens:900,system:'Eres un chef experto en escandallos de restaurante español. Recetas realistas con costes de mercado actuales. Ajusta las cantidades al tamaño de porción indicado (una tapa es bastante menor que una ración). Responde SOLO JSON válido sin texto ni backticks.',messages:[{role:'user',content:`Plato "${ESC_CUR}", porción: ${porcion}. Desglosa su escandallo. Formato: {"receta":[{"ing":"nombre","cant":120,"ud":"g","importe":0.40}]} donde importe es el coste en € de ese ingrediente en esa porción.`}]})});if(!res.ok)throw 0;const d=await res.json();const p=escJson(d.content.filter(b=>b.type==='text').map(b=>b.text).join(''));if(p&&p.receta&&p.receta.length){ESC_LINES=p.receta.map(l=>({ing:l.ing||'',cant:l.cant!=null?l.cant:'',ud:l.ud||'g',importe:l.importe!=null?l.importe:''}));escRenderModal();}else throw 0;}catch(e){btn.innerHTML='✨ Rellenar con IA';btn.disabled=false;escToast('No se pudo estimar (la IA requiere la app de Claude).');}}
+async function escEstimarUno(dish,vid,btn){btn.innerHTML='<span class="spin"></span>';btn.disabled=true;const esBebida=isBev(G.byPC[dish]);const fmtLbl=esBebida?(bevFormatos(G.byPC[dish]).find(f=>f.id===vid)?.lbl||vid):'';const porcion=esBebida?`una ${fmtLbl.toLowerCase()} de`:`una ${vlbl(vid).toLowerCase()} de`;try{const res=await fetch(API_URL,{method:'POST',headers:aiHeaders(),body:JSON.stringify({model:MODEL,max_tokens:250,system:'Experto en escandallos de restaurante español. Ajusta el coste al tamaño de porción. Responde SOLO JSON.',messages:[{role:'user',content:`Coste de materia prima (€) de ${porcion} "${dish}" en España. Formato: {"coste":number}`}]})});if(!res.ok)throw 0;const d=await res.json();const p=escJson(d.content.filter(b=>b.type==='text').map(b=>b.text).join(''));if(p&&p.coste!=null){const prev=vget(dish,vid)||{};vset(dish,vid,{...prev,coste:Math.round(p.coste*100)/100,metodo:'ia'});renderEscandallo();renderRentabilidad();}else throw 0;}catch(e){btn.innerHTML='✨ IA';btn.disabled=false;escToast('No se pudo estimar (la IA requiere la app de Claude).');}}
+async function escEstimarTodos(){
+  const btn=$('btnEscAll');
   const cand=ESC_TAB==='comida'?escFoodItems().map(i=>i.nombre):escBebidas();
+  const pend=cand.filter(d=>vcoste(d,'racion')==null);
+  if(!pend.length){escToast('Ya tienen coste todos.');return;}
+  btn.innerHTML='<span class="spin"></span> Estimando '+pend.length+'...';btn.disabled=true;
+  const tipo=ESC_TAB==='comida'?'plato (ración)':'bebida (unidad servida)';
+  const lista=pend.map(d=>`${d} (PVP ${fc(vpvp(d,'racion')||0)}€)`).join('\n');
+  try{const res=await fetch(API_URL,{method:'POST',headers:aiHeaders(),body:JSON.stringify({model:MODEL,max_tokens:3000,system:'Eres un chef experto en escandallos de restaurante español. Estimas el coste de materia prima a precios de mercado actuales, realista. Responde SOLO JSON válido.',messages:[{role:'user',content:`Estima el coste de materia prima (€) de cada ${tipo}. Usa el nombre EXACTO tal cual.\n${lista}\nFormato: {"costes":{"nombre":coste_number}}`}]})});if(!res.ok)throw 0;const d=await res.json();const p=escJson(d.content.filter(b=>b.type==='text').map(b=>b.text).join(''));
+  if(p&&p.costes){let nn=0;const finder=k=>cand.find(x=>normalStr(x)===normalStr(k))||cand.find(x=>normalStr(x).includes(normalStr(k))||normalStr(k).includes(normalStr(x)));Object.keys(p.costes).forEach(k=>{const m=finder(k);if(m&&p.costes[k]!=null){const prev=vget(m,'racion')||{};vset(m,'racion',{...prev,coste:Math.round(p.costes[k]*100)/100,metodo:'ia'});nn++;}});renderEscandallo();renderRentabilidad();escToast(`Estimados ${nn}. Revísalos y ajusta lo que quieras — son aproximaciones.`);}else throw 0;}catch(e){btn.innerHTML=ESC_TAB==='comida'?'✨ Rellenar raciones con IA':'✨ Rellenar bebidas con IA';btn.disabled=false;escToast('No se pudo estimar (la IA requiere la app de Claude).');}}
 
 /* ═══════════════════════════════════════════════════════════════════
    PLAN DE ACCIÓN — recomendaciones específicas por plato
@@ -2792,7 +2842,7 @@ function renderRentabilidad(){
   if(!G)return;
   const mode=ME_MARGIN;
   const rows=escVariantRows(),me=escMenuEng(rows,mode);
-  if(!me.wc.length){$('pg-rentabilidad').innerHTML=`<div class="page-hd"><h2>Rentabilidad — Menu Engineering</h2></div><div class="panel"><div class="empty">Aún no hay porciones con coste.<br>Ve a <strong>Escandallo</strong> e introduce el coste de tus platos para desbloquear esta matriz.</div></div>`;return;}
+  if(!me.wc.length){$('pg-rentabilidad').innerHTML=`<div class="page-hd"><h2>Rentabilidad — Menu Engineering</h2></div><div class="panel"><div class="empty">Aún no hay porciones con coste.<br>Ve a <strong>Escandallo</strong> y pulsa «Rellenar todos con IA» para desbloquear esta matriz.</div></div>`;return;}
   const isPct=mode==='pct';
   const yfmt=v=>isPct?fc(v,0)+'%':fc(v,0)+' €';
   const ytip=v=>isPct?fc(v,1)+'%':fc(v)+' €';
