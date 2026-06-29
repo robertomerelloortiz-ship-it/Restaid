@@ -204,6 +204,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
 .emp-card-stats{display:flex;flex-direction:column;gap:6px;padding-top:.85rem;border-top:1px solid var(--bdr)}
 .emp-card-stat{display:flex;justify-content:space-between;font-size:12px}
 .emp-card-stat span:first-child{color:var(--tx3)}
+.baja-it-badge{display:inline-flex;align-items:center;gap:4px;background:#FEF3C7;color:#92400E;border:1px solid #FCD34D;border-radius:8px;font-size:10.5px;font-weight:700;padding:2px 9px;letter-spacing:.03em}
+.emp-card.baja-it{opacity:.75;border-left:3px solid #FCD34D}
 .emp-card-stat span:last-child{font-weight:600}
 .emp-card-acts{display:flex;gap:6px;margin-top:.85rem}
 .emp-card-acts .btn{flex:1;justify-content:center}
@@ -917,19 +919,22 @@ function renderEmpleados(){
 function empCard(e,w){
   const hSem=horasEmpSemana(w,e.id),sH=calcSalarioHora(e),pasivo=calcPasivoLaboral(e);
   const over=e.horasContrato&&hSem>e.horasContrato;
-  return `<div class="emp-card">
+  const esBaja=!!e.bajaIT;
+  const costeBaja=esBaja?(Number(e.costeITMes)||0):0;
+  return `<div class="emp-card${esBaja?' baja-it':''}">
     <div class="emp-card-top">
       ${empAvatar(e)}
-      <div><div class="emp-card-name">${esc(e.nombre)}</div><div class="emp-card-rol"><span class="emp-role-tag ${roleClass(e.rol)}">${esc(e.rol)}</span> · ${esc(e.contrato||'—')}</div></div>
+      <div><div class="emp-card-name">${esc(e.nombre)}</div><div class="emp-card-rol"><span class="emp-role-tag ${roleClass(e.rol)}">${esc(e.rol)}</span> · ${esc(e.contrato||'—')}</div>${esBaja?`<div style="margin-top:4px"><span class="baja-it-badge">🏥 BAJA IT</span></div>`:''}</div>
     </div>
     <div class="emp-card-stats">
+      ${esBaja?`<div class="emp-card-stat"><span>Coste mensual en baja</span><span style="font-weight:600;color:#92400E">${fc(costeBaja,0)} €/mes</span></div>`:`
       <div class="emp-card-stat"><span>Salario bruto/mes</span><span>${fc(e.salarioBrutoMes||0,0)} €</span></div>
       <div class="emp-card-stat"><span>→ €/hora bruto</span><span>${fc(sH)} €/h</span></div>
       <div class="emp-card-stat"><span>Coste empresa/hora</span><span>${fc(sH*DB.config.ssMult)} €/h</span></div>
       <div class="emp-card-stat"><span>Contrato</span><span>${e.horasContrato?fc(e.horasContrato,0)+' h/sem':'—'}</span></div>
       <div class="emp-card-stat"><span>Planif. esta semana</span><span style="color:${over?'var(--red)':'inherit'}">${fc(hSem,1)} h</span></div>
       <div class="emp-card-stat"><span>Descanso estándar</span><span>${e.diaDescanso?esc(e.diaDescanso):'—'}</span></div>
-      <div class="emp-card-stat"><span>Pasivo laboral</span><span>${pasivo>0?`<span class="pasivo-tag">${fk(pasivo)} €</span>`:'—'}</span></div>
+      <div class="emp-card-stat"><span>Pasivo laboral</span><span>${pasivo>0?`<span class="pasivo-tag">${fk(pasivo)} €</span>`:'—'}</span></div>`}
     </div>
     <div class="emp-card-acts">
       <button class="btn btn-ghost btn-sm" onclick="openEmpModal('${e.id}')">Editar</button>
@@ -960,6 +965,15 @@ function openEmpModal(id){
     <div class="field-row">
       <div class="field"><label>PIN de fichaje (4 dígitos)</label><input id="em-pin" type="text" inputmode="numeric" maxlength="4" value="${e.pin||''}" placeholder="Ej. 1234"><div class="field-hint">Cada persona ficha su entrada/salida con este PIN. Debe ser único.</div></div>
     </div>
+    <div class="field" style="margin-top:.5rem">
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+        <input type="checkbox" id="em-bajaIT" ${e.bajaIT?'checked':''} onchange="empBajaChange()">
+        <span>🏥 Empleado en baja médica (IT)</span>
+      </label>
+    </div>
+    <div id="em-baja-wrap" style="display:${e.bajaIT?'block':'none'}">
+      <div class="field"><label>Coste mensual en baja (€/mes)</label><input id="em-costeIT" type="number" step="1" value="${e.costeITMes||''}" placeholder="Ej. 900"><div class="field-hint">Lo que pagas mientras dura la IT (complemento, SS, etc.). Se suma al coste laboral mensual.</div></div>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-amber btn-sm" onclick="saveEmp('${id||''}')">${id?'Guardar':'Añadir'}</button>
@@ -982,6 +996,10 @@ function empSalaryPreview(){
   const costeEmpresa=porHora*DB.config.ssMult;
   pv.innerHTML=`<div><strong>${fc(porHora)} €/h</strong> bruto</div><div><strong>${fc(costeEmpresa)} €/h</strong> coste empresa</div><div><strong>${fc(mes*12,0)} €/año</strong> anual</div>`;
 }
+function empBajaChange(){
+  const cb=$('em-bajaIT');
+  $('em-baja-wrap').style.display=cb&&cb.checked?'block':'none';
+}
 function saveEmp(id){
   const nombre=$('em-nombre').value.trim();
   if(!nombre){toast('Pon al menos el nombre');return;}
@@ -991,7 +1009,9 @@ function saveEmp(id){
   const salarioBrutoMes=parseFloat($('em-salario-mes').value)||0;
   const horasContrato=parseFloat($('em-horas').value)||40;
   const salarioHora=salarioBrutoMes>0?salarioBrutoMes/(horasContrato*4.33):0;
-  const obj={nombre,rol:$('em-rol').value,contrato:$('em-contrato').value,salarioBrutoMes,salarioHora,horasContrato,fechaAlta:$('em-alta').value||'',diaDescanso:$('em-descanso').value||'',pin};
+  const bajaIT=!!($('em-bajaIT')?.checked);
+  const costeITMes=bajaIT?(parseFloat($('em-costeIT')?.value)||0):0;
+  const obj={nombre,rol:$('em-rol').value,contrato:$('em-contrato').value,salarioBrutoMes,salarioHora,horasContrato,fechaAlta:$('em-alta').value||'',diaDescanso:$('em-descanso').value||'',pin,bajaIT,costeITMes};
   if(id){const e=emp(id);Object.assign(e,obj);}
   else{obj.id=uid();obj.cumple='';obj.prefs='';obj.skills=[];obj.personal={};obj.vacaciones=[];obj.imagen='';DB.empleados.push(obj);}
   saveDB();closeModal();renderEmpleados();updateSidebar();toast(id?'Empleado actualizado':'Empleado añadido');
@@ -1014,8 +1034,9 @@ function renderCuadrante(){
   if(!DB.empleados.length){pg.innerHTML=`<div class="page-hd"><h2>Cuadrante</h2></div><div class="empty"><div class="empty-icon">📅</div><h3>Primero, tu equipo</h3><p>Necesitas empleados dados de alta para montar el cuadrante.</p><button class="btn btn-amber" onclick="showPage('empleados')">Añadir empleados →</button></div>`;return;}
   const w=curWeek();
   const todayWid=isoWeekId(new Date()),todayDow=(new Date().getDay()||7)-1,isCurWeek=DB.semanaActual===todayWid;
-  const salaEmps=DB.empleados.filter(e=>e.rol==='Sala'||e.rol==='Barra');
-  const cocEmps=DB.empleados.filter(e=>e.rol==='Cocina'||e.rol==='Office');
+  const salaEmps=DB.empleados.filter(e=>(e.rol==='Sala'||e.rol==='Barra')&&!e.bajaIT);
+  const cocEmps=DB.empleados.filter(e=>(e.rol==='Cocina'||e.rol==='Office')&&!e.bajaIT);
+  const bajaEmps=DB.empleados.filter(e=>e.bajaIT);
   const thDay=(d,i)=>`<th class="${isCurWeek&&i===todayDow?'today':''}">${d}</th>`;
   pg.innerHTML=`
   <div class="page-hd"><h2>Cuadrante</h2><p>Toca una celda para asignar turno</p></div>
@@ -1041,7 +1062,8 @@ function renderCuadrante(){
       <td class="cuad-total-cell" style="background:var(--navy);color:#fff">${(()=>{const v=ventasSemana(w),c=costeSemana(w),p=v>0?c/v*100:null;const pc=p==null?'':p<=DB.config.targetPct-2?'cuad-pct-ok':p<=DB.config.targetPct+5?'cuad-pct-warn':'cuad-pct-bad';return `<div class="cuad-foot-val">${fk(c)}€</div><div class="cuad-foot-pct ${pc}">${p!=null?fc(p,1)+'%':'sin ventas'}</div>`;})()}</td>
     </tr></tfoot>
   </table></div>
-  <p style="font-size:11px;color:var(--tx3);margin-top:.75rem;line-height:1.6">Dotación: fuerza presente vs necesaria (≈1 cam./${DB.config.ratioSala} comensales, 1 coc./${DB.config.ratioCocina}). Ticket medio: ${fc(DB.config.ticketMedio,0)}€.</p>`;
+  <p style="font-size:11px;color:var(--tx3);margin-top:.75rem;line-height:1.6">Dotación: fuerza presente vs necesaria (≈1 cam./${DB.config.ratioSala} comensales, 1 coc./${DB.config.ratioCocina}). Ticket medio: ${fc(DB.config.ticketMedio,0)}€.</p>
+  ${bajaEmps.length?`<div style="margin-top:1rem;padding:.75rem 1rem;background:#FFFBEB;border:1px solid #FCD34D;border-radius:10px;font-size:12.5px"><span style="font-weight:700;color:#92400E">🏥 En baja IT:</span> ${bajaEmps.map(e=>`<span style="margin-left:.5rem">${esc(e.nombre)}${e.costeITMes?` · <strong>${fc(e.costeITMes,0)}€/mes</strong>`:''}</span>`).join(' ·')}</div>`:''}`;
 }
 function renderCuadNow(){
   const dentro=DB.empleados.map(e=>({e,st:estadoFichaje(e.id)})).filter(x=>x.st.dentro);
@@ -1173,6 +1195,7 @@ function renderCostes(){
     <div class="kpi"><div class="kpi-lbl">Coste de personal</div><div class="kpi-val">${fk(coste)} €</div><div class="kpi-sub">con SS empresa</div></div>
     <div class="kpi"><div class="kpi-lbl">Pasivo laboral</div><div class="kpi-val">${fk(DB.empleados.reduce((s,e)=>s+calcPasivoLaboral(e),0))} €</div><div class="kpi-sub">coste total de despido</div></div>
   </div>
+  ${DB.empleados.some(e=>e.bajaIT)?`<div class="panel" style="border-left:3px solid #FCD34D"><p class="panel-title">🏥 Empleados en baja IT</p><table class="ct-table"><thead><tr><th>Empleado</th><th>Coste mensual</th></tr></thead><tbody>${DB.empleados.filter(e=>e.bajaIT).map(e=>`<tr><td>${esc(e.nombre)}</td><td style="font-weight:600;color:#92400E">${fc(e.costeITMes||0,0)} €/mes</td></tr>`).join('')}<tr style="border-top:1px solid var(--bdr)"><td style="font-weight:600">Total bajas IT</td><td style="font-weight:700;color:#92400E">${fc(DB.empleados.filter(e=>e.bajaIT).reduce((s,e)=>s+(Number(e.costeITMes)||0),0),0)} €/mes</td></tr></tbody></table></div>`:''}
   <div class="g2">
     <div class="panel"><p class="panel-title">Coste por día</p><table class="ct-table"><thead><tr><th>Día</th><th>Ventas</th><th>Coste</th><th>%</th></tr></thead><tbody>
       ${DIAS.map(d=>{const cd=costeDia(w,d),vd=ventasDia(w,d),p=vd>0?cd/vd*100:null;return `<tr><td>${d}</td><td>${fk(vd)} €</td><td>${fk(cd)} €</td><td>${p!=null?`<span class="ct-pct ${pctClass(p)}">${fc(p,0)}%</span>`:'—'}</td></tr>`;}).join('')}
