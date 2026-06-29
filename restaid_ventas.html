@@ -1102,11 +1102,10 @@ async function runAnalysis(){
     ttfoZona,rondasDist,nDiasTurno,eurosZT,comZT,tickZT,mesasPorZona,
     ocupGlobal,totalAsientos,tickHist,umbralMuerta,zonaDiasN,mesasZonaN,
     topEuros,empArr,cartaMuerta};
-  // Publicar en el core para otros módulos
+  // Publicar en el core para otros módulos — ANTES del merge para que la UI
+  // del propio módulo de ventas responda inmediatamente al análisis actual
   RESTAID.ventas=G;
   RESTAID.emit('ventas:ready',G);
-  // publishPub se llama DESPUÉS del merge (más abajo) para que index.html
-  // reciba el G completo (enero–hoy) y no solo el tramo del CSV nuevo
 
   RESTAID.emit('carta:ready');
   updateCartaUI();initSeatInputs();
@@ -1115,38 +1114,51 @@ async function runAnalysis(){
   $('btnReset').style.display='';$('btnSettings').style.display='';$('btnPrint').style.display='';
   $('upload-screen').style.display='none';$('pages').style.display='';$('tabbar').style.display='flex';if($('tbSub'))$('tbSub').textContent=G&&G.periodStr?G.periodStr:'';document.body.classList.add('has-data');
   renderAll();showPage('resumen');
-  // Guardar con el año correcto del análisis actual.
-  // MERGE: si ya existía un G para este año con fechas distintas, fusionar byDate
-  // día a día antes de guardar. Así subir solo junio no borra enero-mayo.
+
+  // Guardar con merge robusto:
+  // 1. Leer el G que está actualmente en Supabase para este año
+  // 2. Fusionar byDate día a día (Supabase es fuente de verdad, no AÑOS_DISPONIBLES en memoria)
+  // 3. Publicar el G mergeado a index.html
+  // 4. Guardar en Supabase
   const _añoAnalisis=G.d0?G.d0.slice(0,4):String(new Date().getFullYear());
-  console.log('[RESTAID] Año del análisis:',_añoAnalisis);
-  const _gExistente=AÑOS_DISPONIBLES[_añoAnalisis];
-  if(_gExistente&&_gExistente.byDate&&G.byDate){
-    const _d0Ext=_gExistente.d0||'',_d1Ext=_gExistente.d1||'';
-    const _d0New=G.d0||'',_d1New=G.d1||'';
-    // Solo mergear si el nuevo no cubre ya todo el rango anterior
-    const _noSolapa=(_d0New>_d0Ext||_d1New<_d1Ext);
-    if(_noSolapa){
-      const _byDateMerged=Object.assign({},_gExistente.byDate,G.byDate);
-      const _allDates=Object.keys(_byDateMerged).sort();
-      const _totVenMerged=Object.values(_byDateMerged).reduce((s,v)=>s+v,0);
-      const _byMonthMerged={};
-      _allDates.forEach(d=>{const m=d.slice(0,7);_byMonthMerged[m]=(_byMonthMerged[m]||0)+_byDateMerged[d];});
-      G.byDate=_byDateMerged;
-      G.byMonth=_byMonthMerged;
-      G.d0=_allDates[0]||G.d0;
-      G.d1=_allDates[_allDates.length-1]||G.d1;
-      G.nDays=_allDates.length;
-      G.totVen=_totVenMerged;
-      const _fmtD=s=>s?s.split('-').reverse().join('/'):'';
-      G.periodStr=G.d0===G.d1?_fmtD(G.d0):`${_fmtD(G.d0)} – ${_fmtD(G.d1)}`;
-      if($('tbSub'))$('tbSub').textContent=G.periodStr;
-      console.log('[RESTAID] Merge aplicado:',_d0Ext,'–',_d1Ext,'+ nuevo',_d0New,'–',_d1New,'=',_allDates.length,'días',Math.round(_totVenMerged)+'€');
-    }
-  }
-  // publishPub DESPUÉS del merge: index.html recibe el G completo (todo el año)
-  publishPub(G);
-  saveVentasToDB(_añoAnalisis);
+  console.log('[RESTAID] Año del análisis:',_añoAnalisis,'. Leyendo Supabase para merge…');
+  (async()=>{
+    try{
+      // Leer el registro actual de Supabase para este año
+      const _periodoKey='ag-'+_añoAnalisis;
+      const _sbRows=await sbGetV('ventas_productos');
+      const _sbRow=_sbRows&&_sbRows.find(r=>r.periodo===_periodoKey);
+      const _gSB=_sbRow&&_sbRow.datos;
+      if(_gSB&&_gSB.byDate&&G.byDate){
+        const _d0SB=_gSB.d0||'',_d1SB=_gSB.d1||'';
+        const _d0New=G.d0||'',_d1New=G.d1||'';
+        // Mergear solo si el nuevo no cubre ya todo el rango de Supabase
+        const _hayMasDatos=(_d0SB<_d0New||_d1SB>_d1New);
+        if(_hayMasDatos){
+          const _byDateM=Object.assign({},_gSB.byDate,G.byDate); // el nuevo prevalece día a día
+          const _dates=Object.keys(_byDateM).sort();
+          const _totM=Object.values(_byDateM).reduce((s,v)=>s+v,0);
+          const _byMonthM={};
+          _dates.forEach(d=>{const m=d.slice(0,7);_byMonthM[m]=(_byMonthM[m]||0)+_byDateM[d];});
+          const _fmtD=s=>s?s.split('-').reverse().join('/'):'';
+          G.byDate=_byDateM;
+          G.byMonth=_byMonthM;
+          G.d0=_dates[0];
+          G.d1=_dates[_dates.length-1];
+          G.nDays=_dates.length;
+          G.totVen=_totM;
+          G.periodStr=G.d0===G.d1?_fmtD(G.d0):`${_fmtD(G.d0)} – ${_fmtD(G.d1)}`;
+          if($('tbSub'))$('tbSub').textContent=G.periodStr;
+          console.log('[RESTAID] Merge OK:',_d0SB,'–',_d1SB,'+ nuevo',_d0New,'–',_d1New,'=',_dates.length,'días',Math.round(_totM)+'€');
+        }
+      }
+    }catch(_e){console.warn('[RESTAID] Merge desde SB fallido, guardando solo el análisis actual',_e);}
+    // Publicar a index.html DESPUÉS del merge (G ya tiene el año completo)
+    publishPub(G);
+    AÑOS_DISPONIBLES[_añoAnalisis]=JSON.parse(JSON.stringify(G,(_,v)=>v instanceof Set?[...v]:v));
+    renderYearTabs(_añoAnalisis);
+    saveVentasToDB(_añoAnalisis);
+  })();
 }
 function updateCartaUI(){}
 
