@@ -1218,6 +1218,13 @@ function updateCopilotBadge(n){
    Base = media histórica por día de la semana (prevSemana, ya separada en Comida/Cena),
    con un ajuste suave de tendencia (meses recientes vs media). El calendario/eventos
    se incorporan con "Afinar con IA". Devuelve los próximos 7 días desde hoy. */
+// Formatea una fecha como YYYY-MM-DD usando componentes LOCALES (no UTC).
+// IMPORTANTE: nunca usar date.toISOString().slice(0,10) con fechas locales —
+// toISOString() convierte a UTC, y en España (UTC+1/+2) la medianoche local
+// se desplaza al día anterior, dando fechas erróneas.
+function isoLocal(d){
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
 function computeForecast(v){
   if(!v||!v.prevSemana||!Object.keys(v.prevSemana).length) return null;
   const DOW=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
@@ -1243,7 +1250,7 @@ function computeForecast(v){
     const cena=ps?Math.round((Number(ps.Cena)||0)*trend):0;
     const eur=comida+cena;
     out.push({
-      iso:d.toISOString().slice(0,10), dow,
+      iso:isoLocal(d), dow,
       dd:String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0'),
       comida, cena, eur, eurTxt:ceur(eur),
       comensales:(eur&&cap)?Math.round(eur/cap):null,
@@ -1314,7 +1321,7 @@ function renderHomeRevo(box,r,v,pub){
     }
   }catch(e){}
   if(HOME_PERIOD==='hoy'){
-    const hoyISO=new Date().toISOString().slice(0,10);
+    const hoyISO=isoLocal(new Date());
     const vh=v.ventasHoy;
     if(vh&&vh.fecha===hoyISO&&vh.euros>0){
       // Datos reales de Revo para hoy
@@ -1335,7 +1342,7 @@ function renderHomeRevo(box,r,v,pub){
     }
     perComensal=capRef;
   } else if(HOME_PERIOD==='ayer'){
-    const ayerISO=(()=>{const d=new Date();d.setDate(d.getDate()-1);return d.toISOString().slice(0,10);})();
+    const ayerISO=(()=>{const d=new Date();d.setDate(d.getDate()-1);return isoLocal(d);})();
     const vr=v.ventasRecientes;
     if(vr&&vr[ayerISO]!=null&&vr[ayerISO]>0){
       // Datos reales de Revo
@@ -1365,7 +1372,7 @@ function renderHomeRevo(box,r,v,pub){
     const dowHoy=hoyS.getDay();
     const lunesOffset=dowHoy===0?-6:(1-dowHoy);
     const lunes=new Date(hoyS.getTime()+lunesOffset*86400000);
-    const lunISO=lunes.toISOString().slice(0,10);
+    const lunISO=isoLocal(lunes);
     const diasTranscurridos=Math.round((hoyS-lunes)/86400000)+1;
     const DOW_ES=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
     const prevSem=v.prevSemana||{};
@@ -1391,13 +1398,13 @@ function renderHomeRevo(box,r,v,pub){
     const vrS=v.ventasRecientes||{};
     let ventasRealHastaAyer=0;
     for(let i=0;i<diasCompletados;i++){
-      const f=new Date(lunes.getTime()+i*86400000).toISOString().slice(0,10);
+      const f=isoLocal(new Date(lunes.getTime()+i*86400000));
       if(vrS[f]!=null)ventasRealHastaAyer+=vrS[f];
     }
     // Real TOTAL de la semana (incluye hoy, aunque esté a medias) — este es el número que se muestra en grande
     let ventasRealS=0; let hayRealS=false;
     for(let i=0;i<diasTranscurridos;i++){
-      const f=new Date(lunes.getTime()+i*86400000).toISOString().slice(0,10);
+      const f=isoLocal(new Date(lunes.getTime()+i*86400000));
       if(vrS[f]!=null){ventasRealS+=vrS[f];hayRealS=true;}
     }
     if(hayRealS){
@@ -1412,7 +1419,7 @@ function renderHomeRevo(box,r,v,pub){
 
   } else if(HOME_PERIOD==='mes'){
     const hoyM=new Date(); hoyM.setHours(0,0,0,0);
-    const hoyMISO=hoyM.toISOString().slice(0,10);
+    const hoyMISO=isoLocal(hoyM);
     const mesISO=hoyMISO.slice(0,7);
     const diasEnMes=new Date(hoyM.getFullYear(),hoyM.getMonth()+1,0).getDate();
     const diaActual=hoyM.getDate();
@@ -1567,7 +1574,7 @@ function renderHomeRevo(box,r,v,pub){
         <div class="revo-hero-val">${ventasStr}</div>
         ${varAnual!=null?`
         <div class="revo-hero-var ${varAnual.pct>=0?'up':'down'}">
-          ${varAnual.pct>=0?'▲':'▼'} ${Math.abs(varAnual.pct)}% vs ${varAnual.nota||varAnual.añoPrev}
+          ${varAnual.pct>=0?'▲':'▼'} ${Math.abs(varAnual.pct)}% ${varAnual.nota||('vs '+varAnual.añoPrev)}
         </div>`:''}
         <div class="revo-hero-lbl">
           ${periodoLbl||'Ventas'}

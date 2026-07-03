@@ -826,7 +826,7 @@ function publishPub(g){
     // Ventas del día de hoy (para KPIs en tiempo real en index.html)
     let ventasHoy=null;
     try{
-      const hoyISO=new Date().toISOString().slice(0,10);
+      const hoyISO=isoLocal(new Date());
       if(g.byDate&&g.byDate[hoyISO]!=null){
         ventasHoy={
           fecha:hoyISO,
@@ -3088,6 +3088,12 @@ loadVentasFromDB();
    Itera mes a mes para respetar el límite de 1 mes por llamada.
    No usa revoStatus para no interferir con el botón manual.
 ═══════════════════════════════════════════════════════════════════ */
+// Formatea una fecha como YYYY-MM-DD usando componentes LOCALES (no UTC).
+// toISOString() convierte a UTC y desplaza la medianoche local un día atrás
+// en España (UTC+1/+2), dando fechas erróneas al construir rangos.
+function isoLocal(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
 async function fetchRevoRange(desdeISO, hastaISO, pass) {
   var all = [];
   // Construir lista de tramos mensuales que cubren [desdeISO, hastaISO]
@@ -3098,11 +3104,11 @@ async function fetchRevoRange(desdeISO, hastaISO, pass) {
     var yyyy = cur.getFullYear();
     var mm   = String(cur.getMonth() + 1).padStart(2, '0');
     // Primer día del tramo: cur ó el 1 del mes, lo que sea mayor
-    var diaIni = cur.toISOString().slice(0, 10);
+    var diaIni = isoLocal(cur);
     // Último día del tramo: fin del mes ó hastaISO, lo que sea menor
     var ultimoMes = new Date(yyyy, cur.getMonth() + 1, 0); // último día del mes
     var diaFin = ultimoMes <= fin
-      ? ultimoMes.toISOString().slice(0, 10)
+      ? isoLocal(ultimoMes)
       : hastaISO;
 
     var page = 1, lastPage = 1;
@@ -3139,7 +3145,7 @@ async function autoRefreshPendiente() {
 
   // Fecha de hoy en ISO
   var hoy = new Date();
-  var fechaHoy = hoy.toISOString().slice(0, 10);
+  var fechaHoy = isoLocal(hoy);
 
   // Año activo en pantalla
   var añoStr = String(hoy.getFullYear());
@@ -3151,7 +3157,7 @@ async function autoRefreshPendiente() {
     // Pedir desde el día siguiente al último que tenemos
     var d1 = new Date(gActivo.d1 + 'T00:00:00');
     d1.setDate(d1.getDate() + 1);
-    desde = d1.toISOString().slice(0, 10);
+    desde = isoLocal(d1);
   } else {
     // No hay datos del año actual: pedir desde el 1 de enero
     desde = añoStr + '-01-01';
