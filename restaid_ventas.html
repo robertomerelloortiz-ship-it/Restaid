@@ -3190,9 +3190,16 @@ async function autoRefreshPendiente() {
       var fecha = (o.tancada || o.oberta || '').slice(0, 10);
       if (fecha) totalPorDia[fecha] = (totalPorDia[fecha] || 0) + (o.total || 0);
     });
-    // Garantizar que el rango queda marcado como analizado hasta hoy,
-    // aunque no haya pedidos en algunos días (cierre, festivos, turno aún abierto)
-    if (!totalPorDia[fechaHoy]) totalPorDia[fechaHoy] = totalPorDia[fechaHoy] || 0;
+    // Garantizar que TODOS los días del rango quedan en byDate, aunque sean 0€ (cierre).
+    // Sin esto, los días sin pedidos no aparecen en ventasRecientes y el index.html
+    // no puede distinguir "día cerrado" de "dato no descargado aún".
+    var curRango=new Date(desde+'T12:00:00');
+    var finRango=new Date(fechaHoy+'T12:00:00');
+    while(curRango<=finRango){
+      var fRango=isoLocal(curRango);
+      if(totalPorDia[fRango]==null) totalPorDia[fRango]=0;
+      curRango.setDate(curRango.getDate()+1);
+    }
 
     if (gActivo && G && G.byDate) {
       // Fusionar: los días de Revo prevalecen sobre los de Supabase
