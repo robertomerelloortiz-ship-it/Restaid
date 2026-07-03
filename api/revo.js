@@ -19,7 +19,7 @@ const BASE = 'https://api.integrations.revoxef.works';
 const RESOURCES = {
   warehouses: '/classic/warehouses',
   stocks:     '/classic/stocks',
-  orders:     '/classic/reports/orders',   // requiere start + end
+  orders:     '/classic/reports/v3/orders', // requiere start + end
   catalog:    '/classic/catalog/items',    // "items" = todos los tipos en uno (tip de Cegid)
   suppliers:  '/classic/purchase/suppliers',
   payments:   '/classic/payments/methods',
