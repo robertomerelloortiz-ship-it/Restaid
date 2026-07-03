@@ -1313,11 +1313,26 @@ function renderHomeRevo(box,r,v,pub){
     }
   }catch(e){}
   if(HOME_PERIOD==='hoy'){
-    // Previsión de hoy desde el motor de previsión (estimado)
-    estimado=true;
-    if(fc&&fc.dias[0]){ ventas=fc.dias[0].eur||null; comensales=fc.dias[0].comensales; }
+    const hoyISO=new Date().toISOString().slice(0,10);
+    const vh=v.ventasHoy;
+    if(vh&&vh.fecha===hoyISO&&vh.euros>0){
+      // Datos reales de Revo para hoy
+      ventas=vh.euros;
+      estimado=false;
+      periodoLbl='Hoy (datos reales)';
+      if(capRef&&ventas)comensales=Math.round(ventas/capRef);
+      // Variación vs la previsión del mismo día
+      if(fc&&fc.dias[0]&&fc.dias[0].eur>0){
+        const prev=fc.dias[0].eur;
+        varAnual={pct:Math.round((ventas-prev)/prev*1000)/10,añoPrev:'prev.',nota:'vs previsión'};
+      }
+    } else {
+      // Sin datos reales aún (antes del servicio): mostrar previsión
+      estimado=true;
+      if(fc&&fc.dias[0]){ ventas=fc.dias[0].eur||null; comensales=fc.dias[0].comensales; }
+      periodoLbl='Previsión de hoy';
+    }
     perComensal=capRef;
-    periodoLbl='Previsión de hoy';
   } else if(HOME_PERIOD==='semana'){
     ventas=r.ventasSemana||0;
     estimado=true;

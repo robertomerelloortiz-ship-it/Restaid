@@ -823,6 +823,20 @@ function publishPub(g){
         });
       }
     }catch(e){}
+    // Ventas del día de hoy (para KPIs en tiempo real en index.html)
+    let ventasHoy=null;
+    try{
+      const hoyISO=new Date().toISOString().slice(0,10);
+      if(g.byDate&&g.byDate[hoyISO]!=null){
+        ventasHoy={
+          fecha:hoyISO,
+          euros:Math.round(g.byDate[hoyISO]),
+          // Tickets de hoy: contar órdenes cuya fecha coincide con hoy
+          // (no está en G agregado, se estima por ratio días)
+          esHoy:true
+        };
+      }
+    }catch(e){}
     pub.ventas={
       prevSemana:prev,
       porAño,
@@ -843,6 +857,7 @@ function publishPub(g){
       ventasPorTurno,
       ventasPorZona,
       consumo,
+      ventasHoy,
       _ts:Date.now()
     };
     localStorage.setItem('restaid_pub_v1',JSON.stringify(pub));
