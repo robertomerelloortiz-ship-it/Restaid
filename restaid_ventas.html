@@ -3148,6 +3148,9 @@ async function autoRefreshPendiente() {
       var fecha = (o.tancada || o.oberta || '').slice(0, 10);
       if (fecha) totalPorDia[fecha] = (totalPorDia[fecha] || 0) + (o.total || 0);
     });
+    // Garantizar que el rango queda marcado como analizado hasta hoy,
+    // aunque no haya pedidos en algunos días (cierre, festivos, turno aún abierto)
+    if (!totalPorDia[fechaHoy]) totalPorDia[fechaHoy] = totalPorDia[fechaHoy] || 0;
 
     if (gActivo && G && G.byDate) {
       // Fusionar: los días de Revo prevalecen sobre los de Supabase
