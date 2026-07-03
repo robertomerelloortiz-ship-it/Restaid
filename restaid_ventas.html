@@ -3015,56 +3015,103 @@ RESTAID.register('ventas',{compute:runAnalysis,render:renderAll});
 loadVentasFromDB();
 
 /* ═══════════════════════════════════════════════════════════════════
-   AUTO-REFRESH DE HOY
-   Al abrir el módulo, después de cargar el histórico de Supabase,
-   pide solo el día de hoy a Revo (1-2 llamadas ligeras) y fusiona
-   los pedidos con el G del año activo. No bloquea la UI ni muestra
-   el panel de estado del botón manual.
+   fetchRevoRange — descarga pedidos Revo entre dos fechas ISO
+   Itera mes a mes para respetar el límite de 1 mes por llamada.
+   No usa revoStatus para no interferir con el botón manual.
 ═══════════════════════════════════════════════════════════════════ */
-async function autoRefreshHoy() {
-  var pass = localStorage.getItem('restaid_pass') || '';
-  if (!pass) return; // sin credencial no intentamos nada
+async function fetchRevoRange(desdeISO, hastaISO, pass) {
+  var all = [];
+  // Construir lista de tramos mensuales que cubren [desdeISO, hastaISO]
+  var cur = new Date(desdeISO + 'T00:00:00');
+  var fin = new Date(hastaISO + 'T00:00:00');
 
-  var hoy = new Date();
-  var yyyy = hoy.getFullYear();
-  var mm   = String(hoy.getMonth() + 1).padStart(2, '0');
-  var dd   = String(hoy.getDate()).padStart(2, '0');
-  var fechaHoy = yyyy + '-' + mm + '-' + dd;
+  while (cur <= fin) {
+    var yyyy = cur.getFullYear();
+    var mm   = String(cur.getMonth() + 1).padStart(2, '0');
+    // Primer día del tramo: cur ó el 1 del mes, lo que sea mayor
+    var diaIni = cur.toISOString().slice(0, 10);
+    // Último día del tramo: fin del mes ó hastaISO, lo que sea menor
+    var ultimoMes = new Date(yyyy, cur.getMonth() + 1, 0); // último día del mes
+    var diaFin = ultimoMes <= fin
+      ? ultimoMes.toISOString().slice(0, 10)
+      : hastaISO;
 
-  try {
-    // Pedir solo el día de hoy, con paginación por si hay muchos pedidos
-    var pedidosHoy = [];
     var page = 1, lastPage = 1;
     do {
-      var url = '/api/revo?resource=orders&start=' + fechaHoy + '&end=' + fechaHoy +
+      var url = '/api/revo?resource=orders&start=' + diaIni + '&end=' + diaFin +
                 '&withContents=1&page=' + page;
       var r = await fetch(url, { headers: { 'x-restaid-pass': pass } });
-      if (!r.ok) throw new Error('Revo ' + r.status);
+      if (!r.ok) throw new Error('Revo ' + r.status + ' (' + diaIni + '→' + diaFin + ')');
       var d = await r.json();
-      if (!d.data || !Array.isArray(d.data)) throw new Error('Respuesta inesperada');
-      pedidosHoy = pedidosHoy.concat(d.data);
-      if (d.last_page) lastPage = d.last_page;
+      if (!d.data || !Array.isArray(d.data)) throw new Error('Respuesta inesperada Revo');
+      all = all.concat(d.data);
+      lastPage = d.last_page || 1;
       page++;
     } while (page <= lastPage);
 
-    if (!pedidosHoy.length) {
-      console.log('[RESTAID auto] Hoy sin pedidos en Revo todavía (' + fechaHoy + ')');
+    // Avanzar al primer día del mes siguiente
+    cur = new Date(yyyy, cur.getMonth() + 1, 1);
+  }
+  return all;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   autoRefreshPendiente
+   Al abrir el módulo:
+   1. Calcula el hueco entre G.d1 (último día en Supabase) y hoy
+   2. Pide ese rango completo a Revo (1 llamada si < 1 mes, N si más)
+   3. Fusiona los totales día a día en G.byDate
+   4. Re-renderiza y guarda en Supabase de forma diferida
+   Silencioso: nunca rompe la UI si falla.
+═══════════════════════════════════════════════════════════════════ */
+async function autoRefreshPendiente() {
+  var pass = localStorage.getItem('restaid_pass') || '';
+  if (!pass) return;
+
+  // Fecha de hoy en ISO
+  var hoy = new Date();
+  var fechaHoy = hoy.toISOString().slice(0, 10);
+
+  // Año activo en pantalla
+  var añoStr = String(hoy.getFullYear());
+  var gActivo = AÑOS_DISPONIBLES[añoStr];
+
+  // Calcular desde dónde hay que pedir
+  var desde;
+  if (gActivo && gActivo.d1) {
+    // Pedir desde el día siguiente al último que tenemos
+    var d1 = new Date(gActivo.d1 + 'T00:00:00');
+    d1.setDate(d1.getDate() + 1);
+    desde = d1.toISOString().slice(0, 10);
+  } else {
+    // No hay datos del año actual: pedir desde el 1 de enero
+    desde = añoStr + '-01-01';
+  }
+
+  // Si ya estamos al día (o adelantados), solo refrescar hoy
+  if (desde > fechaHoy) desde = fechaHoy;
+
+  try {
+    console.log('[RESTAID auto] Pidiendo a Revo rango pendiente: ' + desde + ' → ' + fechaHoy);
+    var orders = await fetchRevoRange(desde, fechaHoy, pass);
+
+    if (!orders.length) {
+      console.log('[RESTAID auto] Sin pedidos en Revo para ' + desde + ' → ' + fechaHoy);
       return;
     }
 
-    var csv = revoToCSV(pedidosHoy);
+    // Calcular total por día a partir de los pedidos
+    var totalPorDia = {};
+    orders.forEach(function(o) {
+      var fecha = (o.tancada || o.oberta || '').slice(0, 10);
+      if (fecha) totalPorDia[fecha] = (totalPorDia[fecha] || 0) + (o.total || 0);
+    });
 
-    // Calcular ventas de hoy por línea de producto
-    var totalHoy = 0;
-    csv.PROD.forEach(function(p) { totalHoy += (p.Total || 0); });
+    if (gActivo && G && G.byDate) {
+      // Fusionar: los días de Revo prevalecen sobre los de Supabase
+      Object.assign(G.byDate, totalPorDia);
 
-    // Fusionar en el G activo (si existe el año en curso)
-    var añoStr = String(yyyy);
-    if (AÑOS_DISPONIBLES[añoStr] && G && G.byDate) {
-      // Actualizar solo el día de hoy en byDate
-      G.byDate[fechaHoy] = totalHoy;
-
-      // Recalcular totales derivados del byDate
+      // Recalcular resumen del G
       var dates = Object.keys(G.byDate).sort();
       var totVen = Object.values(G.byDate).reduce(function(s, v) { return s + v; }, 0);
       var byMonth = {};
@@ -3078,38 +3125,38 @@ async function autoRefreshHoy() {
       G.nDays = dates.length;
       G.totVen = totVen;
       G.byMonth = byMonth;
-      G.periodStr = G.d0 === G.d1 ? fmtD(G.d0) : fmtD(G.d0) + ' – ' + fmtD(G.d1);
+      G.periodStr = G.d0 === G.d1 ? fmtD(G.d0) : fmtD(G.d0) + ' \u2013 ' + fmtD(G.d1);
       if ($('tbSub')) $('tbSub').textContent = G.periodStr;
 
-      // Guardar el G actualizado en AÑOS_DISPONIBLES y re-renderizar
       AÑOS_DISPONIBLES[añoStr] = JSON.parse(JSON.stringify(G, function(_, v) {
         return v instanceof Set ? [...v] : v;
       }));
       renderAll();
       publishPub(G);
-
-      // Guardar en Supabase de forma diferida (sin bloquear la UI)
       setTimeout(function() { saveVentasToDB(añoStr); }, 2000);
 
-      console.log('[RESTAID auto] Hoy (' + fechaHoy + '): ' + pedidosHoy.length +
-                  ' pedidos, ' + Math.round(totalHoy) + '€ fusionados en G.');
+      var nDias = Object.keys(totalPorDia).length;
+      console.log('[RESTAID auto] ' + orders.length + ' pedidos de ' + nDias +
+                  ' días fusionados (' + desde + ' → ' + fechaHoy + '). Total: ' +
+                  Math.round(totVen) + '€');
     } else {
-      // El año actual no está en Supabase aún — arrancar análisis completo con los datos de hoy
-      console.log('[RESTAID auto] Año ' + añoStr + ' no en Supabase, arrancando análisis completo de hoy…');
+      // Año no existe en Supabase: análisis completo desde cero
+      console.log('[RESTAID auto] Año ' + añoStr + ' nuevo, arrancando análisis completo…');
+      var csv = revoToCSV(orders);
       RESTAID.data.productos = csv.PROD;
       RESTAID.data.ordenes   = csv.ORD;
       await runAnalysis();
       await saveVentasToDB(añoStr);
     }
   } catch (e) {
-    // Silencioso: el auto-refresh es best-effort, no debe romper la UI
-    console.warn('[RESTAID auto] Refresh de hoy fallido (continuando con histórico):', e.message || e);
+    console.warn('[RESTAID auto] Refresh pendiente fallido (histórico intacto):', e.message || e);
   }
 }
 
-// Lanzar autoRefreshHoy después de que loadVentasFromDB termine de pintar la UI
-// Usamos un pequeño delay para no competir con el primer render
-setTimeout(autoRefreshHoy, 1500);
+// Lanzar después del primer render para no competir con loadVentasFromDB
+setTimeout(autoRefreshPendiente, 1500);
+
+
 </script>
 </body>
 </html>
