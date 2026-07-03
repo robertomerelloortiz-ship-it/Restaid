@@ -2912,13 +2912,22 @@ function revoToCSV(orders){
       Total:      o.total      || 0,
     });
     (o.contents || []).forEach(function(c){
-      var np = String(c.producte || '').toLowerCase();
+      // Normalizar: minúsculas + quitar acentos para comparación robusta
+      var np = String(c.producte || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       var cat = 'Sin cat';
-      if(/cervez|canya|ca\u00f1a|pinta|birra|estrella|cruzcampo|alhambra|moritz/.test(np)) cat = 'Cervezas';
-      else if(/vino|copa|ribera|rioja|albarino|rueda|jerez|fino|manzanilla|oloroso|amontillado/.test(np)) cat = 'Vinos';
-      else if(/ginebra|gin|ron|whisky|vodka|licor|brandy|vermut/.test(np)) cat = 'Destilados';
-      else if(/refresco|coca|fanta|sprite|agua|zumo|mosto|tonica|schweppes/.test(np)) cat = 'Refrescos';
-      else if(/cafe|caf\u00e9|cortado|capuchino|carajillo|expreso|americano|infusi/.test(np)) cat = 'Cafés';
+      // Cervezas: palabra completa o marcas conocidas
+      if(/\bcervez|\bcruzcampo|\balhambra\b|\bmoritz\b|\bbirra\b/.test(np)) cat = 'Cervezas';
+      else if(/\bcana\b|\bpinta\b/.test(np) && !/\bsalsa\b|\bguiso\b/.test(np)) cat = 'Cervezas';
+      // Vinos: tipo explícito o DO conocidas (no adjetivos como "jerezano")
+      else if(/\bvino\s+(tinto|blanco|rosado|dulce|espumoso|generoso)|\bcopa\s+de\s+vino|\bribera\b|\brioja\b|\balbarino\b|\brueda\b|\bcava\b/.test(np)) cat = 'Vinos';
+      else if(/\bmanzanilla\b|\boloroso\b|\bamontillado\b|\bpalo cortado\b|\bpedro xim|\bcream\b/.test(np)) cat = 'Vinos';
+      else if(/\bfino\b/.test(np) && !/\bal\s+fino\b|\bcon\s+fino\b|\ben\s+fino\b/.test(np)) cat = 'Vinos';
+      // Destilados
+      else if(/\bginebra\b|\bgin\b|\bron\b|\bwhisky\b|\bwhiskey\b|\bvodka\b|\bvermut\b|\bbrandy\b|\blicor\b/.test(np)) cat = 'Destilados';
+      // Refrescos
+      else if(/\brefresco\b|\bcoca.cola\b|\bcola\b|\bfanta\b|\bsprite\b|\bagua\b|\bzumo\b|\bmosto\b|\btonica\b|\bschweppes\b|\bbitter\b/.test(np)) cat = 'Refrescos';
+      // Cafés (normalizado: café→cafe, cortado, etc.)
+      else if(/\bcafe\b|\bcortado\b|\bcapuchino\b|\bcarajillo\b|\bexpreso\b|\bamericano\b|\binfusi/.test(np)) cat = 'Cafés';
       PROD.push({
         Producto:  c.producte        || '',
         Categoria: cat,
