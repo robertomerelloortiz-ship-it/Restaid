@@ -595,7 +595,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
     </div>
   </header>
   <div id="content">
-    <div id="upload-screen">
+    <div id="upload-screen" style="display:none">
       <div class="upload-card">
       <button class="upload-modal-close" id="btnCloseUpload" style="display:none" onclick="closeUploadModal()" title="Cerrar">✕</button>
       <div class="up-hero">
@@ -2300,6 +2300,8 @@ async function loadVentasFromDB(){
     renderYearTabs(añoActivo);
   }else{
     console.warn('[RESTAID load] sin datos agregados en Supabase');
+    // Sin histórico: mostrar pantalla de upload
+    $('upload-screen').style.display='flex';
   }
 }
 
