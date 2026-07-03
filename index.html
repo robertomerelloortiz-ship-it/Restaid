@@ -1405,8 +1405,9 @@ function renderHomeRevo(box,r,v,pub){
     let ventasRealS=0; let hayRealS=false;
     for(let i=0;i<diasTranscurridos;i++){
       const f=isoLocal(new Date(lunes.getTime()+i*86400000));
-      if(vrS[f]!=null){ventasRealS+=vrS[f];hayRealS=true;}
+      if(vrS[f]!=null){ventasRealS+=vrS[f];}
     }
+    hayRealS=ventasRealS>0;
     if(hayRealS){
       ventas=ventasRealS; estimado=false;
       periodoLbl='Semana actual ('+lunISO.slice(8)+'/'+lunISO.slice(5,7)+' – hoy)';
@@ -1426,7 +1427,8 @@ function renderHomeRevo(box,r,v,pub){
     // Real: sumar ventasRecientes del mes actual
     const vrM=v.ventasRecientes||{};
     let ventasRealM=0; let hayRealM=false;
-    Object.keys(vrM).forEach(f=>{ if(f.slice(0,7)===mesISO){ventasRealM+=vrM[f]||0;hayRealM=true;} });
+    Object.keys(vrM).forEach(f=>{ if(f.slice(0,7)===mesISO){ventasRealM+=vrM[f]||0;} });
+    hayRealM=ventasRealM>0;
     // Estimación mes completo: media diaria de últimos 3 meses × días del mes
     const em=v.evolucionMensual||{};
     const mesesHist=Object.keys(em).filter(m=>m!==mesISO).sort();
