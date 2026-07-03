@@ -616,7 +616,11 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
         </div>
       </div>
       <p class="up-note">Los datos se procesan en tu navegador — nunca salen de tu dispositivo. Puedes subir varios archivos para unir períodos.</p>
-      <button class="btn btn-amber btn-analyze" id="btn-analyze" onclick="runAnalysis()">Analizar ventas →</button>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:1.25rem">
+        <button class="btn btn-navy" id="btn-revo" onclick="loadVentasFromRevo()">🔄 Actualizar desde Revo API</button>
+        <button class="btn btn-amber btn-analyze" id="btn-analyze" onclick="runAnalysis()">Analizar ventas (CSV) →</button>
+      </div>
+      <div id="revo-status" style="margin-top:.75rem;font-size:12px;color:var(--tx2);text-align:center;min-height:18px"></div>
     </div>
     <div id="pages" style="display:none">
       <div class="page" id="pg-asistente"></div>
@@ -2879,6 +2883,101 @@ function renderRentabilidad(){
 }
 function escMEmode(m){ME_MARGIN=m;renderRentabilidad();}
 Chart.register({id:'quadME',afterDraw(chart,a,opts){const o=chart.options.plugins.quadME;if(!o)return;const{ctx,chartArea:ca,scales}=chart;if(!scales||!scales.x||!scales.y)return;const x=scales.x.getPixelForValue(o.x),y=scales.y.getPixelForValue(o.y);ctx.save();ctx.strokeStyle='rgba(26,43,60,.18)';ctx.setLineDash([5,4]);ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x,ca.top);ctx.lineTo(x,ca.bottom);ctx.stroke();ctx.beginPath();ctx.moveTo(ca.left,y);ctx.lineTo(ca.right,y);ctx.stroke();ctx.restore();}});
+
+// ── INTEGRACIÓN REVO API ─────────────────────────────────────────
+// Descarga todos los pedidos del año desde /api/revo (paginado),
+// los transforma al formato que espera runAnalysis() y lanza el análisis.
+// El motor de análisis y el guardado en Supabase no cambian.
+
+function revoStatus(msg, color){
+  var el = $('revo-status');
+  if(el){ el.textContent = msg; el.style.color = color || 'var(--tx2)'; }
+}
+
+function revoToCSV(orders){
+  var PROD = [], ORD = [];
+  orders.forEach(function(o){
+    ORD.push({
+      ID:         String(o.id),
+      Mesa:       o.taula      || '',
+      Comensales: o.comensals  || 1,
+      Abierto:    o.oberta     || '',
+      Cerrado:    o.tancada    || '',
+      Total:      o.total      || 0,
+    });
+    (o.contents || []).forEach(function(c){
+      var np = String(c.producte || '').toLowerCase();
+      var cat = 'Sin cat';
+      if(/cervez|canya|ca\u00f1a|pinta|birra|estrella|cruzcampo|alhambra|moritz/.test(np)) cat = 'Cervezas';
+      else if(/vino|copa|ribera|rioja|albarino|rueda|jerez|fino|manzanilla|oloroso|amontillado/.test(np)) cat = 'Vinos';
+      else if(/ginebra|gin|ron|whisky|vodka|licor|brandy|vermut/.test(np)) cat = 'Destilados';
+      else if(/refresco|coca|fanta|sprite|agua|zumo|mosto|tonica|schweppes/.test(np)) cat = 'Refrescos';
+      else if(/cafe|caf\u00e9|cortado|capuchino|carajillo|expreso|americano|infusi/.test(np)) cat = 'Cafés';
+      PROD.push({
+        Producto:  c.producte        || '',
+        Categoria: cat,
+        Cantidad:  c.quantitat       || 1,
+        Total:     c.total           || 0,
+        Descuento: c.discount_amount || 0,
+        Mesa:      o.taula           || '',
+        Empleado:  c.treballador     || '',
+        Fecha:     c.data            || o.oberta || '',
+        Orden:     String(o.id),
+      });
+    });
+  });
+  return { PROD: PROD, ORD: ORD };
+}
+
+async function fetchRevoOrders(año, pass){
+  var start = año + '-01-01';
+  var end   = año + '-12-31';
+  var page = 1, lastPage = 1;
+  var all = [];
+  revoStatus('Conectando con Revo…');
+  do {
+    var url = '/api/revo?resource=orders&start=' + start + '&end=' + end + '&withContents=1&page=' + page;
+    var r = await fetch(url, { headers: { 'x-restaid-pass': pass } });
+    if(!r.ok){
+      var err = await r.text().catch(function(){ return ''; });
+      throw new Error('Revo API error ' + r.status + ': ' + err.slice(0,200));
+    }
+    var d = await r.json();
+    if(!d.data || !Array.isArray(d.data)) throw new Error('Respuesta inesperada de Revo');
+    all.push.apply(all, d.data);
+    lastPage = d.last_page || 1;
+    revoStatus('Descargando… pag. ' + page + '/' + lastPage + ' (' + all.length + ' pedidos)');
+    page++;
+  } while(page <= lastPage);
+  return all;
+}
+
+async function loadVentasFromRevo(añoParam){
+  var año = añoParam || String(new Date().getFullYear());
+  var pass = localStorage.getItem('restaid_pass') || '';
+  var btnRevo = $('btn-revo');
+  if(btnRevo){ btnRevo.disabled = true; btnRevo.textContent = '⏳ Descargando…'; }
+  try {
+    var orders = await fetchRevoOrders(año, pass);
+    revoStatus(orders.length + ' pedidos descargados. Procesando…');
+    if(!orders.length){
+      revoStatus('Sin pedidos en Revo para ' + año, 'var(--ylw)');
+      return;
+    }
+    var csv = revoToCSV(orders);
+    RESTAID.data.productos = csv.PROD;
+    RESTAID.data.ordenes   = csv.ORD;
+    revoStatus('Analizando ' + csv.PROD.length + ' lineas de producto…');
+    await runAnalysis();
+    await saveVentasToDB(año);
+    revoStatus('✅ ' + orders.length + ' pedidos cargados y guardados (' + csv.PROD.length + ' lineas)', 'var(--green)');
+  } catch(e) {
+    console.error('[RESTAID Revo]', e);
+    revoStatus('❌ Error: ' + (e.message || String(e)), 'var(--red)');
+  } finally {
+    if(btnRevo){ btnRevo.disabled = false; btnRevo.textContent = '🔄 Actualizar desde Revo API'; }
+  }
+}
 
 RESTAID.register('ventas',{compute:runAnalysis,render:renderAll});
 loadVentasFromDB();
