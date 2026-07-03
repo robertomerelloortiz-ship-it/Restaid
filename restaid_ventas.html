@@ -59,6 +59,12 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
 #content{flex:1;overflow-y:auto;padding:28px}
 /* Upload */
 #upload-screen{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3rem 2rem}
+/* Modo modal: cuando tiene la clase .as-modal se superpone sobre los datos */
+#upload-screen.as-modal{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.55);backdrop-filter:blur(3px);min-height:unset;padding:2rem 1rem;overflow-y:auto}
+#upload-screen.as-modal .upload-card{background:var(--surf);border-radius:var(--rlg);padding:2rem 2rem 1.5rem;max-width:920px;width:100%;position:relative;box-shadow:0 8px 40px rgba(0,0,0,.18)}
+#upload-screen:not(.as-modal) .upload-card{width:100%;display:contents}
+.upload-modal-close{position:absolute;top:.75rem;right:.75rem;background:none;border:none;font-size:18px;cursor:pointer;color:var(--tx3);line-height:1;padding:4px 8px;border-radius:6px}
+.upload-modal-close:hover{background:var(--bg);color:var(--tx)}
 .up-hero{text-align:center;margin-bottom:2rem}
 .up-hero h2{font-family:'DM Serif Display';font-size:28px;font-weight:400;margin-bottom:.5rem}
 .up-hero p{font-size:13.5px;color:var(--tx2);max-width:480px;margin:0 auto;line-height:1.7}
@@ -567,6 +573,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
         <button class="tb-copilot-btn" onclick="window.parent.postMessage({type:'restaid_open_copilot'},'*')"><div class="pulse-dot"></div>Copiloto</button>
         <button class="btn btn-ghost btn-sm" id="btnPrint" style="display:none" onclick="window.print()">🖨 Imprimir</button>
         <button class="btn btn-ghost btn-sm" id="btnSettings" style="display:none" onclick="openSettings()">⚙ Asientos</button>
+        <button class="btn btn-ghost btn-sm" id="btnUpload" style="display:none" onclick="openUploadModal()" title="Cargar datos CSV o histórico manual">📂</button>
         <button class="btn btn-ghost btn-sm" id="btnReset" style="display:none" onclick="resetAll()">← Datos</button>
       </div>
     </div>
@@ -589,6 +596,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
   </header>
   <div id="content">
     <div id="upload-screen">
+      <div class="upload-card">
+      <button class="upload-modal-close" id="btnCloseUpload" style="display:none" onclick="closeUploadModal()" title="Cerrar">✕</button>
       <div class="up-hero">
         <h2>Carga tus datos de ventas</h2>
         <p>Sube los exportes de Revo y, opcionalmente, la carta del restaurante para filtrar el análisis por productos reales.</p>
@@ -627,6 +636,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
         <button class="btn btn-amber btn-analyze" id="btn-analyze" onclick="runAnalysis()">Analizar ventas (CSV) →</button>
       </div>
       <div id="revo-status" style="margin-top:.75rem;font-size:12px;color:var(--tx2);text-align:center;min-height:18px"></div>
+      </div><!-- /.upload-card -->
     </div>
     <div id="pages" style="display:none">
       <div class="page" id="pg-asistente"></div>
@@ -1121,8 +1131,8 @@ async function runAnalysis(){
   updateCartaUI();initSeatInputs();
 
   $('tbSub').textContent=periodStr;
-  $('btnReset').style.display='';$('btnSettings').style.display='';$('btnPrint').style.display='';
-  $('upload-screen').style.display='none';$('pages').style.display='';$('tabbar').style.display='flex';if($('tbSub'))$('tbSub').textContent=G&&G.periodStr?G.periodStr:'';document.body.classList.add('has-data');
+  $('btnReset').style.display='';$('btnSettings').style.display='';$('btnPrint').style.display='';$('btnUpload').style.display='';
+  closeUploadModal();$('pages').style.display='';$('tabbar').style.display='flex';if($('tbSub'))$('tbSub').textContent=G&&G.periodStr?G.periodStr:'';document.body.classList.add('has-data');
   renderAll();showPage('resumen');
 
   // Guardar con merge robusto:
@@ -2132,16 +2142,46 @@ function expSetupDrag(){$$('.exp-chip').forEach(function(chip){chip.addEventList
 async function expAI(){var wrap=$('exp-ai-wrap');if(!wrap||!EXP.filas)return;if(EXP.aiBusy)return;EXP.aiBusy=true;wrap.innerHTML='<div class="exp-ai-box"><span class="spin"></span> Analizando…</div>';var g=G;var fl=(EXP_VARS.find(function(x){return x.id===EXP.filas;})||{lbl:EXP.filas}).lbl;var cl=EXP.cols?(EXP_VARS.find(function(x){return x.id===EXP.cols;})||{lbl:EXP.cols}).lbl:'(sin columnas)';var ml=(EXP_METRICS.find(function(x){return x.id===EXP.metric;})||{lbl:EXP.metric}).lbl;var ctx='Restaurante, período '+g.periodStr+' ('+g.nDays+' días). Total: '+fc(g.totVen)+'€, '+g.nT+' tickets, '+g.allComs+' comensales. Zonas: '+Object.keys(g.zonaComMap).map(function(z){return z+' '+fc(g.zonaComMap[z].euros)+'€';}).join(', ')+'. Turnos: '+Object.keys(g.byTurno).map(function(t){return t+' '+fc(g.byTurno[t]||0)+'€';}).join(', ')+'. El usuario cruza "'+fl+'" x "'+cl+'" con métrica "'+ml+'". Responde SOLO JSON sin markdown: {"insight":"2-3 frases en español","sugerencias":[{"filas":"zona","cols":"turno","metric":"euros","lbl":"Zona x Turno"},{"filas":"dia","cols":"turno","metric":"euros","lbl":"Día x Turno"},{"filas":"cat","cols":"turno","metric":"euros","lbl":"Categoría x Turno"}]}';try{var res=await fetch(API_URL,{method:'POST',headers:aiHeaders(),body:JSON.stringify({model:MODEL,max_tokens:600,messages:[{role:'user',content:ctx}]})});if(!res.ok)throw new Error('IA '+res.status);var data=await res.json();var txt=(data.content||[]).map(function(x){return x.text||'';}).join('').trim().replace(/```json|```/g,'').trim();var parsed=JSON.parse(txt);var sugs=parsed.sugerencias||EXP_DFLT.slice(0,3);wrap.innerHTML='<div class="exp-ai-box"><strong>✦ Insight:</strong> '+parsed.insight+'<div class="exp-suggest">'+sugs.map(function(s){return'<button class="exp-suggest-btn" onclick="expApplySuggest(\''+s.filas+'\',\''+s.cols+'\',\''+s.metric+'\')">'+s.lbl+'</button>';}).join('')+'</div></div>';}catch(e){wrap.innerHTML='<div class="exp-ai-box"><div class="exp-suggest">'+EXP_DFLT.map(function(s){return'<button class="exp-suggest-btn" onclick="expApplySuggest(\''+s.filas+'\',\''+s.cols+'\',\''+s.metric+'\')">'+s.lbl+'</button>';}).join('')+'</div></div>';}EXP.aiBusy=false;}
 function expApplySuggest(filas,cols,metric){EXP.filas=filas;EXP.cols=cols;EXP.metric=metric;expUpdateSlots();$$('.exp-metric-btn').forEach(function(b){var mo=EXP_METRICS.find(function(x){return x.id===metric;});b.classList.toggle('active',b.textContent.trim()===(mo?mo.lbl:''));});expRenderTable();expSetupDrag();expAI();}
 
+function openUploadModal(){
+  // Si hay datos activos, abrir como modal overlay sobre la vista
+  var tienedatos = G && G.totVen != null;
+  var scr = $('upload-screen');
+  var card = scr.querySelector('.upload-card');
+  var btnClose = $('btnCloseUpload');
+  if(tienedatos){
+    scr.classList.add('as-modal');
+    if(btnClose) btnClose.style.display='';
+    scr.style.display='flex';
+    scr.addEventListener('click', function(e){ if(e.target===scr) closeUploadModal(); }, {once:true});
+  } else {
+    // Sin datos: pantalla completa clásica
+    scr.classList.remove('as-modal');
+    if(btnClose) btnClose.style.display='none';
+    scr.style.display='flex';
+    $('pages').style.display='none';
+    $('tabbar').style.display='none';
+    document.body.classList.remove('has-data');
+  }
+}
+function closeUploadModal(){
+  var scr=$('upload-screen');
+  scr.classList.remove('as-modal');
+  scr.style.display='none';
+}
 function resetAll(){
   RESTAID.data={productos:[],ordenes:[],carta:[],columnas:{}};RESTAID.ventas=null;G=null;CARTA_FILTER=false;
   CHARTS.forEach(c=>{try{c.destroy();}catch(e){}});CHARTS=[];
   CHAT_HISTORY=[];const pa=$('pg-asistente');if(pa){pa.dataset.init='';pa.innerHTML='';}
-  $('upload-screen').style.display='';$('pages').style.display='none';$('tabbar').style.display='none';document.body.classList.remove('has-data');
+  var scr=$('upload-screen');
+  scr.classList.remove('as-modal');
+  scr.style.display='flex';
+  $('pages').style.display='none';$('tabbar').style.display='none';document.body.classList.remove('has-data');
   ['zone-prod','zone-ord','zone-carta'].forEach(id=>$(id).classList.remove('loaded','drag'));
   $('prod-filelist').textContent='';$('ord-filelist').textContent='';$('carta-filelist').textContent='';$('carta-manual').value='';
   $('btn-analyze').classList.remove('ready');
   $('tbSub').textContent='';
-  $('btnReset').style.display='none';$('btnSettings').style.display='none';$('btnPrint').style.display='none';
+  $('btnReset').style.display='none';$('btnSettings').style.display='none';$('btnPrint').style.display='none';$('btnUpload').style.display='none';
+  $('btnCloseUpload').style.display='none';
 }
 
 // Registrar el módulo en el core
@@ -2302,9 +2342,9 @@ function cargarAño(año){
   G=normalizarG(AÑOS_DISPONIBLES[año]);
   RESTAID.ventas=G;
   console.log('[RESTAID] Año',año,'cargado, totVen:',G.totVen);
-  $('upload-screen').style.display='none';$('pages').style.display='';$('tabbar').style.display='flex';document.body.classList.add('has-data');
+  closeUploadModal();$('pages').style.display='';$('tabbar').style.display='flex';document.body.classList.add('has-data');
   if($('tbSub'))$('tbSub').textContent=G.periodStr||'';
-  $('btnReset').style.display='';$('btnSettings').style.display='';$('btnPrint').style.display='';
+  $('btnReset').style.display='';$('btnSettings').style.display='';$('btnPrint').style.display='';$('btnUpload').style.display='';
   // Marcar pestaña activa
   document.querySelectorAll('.year-tab').forEach(t=>t.classList.toggle('active',t.dataset.year===año));
   renderAll();
