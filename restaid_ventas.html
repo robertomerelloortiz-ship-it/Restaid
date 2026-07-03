@@ -3175,12 +3175,12 @@ async function autoRefreshPendiente() {
       }));
       renderAll();
       publishPub(G);
-      setTimeout(function() { saveVentasToDB(añoStr); }, 2000);
+      // Sin delay: guardar inmediatamente para que d1 quede persistido aunque se cierre la pestaña
+      await saveVentasToDB(añoStr);
 
       var nDias = Object.keys(totalPorDia).length;
       console.log('[RESTAID auto] ' + orders.length + ' pedidos de ' + nDias +
-                  ' días fusionados (' + desde + ' → ' + fechaHoy + '). Total: ' +
-                  Math.round(totVen) + '€');
+                  ' días fusionados (' + desde + ' → ' + fechaHoy + '). d1 guardado: ' + G.d1);
     } else {
       // Año no existe en Supabase: análisis completo desde cero
       console.log('[RESTAID auto] Año ' + añoStr + ' nuevo, arrancando análisis completo…');
