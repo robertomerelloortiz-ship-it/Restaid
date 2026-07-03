@@ -38,10 +38,12 @@ module.exports = async (req, res) => {
   // Por defecto: almacenes (classic.warehouses) — respuesta pequeña y clara.
   // Se puede cambiar con ?report=stocks | warehouses | reports
   const which = (req.query && req.query.report) || 'warehouses';
+  // Rutas de la API classic NUEVA (confirmadas por Cegid: URL/classic/...).
+  // Las rutas antiguas /api/external/v2/... NO se usan (pedían client-token).
   const paths = {
-    warehouses: '/api/external/v2/warehouses',
-    stocks:     '/api/external/v2/stocks',
-    reports:    '/api/external/v3/reports/orders?start_date=' +
+    warehouses: '/classic/warehouses',
+    stocks:     '/classic/stocks',
+    reports:    '/classic/reports/orders?start_date=' +
                 todayISO() + '&end_date=' + todayISO(),
   };
   const path = paths[which] || paths.warehouses;
