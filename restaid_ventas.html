@@ -3013,6 +3013,103 @@ async function loadVentasFromRevo(añoParam){
 
 RESTAID.register('ventas',{compute:runAnalysis,render:renderAll});
 loadVentasFromDB();
+
+/* ═══════════════════════════════════════════════════════════════════
+   AUTO-REFRESH DE HOY
+   Al abrir el módulo, después de cargar el histórico de Supabase,
+   pide solo el día de hoy a Revo (1-2 llamadas ligeras) y fusiona
+   los pedidos con el G del año activo. No bloquea la UI ni muestra
+   el panel de estado del botón manual.
+═══════════════════════════════════════════════════════════════════ */
+async function autoRefreshHoy() {
+  var pass = localStorage.getItem('restaid_pass') || '';
+  if (!pass) return; // sin credencial no intentamos nada
+
+  var hoy = new Date();
+  var yyyy = hoy.getFullYear();
+  var mm   = String(hoy.getMonth() + 1).padStart(2, '0');
+  var dd   = String(hoy.getDate()).padStart(2, '0');
+  var fechaHoy = yyyy + '-' + mm + '-' + dd;
+
+  try {
+    // Pedir solo el día de hoy, con paginación por si hay muchos pedidos
+    var pedidosHoy = [];
+    var page = 1, lastPage = 1;
+    do {
+      var url = '/api/revo?resource=orders&start=' + fechaHoy + '&end=' + fechaHoy +
+                '&withContents=1&page=' + page;
+      var r = await fetch(url, { headers: { 'x-restaid-pass': pass } });
+      if (!r.ok) throw new Error('Revo ' + r.status);
+      var d = await r.json();
+      if (!d.data || !Array.isArray(d.data)) throw new Error('Respuesta inesperada');
+      pedidosHoy = pedidosHoy.concat(d.data);
+      if (d.last_page) lastPage = d.last_page;
+      page++;
+    } while (page <= lastPage);
+
+    if (!pedidosHoy.length) {
+      console.log('[RESTAID auto] Hoy sin pedidos en Revo todavía (' + fechaHoy + ')');
+      return;
+    }
+
+    var csv = revoToCSV(pedidosHoy);
+
+    // Calcular ventas de hoy por línea de producto
+    var totalHoy = 0;
+    csv.PROD.forEach(function(p) { totalHoy += (p.Total || 0); });
+
+    // Fusionar en el G activo (si existe el año en curso)
+    var añoStr = String(yyyy);
+    if (AÑOS_DISPONIBLES[añoStr] && G && G.byDate) {
+      // Actualizar solo el día de hoy en byDate
+      G.byDate[fechaHoy] = totalHoy;
+
+      // Recalcular totales derivados del byDate
+      var dates = Object.keys(G.byDate).sort();
+      var totVen = Object.values(G.byDate).reduce(function(s, v) { return s + v; }, 0);
+      var byMonth = {};
+      dates.forEach(function(d) {
+        var m = d.slice(0, 7);
+        byMonth[m] = (byMonth[m] || 0) + G.byDate[d];
+      });
+      var fmtD = function(s) { return s ? s.split('-').reverse().join('/') : ''; };
+      G.d0 = dates[0];
+      G.d1 = dates[dates.length - 1];
+      G.nDays = dates.length;
+      G.totVen = totVen;
+      G.byMonth = byMonth;
+      G.periodStr = G.d0 === G.d1 ? fmtD(G.d0) : fmtD(G.d0) + ' – ' + fmtD(G.d1);
+      if ($('tbSub')) $('tbSub').textContent = G.periodStr;
+
+      // Guardar el G actualizado en AÑOS_DISPONIBLES y re-renderizar
+      AÑOS_DISPONIBLES[añoStr] = JSON.parse(JSON.stringify(G, function(_, v) {
+        return v instanceof Set ? [...v] : v;
+      }));
+      renderAll();
+      publishPub(G);
+
+      // Guardar en Supabase de forma diferida (sin bloquear la UI)
+      setTimeout(function() { saveVentasToDB(añoStr); }, 2000);
+
+      console.log('[RESTAID auto] Hoy (' + fechaHoy + '): ' + pedidosHoy.length +
+                  ' pedidos, ' + Math.round(totalHoy) + '€ fusionados en G.');
+    } else {
+      // El año actual no está en Supabase aún — arrancar análisis completo con los datos de hoy
+      console.log('[RESTAID auto] Año ' + añoStr + ' no en Supabase, arrancando análisis completo de hoy…');
+      RESTAID.data.productos = csv.PROD;
+      RESTAID.data.ordenes   = csv.ORD;
+      await runAnalysis();
+      await saveVentasToDB(añoStr);
+    }
+  } catch (e) {
+    // Silencioso: el auto-refresh es best-effort, no debe romper la UI
+    console.warn('[RESTAID auto] Refresh de hoy fallido (continuando con histórico):', e.message || e);
+  }
+}
+
+// Lanzar autoRefreshHoy después de que loadVentasFromDB termine de pintar la UI
+// Usamos un pequeño delay para no competir con el primer render
+setTimeout(autoRefreshHoy, 1500);
 </script>
 </body>
 </html>
