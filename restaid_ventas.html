@@ -857,11 +857,11 @@ function publishPub(g){
       ventasPorTurno,
       ventasPorZona,
       consumo,
-    // Últimos 7 días (para KPI de Ayer y mini-histórico reciente en index.html)
+    // Últimos 35 días (para KPI de Ayer, Semana y Mes en index.html)
     let ventasRecientes=null;
     try{
       if(g.byDate){
-        const fechas=Object.keys(g.byDate).sort().slice(-7);
+        const fechas=Object.keys(g.byDate).sort().slice(-35);
         ventasRecientes={};
         fechas.forEach(f=>{ ventasRecientes[f]=Math.round(g.byDate[f]||0); });
       }

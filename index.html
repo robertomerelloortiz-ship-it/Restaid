@@ -1360,16 +1360,77 @@ function renderHomeRevo(box,r,v,pub){
     perComensal=capRef;
     periodoLbl='Ayer '+ayerISO.split('-').reverse().slice(0,2).join('/');
   } else if(HOME_PERIOD==='semana'){
-    ventas=r.ventasSemana||0;
-    estimado=true;
+    // Semana actual: lunes a hoy (real desde ventasRecientes)
+    const hoyS=new Date(); hoyS.setHours(0,0,0,0);
+    const dowHoy=hoyS.getDay();
+    const lunesOffset=dowHoy===0?-6:(1-dowHoy);
+    const lunes=new Date(hoyS.getTime()+lunesOffset*86400000);
+    const lunISO=lunes.toISOString().slice(0,10);
+    const diasTranscurridos=Math.round((hoyS-lunes)/86400000)+1;
+    const DOW_ES=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+    const prevSem=v.prevSemana||{};
+    const trend=fc?fc.trend:1;
+    // Estimación semana completa
+    let estSemanaTotal=0;
+    for(let i=0;i<7;i++){
+      const d=new Date(lunes.getTime()+i*86400000);
+      const ps=prevSem[DOW_ES[d.getDay()]];
+      if(ps)estSemanaTotal+=Math.round(((ps.Comida||0)+(ps.Cena||0))*trend);
+    }
+    // Estimación acumulada hasta hoy
+    let estHastaHoy=0;
+    for(let i=0;i<diasTranscurridos;i++){
+      const d=new Date(lunes.getTime()+i*86400000);
+      const ps=prevSem[DOW_ES[d.getDay()]];
+      if(ps)estHastaHoy+=Math.round(((ps.Comida||0)+(ps.Cena||0))*trend);
+    }
+    // Real desde ventasRecientes
+    const vrS=v.ventasRecientes||{};
+    let ventasRealS=0; let hayRealS=false;
+    for(let i=0;i<diasTranscurridos;i++){
+      const f=new Date(lunes.getTime()+i*86400000).toISOString().slice(0,10);
+      if(vrS[f]!=null){ventasRealS+=vrS[f];hayRealS=true;}
+    }
+    if(hayRealS){
+      ventas=ventasRealS; estimado=false;
+      periodoLbl='Semana actual ('+lunISO.slice(8)+'/'+lunISO.slice(5,7)+' – hoy)';
+      if(estHastaHoy>0) varAnual={pct:Math.round((ventasRealS-estHastaHoy)/estHastaHoy*1000)/10,añoPrev:'',nota:'vs previsión acumulada',_estTotal:estSemanaTotal};
+    } else {
+      ventas=estSemanaTotal; estimado=true; periodoLbl='Previsión semanal';
+    }
     if(ventas&&capRef)comensales=Math.round(ventas/capRef);
     perComensal=capRef;
-    periodoLbl='Previsión semanal';
+
   } else if(HOME_PERIOD==='mes'){
-    // Último mes del histórico real
+    const hoyM=new Date(); hoyM.setHours(0,0,0,0);
+    const hoyMISO=hoyM.toISOString().slice(0,10);
+    const mesISO=hoyMISO.slice(0,7);
+    const diasEnMes=new Date(hoyM.getFullYear(),hoyM.getMonth()+1,0).getDate();
+    const diaActual=hoyM.getDate();
+    // Real: sumar ventasRecientes del mes actual
+    const vrM=v.ventasRecientes||{};
+    let ventasRealM=0; let hayRealM=false;
+    Object.keys(vrM).forEach(f=>{ if(f.slice(0,7)===mesISO){ventasRealM+=vrM[f]||0;hayRealM=true;} });
+    // Estimación mes completo: media diaria de últimos 3 meses × días del mes
     const em=v.evolucionMensual||{};
-    const meses=Object.keys(em).sort();
-    if(meses.length){ventas=em[meses[meses.length-1]];periodoLbl='Último mes ('+meses[meses.length-1]+')';}
+    const mesesHist=Object.keys(em).filter(m=>m!==mesISO).sort();
+    let estMesTotal=null;
+    if(mesesHist.length>=2){
+      const ult3=mesesHist.slice(-3);
+      const mediaD=ult3.reduce((s,m)=>{ const dias=new Date(+m.slice(0,4),+m.slice(5,7),0).getDate(); return s+(em[m]||0)/dias; },0)/ult3.length;
+      estMesTotal=Math.round(mediaD*diasEnMes);
+    }
+    const estHastaHoyM=estMesTotal?Math.round(estMesTotal*diaActual/diasEnMes):null;
+    if(hayRealM){
+      ventas=Math.round(ventasRealM); estimado=false;
+      periodoLbl='Mes actual ('+mesISO+')';
+      if(estHastaHoyM&&estHastaHoyM>0){
+        const pct=Math.round((ventas-estHastaHoyM)/estHastaHoyM*1000)/10;
+        varAnual={pct,añoPrev:'',nota:'vs previsión acumulada',_estTotal:estMesTotal};
+      }
+    } else {
+      if(mesesHist.length){ventas=em[mesesHist[mesesHist.length-1]];periodoLbl='Último mes ('+mesesHist[mesesHist.length-1]+')';estimado=false;}
+    }
     if(ventas&&capRef)comensales=Math.round(ventas/capRef);
     perComensal=capRef;
   } else if(HOME_PERIOD==='ano'){
@@ -1505,6 +1566,8 @@ function renderHomeRevo(box,r,v,pub){
         </div>
         ${HOME_PERIOD==='hoy'&&!estimado&&fc&&fc.dias[0]&&fc.dias[0].eur?`
         <div style="font-size:12px;color:var(--tx3);margin-top:4px">Previsión: ${fmtE(fc.dias[0].eur)}</div>`:''}
+        ${(HOME_PERIOD==='semana'||HOME_PERIOD==='mes')&&!estimado&&varAnual&&varAnual._estTotal?`
+        <div style="font-size:12px;color:var(--tx3);margin-top:4px">Previsión ${HOME_PERIOD==='semana'?'semana':'mes'}: ${fmtE(varAnual._estTotal)}</div>`:''}
       </div>
 
 
