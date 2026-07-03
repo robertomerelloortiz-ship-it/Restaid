@@ -2916,18 +2916,27 @@ function revoToCSV(orders){
       var np = String(c.producte || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       var cat = 'Sin cat';
       // Cervezas: palabra completa o marcas conocidas
-      if(/\bcervez|\bcruzcampo|\balhambra\b|\bmoritz\b|\bbirra\b/.test(np)) cat = 'Cervezas';
+      if(/\bcervez|\bcruzcampo|\balhambra\b|\bmoritz\b|\bbirra\b|\bheineken\b|\bmahou\b|\bamstell?\b|\bvolldam\b|\bestella\b/.test(np)) cat = 'Cervezas';
       else if(/\bcana\b|\bpinta\b/.test(np) && !/\bsalsa\b|\bguiso\b/.test(np)) cat = 'Cervezas';
       // Vinos: tipo explícito o DO conocidas (no adjetivos como "jerezano")
       else if(/\bvino\s+(tinto|blanco|rosado|dulce|espumoso|generoso)|\bcopa\s+de\s+vino|\bribera\b|\brioja\b|\balbarino\b|\brueda\b|\bcava\b/.test(np)) cat = 'Vinos';
       else if(/\bmanzanilla\b|\boloroso\b|\bamontillado\b|\bpalo cortado\b|\bpedro xim|\bcream\b/.test(np)) cat = 'Vinos';
       else if(/\bfino\b/.test(np) && !/\bal\s+fino\b|\bcon\s+fino\b|\ben\s+fino\b/.test(np)) cat = 'Vinos';
+      // Marcas de Jerez y vinos especiales de TalaBar
+      else if(/\bcanasta\b|\bcayetano\b|\bsolera\b|\bviña ab\b|\bcopa h\b/.test(np)) cat = 'Vinos';
+      else if(/\btinto con lim|\bsangri/.test(np)) cat = 'Vinos';
       // Destilados
       else if(/\bginebra\b|\bgin\b|\bron\b|\bwhisky\b|\bwhiskey\b|\bvodka\b|\bvermut\b|\bbrandy\b|\blicor\b/.test(np)) cat = 'Destilados';
+      // Marcas de destilados de TalaBar
+      else if(/\bbeefeater\b|\btanqueray\b|\bbombay\b|\bhendricks\b|\bbaileys\b|\bapalkov\b|\bjagermeist|\bbacardi\b|\bjack daniel|\bjim beam\b|\bdewars\b|\bballantine|\bchivas\b/.test(np)) cat = 'Destilados';
       // Refrescos
       else if(/\brefresco\b|\bcoca.cola\b|\bcola\b|\bfanta\b|\bsprite\b|\bagua\b|\bzumo\b|\bmosto\b|\btonica\b|\bschweppes\b|\bbitter\b/.test(np)) cat = 'Refrescos';
+      // Marcas de refrescos adicionales
+      else if(/\baquarius\b|\bnestea\b|\bice\s*tea\b|\bnaranjada\b|\blimonada\b|\bpelegrino\b|\bperrier\b|\beveress\b/.test(np)) cat = 'Refrescos';
       // Cafés (normalizado: café→cafe, cortado, etc.)
-      else if(/\bcafe\b|\bcortado\b|\bcapuchino\b|\bcarajillo\b|\bexpreso\b|\bamericano\b|\binfusi/.test(np)) cat = 'Cafés';
+      else if(/\bcafe\b|\bcortado\b|\bcapuchino\b|\bcarajillo\b|\bexpreso\b|\bamericano\b|\binfusi|\bdescafeinado\b/.test(np)) cat = 'Cafés';
+      // Tés e infusiones
+      else if(/\bte\s+(verde|negro|rojo|blanco|menta|manzanilla)|\binfusion\b|\bmanzanilla\s+te\b/.test(np)) cat = 'Cafés';
       PROD.push({
         Producto:  c.producte        || '',
         Categoria: cat,
