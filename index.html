@@ -1377,15 +1377,24 @@ function renderHomeRevo(box,r,v,pub){
       const ps=prevSem[DOW_ES[d.getDay()]];
       if(ps)estSemanaTotal+=Math.round(((ps.Comida||0)+(ps.Cena||0))*trend);
     }
-    // Estimación acumulada hasta hoy
+    // Estimación acumulada SOLO de días ya completados (excluye hoy, que está en curso:
+    // comparar contra la previsión de un día que aún no ha terminado da una lectura falsa,
+    // sobre todo en días fuertes como viernes/sábado donde la mayor parte se factura al final)
+    const diasCompletados=Math.max(0,diasTranscurridos-1);
     let estHastaHoy=0;
-    for(let i=0;i<diasTranscurridos;i++){
+    for(let i=0;i<diasCompletados;i++){
       const d=new Date(lunes.getTime()+i*86400000);
       const ps=prevSem[DOW_ES[d.getDay()]];
       if(ps)estHastaHoy+=Math.round(((ps.Comida||0)+(ps.Cena||0))*trend);
     }
-    // Real desde ventasRecientes
+    // Real acumulado de los MISMOS días completados (para comparar manzanas con manzanas)
     const vrS=v.ventasRecientes||{};
+    let ventasRealHastaAyer=0;
+    for(let i=0;i<diasCompletados;i++){
+      const f=new Date(lunes.getTime()+i*86400000).toISOString().slice(0,10);
+      if(vrS[f]!=null)ventasRealHastaAyer+=vrS[f];
+    }
+    // Real TOTAL de la semana (incluye hoy, aunque esté a medias) — este es el número que se muestra en grande
     let ventasRealS=0; let hayRealS=false;
     for(let i=0;i<diasTranscurridos;i++){
       const f=new Date(lunes.getTime()+i*86400000).toISOString().slice(0,10);
@@ -1394,7 +1403,7 @@ function renderHomeRevo(box,r,v,pub){
     if(hayRealS){
       ventas=ventasRealS; estimado=false;
       periodoLbl='Semana actual ('+lunISO.slice(8)+'/'+lunISO.slice(5,7)+' – hoy)';
-      if(estHastaHoy>0) varAnual={pct:Math.round((ventasRealS-estHastaHoy)/estHastaHoy*1000)/10,añoPrev:'',nota:'vs previsión acumulada',_estTotal:estSemanaTotal};
+      if(estHastaHoy>0) varAnual={pct:Math.round((ventasRealHastaAyer-estHastaHoy)/estHastaHoy*1000)/10,añoPrev:'',nota:'vs previsión acumulada (días completados)',_estTotal:estSemanaTotal};
     } else {
       ventas=estSemanaTotal; estimado=true; periodoLbl='Previsión semanal';
     }
