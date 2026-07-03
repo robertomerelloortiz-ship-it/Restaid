@@ -617,7 +617,13 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
       </div>
       <p class="up-note">Los datos se procesan en tu navegador — nunca salen de tu dispositivo. Puedes subir varios archivos para unir períodos.</p>
       <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:1.25rem">
-        <button class="btn btn-navy" id="btn-revo" onclick="loadVentasFromRevo()">🔄 Actualizar desde Revo API</button>
+        <select id="revo-año" style="padding:7px 10px;border-radius:6px;border:1px solid var(--bdr-strong);font-size:12.5px;font-family:'DM Sans',sans-serif;color:var(--tx);background:var(--surf);cursor:pointer">
+          <option value="2026">2026</option>
+          <option value="2025" selected>2025</option>
+          <option value="2024">2024</option>
+          <option value="2023">2023</option>
+        </select>
+        <button class="btn btn-navy" id="btn-revo" onclick="loadVentasFromRevo(document.getElementById('revo-año').value)">🔄 Actualizar desde Revo API</button>
         <button class="btn btn-amber btn-analyze" id="btn-analyze" onclick="runAnalysis()">Analizar ventas (CSV) →</button>
       </div>
       <div id="revo-status" style="margin-top:.75rem;font-size:12px;color:var(--tx2);text-align:center;min-height:18px"></div>
@@ -2930,25 +2936,33 @@ function revoToCSV(orders){
 }
 
 async function fetchRevoOrders(año, pass){
-  var start = año + '-01-01';
-  var end   = año + '-12-31';
-  var page = 1, lastPage = 1;
+  // Revo limita el rango a 1 mes por llamada — iteramos mes a mes
   var all = [];
-  revoStatus('Conectando con Revo…');
-  do {
-    var url = '/api/revo?resource=orders&start=' + start + '&end=' + end + '&withContents=1&page=' + page;
-    var r = await fetch(url, { headers: { 'x-restaid-pass': pass } });
-    if(!r.ok){
-      var err = await r.text().catch(function(){ return ''; });
-      throw new Error('Revo API error ' + r.status + ': ' + err.slice(0,200));
-    }
-    var d = await r.json();
-    if(!d.data || !Array.isArray(d.data)) throw new Error('Respuesta inesperada de Revo');
-    all.push.apply(all, d.data);
-    lastPage = d.last_page || 1;
-    revoStatus('Descargando… pag. ' + page + '/' + lastPage + ' (' + all.length + ' pedidos)');
-    page++;
-  } while(page <= lastPage);
+  var meses = ['01','02','03','04','05','06','07','08','09','10','11','12'];
+  var diasMes = [31,28,31,30,31,30,31,31,30,31,30,31];
+  var añoN = parseInt(año);
+  if((añoN%4===0&&añoN%100!==0)||añoN%400===0) diasMes[1]=29;
+
+  for(var mi=0; mi<meses.length; mi++){
+    var mes = meses[mi];
+    var start = año + '-' + mes + '-01';
+    var end   = año + '-' + mes + '-' + String(diasMes[mi]).padStart(2,'0');
+    var page = 1, lastPage = 1;
+    revoStatus('Descargando ' + mes + '/' + año + '… (' + all.length + ' pedidos acumulados)');
+    do {
+      var url = '/api/revo?resource=orders&start=' + start + '&end=' + end + '&withContents=1&page=' + page;
+      var r = await fetch(url, { headers: { 'x-restaid-pass': pass } });
+      if(!r.ok){
+        var err = await r.text().catch(function(){ return ''; });
+        throw new Error('Revo API error ' + r.status + ' (' + mes + '/' + año + '): ' + err.slice(0,150));
+      }
+      var d = await r.json();
+      if(!d.data || !Array.isArray(d.data)) throw new Error('Respuesta inesperada en ' + mes + '/' + año);
+      all.push.apply(all, d.data);
+      lastPage = d.last_page || 1;
+      page++;
+    } while(page <= lastPage);
+  }
   return all;
 }
 
