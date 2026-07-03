@@ -1368,6 +1368,7 @@ function renderHomeRevo(box,r,v,pub){
   let ventas=null, comensales=null, ticketMedio=null, nTickets=null, estimado=false, periodoLbl='';
   let perComensal=null; // gasto medio por comensal (per cápita)
   let varAnual=null;    // variación % vs año anterior (solo período 'año')
+  let prevPeriodo=null; // previsión del período activo (se muestra en pequeño bajo el número grande)
 
   const DOW=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
   // Per cápita de referencia del restaurante (ratio estable del histórico)
@@ -1400,23 +1401,17 @@ function renderHomeRevo(box,r,v,pub){
     // Previsión: año pasado (mismo día, alineado por día de semana) × crecimiento; si no hay datos, media histórica
     const prevNueva=previsionDia(v,hoyISO,gf);
     const prevFallback=fc&&fc.dias[0]?fc.dias[0].eur:null;
-    const prevHoy=prevNueva!=null?prevNueva:prevFallback;
-    if(vh&&vh.fecha===hoyISO&&vh.euros>0){
-      // Datos reales de Revo para hoy
-      ventas=vh.euros;
-      estimado=false;
-      periodoLbl='Hoy (datos reales)';
-      if(capRef&&ventas)comensales=Math.round(ventas/capRef);
-      if(prevHoy&&prevHoy>0){
-        varAnual={pct:Math.round((ventas-prevHoy)/prevHoy*1000)/10,añoPrev:'prev.',nota:'vs previsión'};
+    prevPeriodo=prevNueva!=null?prevNueva:prevFallback;
+    // El número grande SIEMPRE es el dato real: 0€ si aún no ha abierto el turno
+    const realHoy=(vh&&vh.fecha===hoyISO&&vh.euros>0)?vh.euros:0;
+    ventas=realHoy;
+    estimado=false;
+    periodoLbl='Hoy';
+    if(realHoy>0){
+      if(capRef)comensales=Math.round(realHoy/capRef);
+      if(prevPeriodo&&prevPeriodo>0){
+        varAnual={pct:Math.round((realHoy-prevPeriodo)/prevPeriodo*1000)/10,añoPrev:'prev.',nota:'vs previsión'};
       }
-    } else {
-      // Sin datos reales aún (antes del servicio): mostrar previsión
-      estimado=true;
-      ventas=prevHoy;
-      if(prevNueva==null&&fc&&fc.dias[0])comensales=fc.dias[0].comensales;
-      else if(ventas&&capRef)comensales=Math.round(ventas/capRef);
-      periodoLbl='Previsión de hoy';
     }
     perComensal=capRef;
   } else if(HOME_PERIOD==='ayer'){
@@ -1429,15 +1424,12 @@ function renderHomeRevo(box,r,v,pub){
     const dowAyer=DOW_ES[new Date(ayerISO+'T12:00:00').getDay()];
     const ps=v.prevSemana&&v.prevSemana[dowAyer];
     if(ps)prevFallback=Math.round(((ps.Comida||0)+(ps.Cena||0))*(fc?fc.trend:1));
-    const prevAyer=prevNueva!=null?prevNueva:prevFallback;
-    if(vr&&vr[ayerISO]!=null&&vr[ayerISO]>0){
-      // Datos reales de Revo
-      ventas=vr[ayerISO];
-      estimado=false;
-      if(prevAyer&&prevAyer>0) varAnual={pct:Math.round((ventas-prevAyer)/prevAyer*1000)/10,añoPrev:'prev.',nota:'vs previsión'};
-    } else {
-      // Sin datos reales: usar previsión (año pasado o fallback)
-      if(prevAyer){ ventas=prevAyer; estimado=true; }
+    prevPeriodo=prevNueva!=null?prevNueva:prevFallback;
+    const realAyer=(vr&&vr[ayerISO]!=null&&vr[ayerISO]>0)?vr[ayerISO]:0;
+    ventas=realAyer;
+    estimado=false;
+    if(realAyer>0&&prevPeriodo&&prevPeriodo>0){
+      varAnual={pct:Math.round((realAyer-prevPeriodo)/prevPeriodo*1000)/10,añoPrev:'prev.',nota:'vs previsión'};
     }
     if(ventas&&capRef)comensales=Math.round(ventas/capRef);
     perComensal=capRef;
@@ -1481,7 +1473,9 @@ function renderHomeRevo(box,r,v,pub){
       estHastaHoy+=pDia;
     }
     // Real acumulado de los MISMOS días completados (para comparar manzanas con manzanas)
-    const vrS=v.ventasRecientes||{};
+    const vrS=Object.assign({},v.ventasRecientes||{});
+    // Completar con ventasHoy si el pub aún no lo tiene en ventasRecientes
+    if(v.ventasHoy&&v.ventasHoy.fecha&&v.ventasHoy.euros>0&&vrS[v.ventasHoy.fecha]==null)vrS[v.ventasHoy.fecha]=v.ventasHoy.euros;
     let ventasRealHastaAyer=0;
     for(let i=0;i<diasCompletados;i++){
       const f=isoLocal(new Date(lunes.getTime()+i*86400000));
@@ -1494,12 +1488,12 @@ function renderHomeRevo(box,r,v,pub){
       if(vrS[f]!=null){ventasRealS+=vrS[f];}
     }
     hayRealS=ventasRealS>0;
-    if(hayRealS){
-      ventas=ventasRealS; estimado=false;
-      periodoLbl='Semana actual ('+lunISO.slice(8)+'/'+lunISO.slice(5,7)+' – hoy)';
-      if(estHastaHoy>0) varAnual={pct:Math.round((ventasRealHastaAyer-estHastaHoy)/estHastaHoy*1000)/10,añoPrev:'',nota:'vs previsión acumulada (días completados)',_estTotal:estSemanaTotal};
-    } else {
-      ventas=estSemanaTotal; estimado=true; periodoLbl='Previsión semanal';
+    // Número grande SIEMPRE el real acumulado (0€ si aún no hay ventas esta semana)
+    ventas=ventasRealS; estimado=false;
+    prevPeriodo=estSemanaTotal;
+    periodoLbl='Semana actual ('+lunISO.slice(8)+'/'+lunISO.slice(5,7)+' – hoy)';
+    if(hayRealS&&estHastaHoy>0&&ventasRealHastaAyer>0){
+      varAnual={pct:Math.round((ventasRealHastaAyer-estHastaHoy)/estHastaHoy*1000)/10,añoPrev:'',nota:'vs previsión acumulada (días completados)'};
     }
     if(ventas&&capRef)comensales=Math.round(ventas/capRef);
     perComensal=capRef;
@@ -1511,7 +1505,8 @@ function renderHomeRevo(box,r,v,pub){
     const diasEnMes=new Date(hoyM.getFullYear(),hoyM.getMonth()+1,0).getDate();
     const diaActual=hoyM.getDate();
     // Real: sumar ventasRecientes del mes actual
-    const vrM=v.ventasRecientes||{};
+    const vrM=Object.assign({},v.ventasRecientes||{});
+    if(v.ventasHoy&&v.ventasHoy.fecha&&v.ventasHoy.euros>0&&vrM[v.ventasHoy.fecha]==null)vrM[v.ventasHoy.fecha]=v.ventasHoy.euros;
     let ventasRealM=0; let hayRealM=false;
     Object.keys(vrM).forEach(f=>{ if(f.slice(0,7)===mesISO){ventasRealM+=vrM[f]||0;} });
     hayRealM=ventasRealM>0;
@@ -1540,18 +1535,15 @@ function renderHomeRevo(box,r,v,pub){
       if(n)estHastaHoyM=Math.round(suma*(gf?gf.factor:1));
     }
     if(estHastaHoyM==null&&estMesTotal)estHastaHoyM=Math.round(estMesTotal*(diaActual-1)/diasEnMes); // fallback prorateo lineal
-    if(hayRealM){
-      ventas=Math.round(ventasRealM); estimado=false;
-      periodoLbl='Mes actual ('+mesISO+')';
-      if(estHastaHoyM&&estHastaHoyM>0){
-        const pct=Math.round((ventas-estHastaHoyM)/estHastaHoyM*1000)/10;
-        varAnual={pct,añoPrev:'',nota:'vs previsión acumulada',_estTotal:estMesTotal};
-      }
-    } else {
-      const em=v.evolucionMensual||{};
-      const mesesHist=Object.keys(em).filter(m=>m!==mesISO).sort();
-      if(estMesTotal){ ventas=estMesTotal; estimado=true; periodoLbl='Previsión del mes'; }
-      else if(mesesHist.length){ventas=em[mesesHist[mesesHist.length-1]];periodoLbl='Último mes ('+mesesHist[mesesHist.length-1]+')';estimado=false;}
+    // Número grande SIEMPRE el real acumulado del mes (0€ si aún no hay ventas este mes)
+    ventas=Math.round(ventasRealM); estimado=false;
+    prevPeriodo=estMesTotal;
+    periodoLbl='Mes actual ('+mesISO+')';
+    // La variación compara solo días completados (hasta ayer): el real hasta ayer excluye lo de hoy
+    const realHastaAyerM=ventasRealM-(vrM[hoyMISO]||0);
+    if(hayRealM&&estHastaHoyM&&estHastaHoyM>0&&realHastaAyerM>0){
+      const pct=Math.round((realHastaAyerM-estHastaHoyM)/estHastaHoyM*1000)/10;
+      varAnual={pct,añoPrev:'',nota:'vs previsión acumulada'};
     }
     if(ventas&&capRef)comensales=Math.round(ventas/capRef);
     perComensal=capRef;
@@ -1686,10 +1678,8 @@ function renderHomeRevo(box,r,v,pub){
           ${periodoLbl||'Ventas'}
           ${estimado?'<span class="revo-tag">estimado</span>':''}
         </div>
-        ${HOME_PERIOD==='hoy'&&!estimado&&fc&&fc.dias[0]&&fc.dias[0].eur?`
-        <div style="font-size:12px;color:var(--tx3);margin-top:4px">Previsión: ${fmtE(fc.dias[0].eur)}</div>`:''}
-        ${(HOME_PERIOD==='semana'||HOME_PERIOD==='mes')&&!estimado&&varAnual&&varAnual._estTotal?`
-        <div style="font-size:12px;color:var(--tx3);margin-top:4px">Previsión ${HOME_PERIOD==='semana'?'semana':'mes'}: ${fmtE(varAnual._estTotal)}</div>`:''}
+        ${prevPeriodo!=null&&prevPeriodo>0?`
+        <div style="font-size:12px;color:var(--tx3);margin-top:4px">Previsión ${HOME_PERIOD==='hoy'?'de hoy':HOME_PERIOD==='ayer'?'de ayer':HOME_PERIOD==='semana'?'de la semana':'del mes'}: ${fmtE(prevPeriodo)}</div>`:''}
       </div>
 
 
