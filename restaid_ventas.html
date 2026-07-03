@@ -3105,20 +3105,27 @@ function isoLocal(d) {
 }
 async function fetchRevoRange(desdeISO, hastaISO, pass) {
   var all = [];
-  // Construir lista de tramos mensuales que cubren [desdeISO, hastaISO]
+  // Añadir 1 día al final para capturar pedidos abiertos el último día del rango
+  // pero cerrados de madrugada (1-2am) del día siguiente — Revo los asigna a 'tancada'
+  // del día siguiente, así que los pedimos con margen y luego filtramos por 'oberta'.
+  var finConMargen = new Date(hastaISO + 'T12:00:00');
+  finConMargen.setDate(finConMargen.getDate() + 1);
+  var hastaConMargen = isoLocal(finConMargen);
+
+  // Construir lista de tramos mensuales que cubren [desdeISO, hastaConMargen]
   var cur = new Date(desdeISO + 'T00:00:00');
-  var fin = new Date(hastaISO + 'T00:00:00');
+  var fin = new Date(hastaConMargen + 'T00:00:00');
 
   while (cur <= fin) {
     var yyyy = cur.getFullYear();
     var mm   = String(cur.getMonth() + 1).padStart(2, '0');
     // Primer día del tramo: cur ó el 1 del mes, lo que sea mayor
     var diaIni = isoLocal(cur);
-    // Último día del tramo: fin del mes ó hastaISO, lo que sea menor
+    // Último día del tramo: fin del mes ó hastaConMargen, lo que sea menor
     var ultimoMes = new Date(yyyy, cur.getMonth() + 1, 0); // último día del mes
     var diaFin = ultimoMes <= fin
       ? isoLocal(ultimoMes)
-      : hastaISO;
+      : hastaConMargen;
 
     var page = 1, lastPage = 1;
     do {
@@ -3184,11 +3191,17 @@ async function autoRefreshPendiente() {
       return;
     }
 
-    // Calcular total por día a partir de los pedidos
+    // Calcular total por día a partir de los pedidos.
+    // IMPORTANTE: usamos 'oberta' (apertura) como fecha del pedido, no 'tancada' (cierre).
+    // En TalaBar los turnos cierran de madrugada (1-2am del día siguiente), por lo que
+    // 'tancada' puede ser del día siguiente al de la venta real.
     var totalPorDia = {};
     orders.forEach(function(o) {
-      var fecha = (o.tancada || o.oberta || '').slice(0, 10);
-      if (fecha) totalPorDia[fecha] = (totalPorDia[fecha] || 0) + (o.total || 0);
+      var fecha = (o.oberta || o.tancada || '').slice(0, 10);
+      // Solo contabilizar si la fecha de apertura cae dentro del rango pedido
+      if (fecha && fecha >= desde && fecha <= fechaHoy) {
+        totalPorDia[fecha] = (totalPorDia[fecha] || 0) + (o.total || 0);
+      }
     });
     // Garantizar que TODOS los días del rango quedan en byDate, aunque sean 0€ (cierre).
     // Sin esto, los días sin pedidos no aparecen en ventasRecientes y el index.html
