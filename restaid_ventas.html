@@ -3167,11 +3167,13 @@ async function autoRefreshPendiente() {
   var añoStr = String(hoy.getFullYear());
   var gActivo = AÑOS_DISPONIBLES[añoStr];
 
-  // Calcular desde dónde hay que pedir
+  // Calcular desde dónde hay que pedir.
+  // Usamos G.d1 (en memoria) en vez de AÑOS_DISPONIBLES[añoStr].d1 para que
+  // un reset manual de G.d1 en consola se refleje inmediatamente.
   var desde;
-  if (gActivo && gActivo.d1) {
-    // Pedir desde el día siguiente al último que tenemos
-    var d1 = new Date(gActivo.d1 + 'T00:00:00');
+  var d1Ref = (G && G.d1) ? G.d1 : (gActivo && gActivo.d1 ? gActivo.d1 : null);
+  if (d1Ref) {
+    var d1 = new Date(d1Ref + 'T00:00:00');
     d1.setDate(d1.getDate() + 1);
     desde = isoLocal(d1);
   } else {
