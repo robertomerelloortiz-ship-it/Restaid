@@ -812,13 +812,22 @@ function publishPub(g){
           // Evolución mensual de ese año (desde byDate)
           const evMes={};
           try{ Object.keys(ga.byDate||{}).forEach(f=>{const m=f.slice(0,7);evMes[m]=(evMes[m]||0)+ga.byDate[f];}); Object.keys(evMes).forEach(m=>evMes[m]=Math.round(evMes[m])); }catch(e){}
+          // byDate completo SOLO para año actual y anterior (motor de previsión año-anterior + crecimiento).
+          // El resto de años no lo necesita — evita inflar el payload del pub innecesariamente.
+          const _yNow=new Date().getFullYear();
+          let byDateOut=null;
+          if(+año===_yNow||+año===_yNow-1){
+            byDateOut={};
+            Object.keys(ga.byDate||{}).forEach(f=>{ byDateOut[f]=Math.round(ga.byDate[f]||0); });
+          }
           porAño[año]={
             facturacion:Math.round(ga.totVen||0),
             tickets:ga.nT||0,
             comensales:ga.allComs||0,
             ticketMedio:Math.round((ga.tickMed||0)*100)/100,
             topPlatos:tp,
-            evolucionMensual:evMes
+            evolucionMensual:evMes,
+            byDate:byDateOut
           };
         });
       }

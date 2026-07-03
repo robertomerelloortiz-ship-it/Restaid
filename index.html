@@ -1225,6 +1225,79 @@ function updateCopilotBadge(n){
 function isoLocal(d){
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   MOTOR DE PREVISIÓN: año anterior + crecimiento acumulado
+   Metodología: para estimar un día/semana/mes, se toma el valor real
+   de ESE MISMO día/semana/mes natural del año pasado, y se ajusta por
+   la tasa de crecimiento media desde el 1 de enero (comparando lo que
+   llevamos facturado este año vs el mismo tramo del año anterior).
+   Desplazar 364 días (52 semanas exactas) mantiene automáticamente el
+   mismo día de la semana, así que día y semana quedan alineados sin
+   cálculos de "número de semana".
+═══════════════════════════════════════════════════════════════════ */
+function fechaHaceUnAño(dateStr){
+  const d=new Date(dateStr+'T12:00:00'); // mediodía: evita problemas de DST al restar días
+  d.setDate(d.getDate()-364);
+  return isoLocal(d);
+}
+function computeGrowthFactor(v){
+  const now=new Date();
+  const yActual=now.getFullYear(), yPrev=yActual-1;
+  const bdCur=(v.porAño&&v.porAño[String(yActual)]&&v.porAño[String(yActual)].byDate)||null;
+  const bdPrev=(v.porAño&&v.porAño[String(yPrev)]&&v.porAño[String(yPrev)].byDate)||null;
+  if(!bdCur||!bdPrev)return null;
+  // Comparar 1 enero → ayer (excluimos hoy por estar a medias)
+  const ayer=new Date(now); ayer.setDate(ayer.getDate()-1);
+  const hastaISO=isoLocal(ayer);
+  let sumCur=0,sumPrev=0,dias=0;
+  Object.keys(bdCur).sort().forEach(f=>{
+    if(f>hastaISO)return;
+    const fPrev=String(yPrev)+f.slice(4); // mismo mes-día, año anterior
+    if(bdPrev[fPrev]!=null){ sumCur+=bdCur[f]||0; sumPrev+=bdPrev[fPrev]||0; dias++; }
+  });
+  if(dias<10||sumPrev<=0)return null; // datos insuficientes para un ratio fiable
+  let factor=sumCur/sumPrev;
+  factor=Math.max(0.5,Math.min(2,factor)); // clamp defensivo ante datos atípicos
+  return {factor,dias,sumCur,sumPrev};
+}
+// Previsión de un día concreto (ISO) a partir del mismo día del año pasado × crecimiento
+function previsionDia(v,fechaISO,gf){
+  const yPrev=new Date(fechaISO+'T12:00:00').getFullYear()-1;
+  const bdPrev=(v.porAño&&v.porAño[String(yPrev)]&&v.porAño[String(yPrev)].byDate)||null;
+  if(!bdPrev)return null;
+  const fEquiv=fechaHaceUnAño(fechaISO);
+  const valorPrev=bdPrev[fEquiv];
+  if(valorPrev==null)return null;
+  return Math.round(valorPrev*(gf?gf.factor:1));
+}
+// Previsión de una semana natural (lunes ISO de inicio) a partir de la semana equivalente del año pasado
+function previsionSemana(v,lunesISO,gf){
+  const yPrev=new Date(lunesISO+'T12:00:00').getFullYear()-1;
+  const bdPrev=(v.porAño&&v.porAño[String(yPrev)]&&v.porAño[String(yPrev)].byDate)||null;
+  if(!bdPrev)return null;
+  const lunesEquiv=fechaHaceUnAño(lunesISO);
+  const dLunesEquiv=new Date(lunesEquiv+'T12:00:00');
+  let suma=0,n=0;
+  for(let i=0;i<7;i++){
+    const f=isoLocal(new Date(dLunesEquiv.getTime()+i*86400000));
+    if(bdPrev[f]!=null){suma+=bdPrev[f];n++;}
+  }
+  if(!n)return null;
+  return Math.round(suma*(gf?gf.factor:1));
+}
+// Previsión de un mes natural a partir del mismo mes del año pasado
+function previsionMes(v,mesISO,gf){ // mesISO='2026-07'
+  const yPrev=+mesISO.slice(0,4)-1;
+  const bdPrev=(v.porAño&&v.porAño[String(yPrev)]&&v.porAño[String(yPrev)].byDate)||null;
+  if(!bdPrev)return null;
+  const mm=mesISO.slice(5,7);
+  let suma=0,n=0;
+  Object.keys(bdPrev).forEach(f=>{ if(f.slice(5,7)===mm){suma+=bdPrev[f]||0;n++;} });
+  if(!n)return null;
+  return Math.round(suma*(gf?gf.factor:1));
+}
+
 function computeForecast(v){
   if(!v||!v.prevSemana||!Object.keys(v.prevSemana).length) return null;
   const DOW=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
@@ -1300,6 +1373,7 @@ function renderHomeRevo(box,r,v,pub){
   // Per cápita de referencia del restaurante (ratio estable del histórico)
   const capRef=v.perCapita||null;
   const fc=computeForecast(v);
+  const gf=computeGrowthFactor(v); // {factor,dias,sumCur,sumPrev} o null si faltan datos del año pasado
   const fcMax=fc?Math.max(1,...fc.dias.map(d=>d.eur||0)):1;
   // ── Cuenta de resultados (P&L) mensual estimada ──
   let pnl=null;
@@ -1323,45 +1397,47 @@ function renderHomeRevo(box,r,v,pub){
   if(HOME_PERIOD==='hoy'){
     const hoyISO=isoLocal(new Date());
     const vh=v.ventasHoy;
+    // Previsión: año pasado (mismo día, alineado por día de semana) × crecimiento; si no hay datos, media histórica
+    const prevNueva=previsionDia(v,hoyISO,gf);
+    const prevFallback=fc&&fc.dias[0]?fc.dias[0].eur:null;
+    const prevHoy=prevNueva!=null?prevNueva:prevFallback;
     if(vh&&vh.fecha===hoyISO&&vh.euros>0){
       // Datos reales de Revo para hoy
       ventas=vh.euros;
       estimado=false;
       periodoLbl='Hoy (datos reales)';
       if(capRef&&ventas)comensales=Math.round(ventas/capRef);
-      // Variación vs la previsión del mismo día
-      if(fc&&fc.dias[0]&&fc.dias[0].eur>0){
-        const prev=fc.dias[0].eur;
-        varAnual={pct:Math.round((ventas-prev)/prev*1000)/10,añoPrev:'prev.',nota:'vs previsión'};
+      if(prevHoy&&prevHoy>0){
+        varAnual={pct:Math.round((ventas-prevHoy)/prevHoy*1000)/10,añoPrev:'prev.',nota:'vs previsión'};
       }
     } else {
       // Sin datos reales aún (antes del servicio): mostrar previsión
       estimado=true;
-      if(fc&&fc.dias[0]){ ventas=fc.dias[0].eur||null; comensales=fc.dias[0].comensales; }
+      ventas=prevHoy;
+      if(prevNueva==null&&fc&&fc.dias[0])comensales=fc.dias[0].comensales;
+      else if(ventas&&capRef)comensales=Math.round(ventas/capRef);
       periodoLbl='Previsión de hoy';
     }
     perComensal=capRef;
   } else if(HOME_PERIOD==='ayer'){
     const ayerISO=(()=>{const d=new Date();d.setDate(d.getDate()-1);return isoLocal(d);})();
     const vr=v.ventasRecientes;
+    // Previsión: año pasado (mismo día) × crecimiento; fallback a media histórica del día de semana
+    const prevNueva=previsionDia(v,ayerISO,gf);
+    let prevFallback=null;
+    const DOW_ES=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+    const dowAyer=DOW_ES[new Date(ayerISO+'T12:00:00').getDay()];
+    const ps=v.prevSemana&&v.prevSemana[dowAyer];
+    if(ps)prevFallback=Math.round(((ps.Comida||0)+(ps.Cena||0))*(fc?fc.trend:1));
+    const prevAyer=prevNueva!=null?prevNueva:prevFallback;
     if(vr&&vr[ayerISO]!=null&&vr[ayerISO]>0){
       // Datos reales de Revo
       ventas=vr[ayerISO];
       estimado=false;
-      // Variación vs previsión del mismo día de la semana
-      const DOW_ES=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
-      const dowAyer=DOW_ES[new Date(ayerISO+'T12:00:00').getDay()];
-      const ps=v.prevSemana&&v.prevSemana[dowAyer];
-      if(ps){
-        const prev=Math.round(((ps.Comida||0)+(ps.Cena||0))*(fc?fc.trend:1));
-        if(prev>0) varAnual={pct:Math.round((ventas-prev)/prev*1000)/10,añoPrev:'prev.',nota:'vs previsión'};
-      }
+      if(prevAyer&&prevAyer>0) varAnual={pct:Math.round((ventas-prevAyer)/prevAyer*1000)/10,añoPrev:'prev.',nota:'vs previsión'};
     } else {
-      // Sin datos reales: estimación por día de semana
-      const DOW_ES=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
-      const dowAyer=DOW_ES[new Date(ayerISO+'T12:00:00').getDay()];
-      const ps=v.prevSemana&&v.prevSemana[dowAyer];
-      if(ps){ ventas=Math.round(((ps.Comida||0)+(ps.Cena||0))*(fc?fc.trend:1)); estimado=true; }
+      // Sin datos reales: usar previsión (año pasado o fallback)
+      if(prevAyer){ ventas=prevAyer; estimado=true; }
     }
     if(ventas&&capRef)comensales=Math.round(ventas/capRef);
     perComensal=capRef;
@@ -1377,12 +1453,17 @@ function renderHomeRevo(box,r,v,pub){
     const DOW_ES=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
     const prevSem=v.prevSemana||{};
     const trend=fc?fc.trend:1;
-    // Estimación semana completa
-    let estSemanaTotal=0;
-    for(let i=0;i<7;i++){
-      const d=new Date(lunes.getTime()+i*86400000);
-      const ps=prevSem[DOW_ES[d.getDay()]];
-      if(ps)estSemanaTotal+=Math.round(((ps.Comida||0)+(ps.Cena||0))*trend);
+    // Previsión semana completa: año pasado (misma semana natural, alineada por día) × crecimiento
+    const prevSemNueva=previsionSemana(v,lunISO,gf);
+    let estSemanaTotal=prevSemNueva;
+    if(estSemanaTotal==null){
+      // Fallback: media histórica por día de semana
+      estSemanaTotal=0;
+      for(let i=0;i<7;i++){
+        const d=new Date(lunes.getTime()+i*86400000);
+        const ps=prevSem[DOW_ES[d.getDay()]];
+        if(ps)estSemanaTotal+=Math.round(((ps.Comida||0)+(ps.Cena||0))*trend);
+      }
     }
     // Estimación acumulada SOLO de días ya completados (excluye hoy, que está en curso:
     // comparar contra la previsión de un día que aún no ha terminado da una lectura falsa,
@@ -1390,9 +1471,14 @@ function renderHomeRevo(box,r,v,pub){
     const diasCompletados=Math.max(0,diasTranscurridos-1);
     let estHastaHoy=0;
     for(let i=0;i<diasCompletados;i++){
-      const d=new Date(lunes.getTime()+i*86400000);
-      const ps=prevSem[DOW_ES[d.getDay()]];
-      if(ps)estHastaHoy+=Math.round(((ps.Comida||0)+(ps.Cena||0))*trend);
+      const fD=isoLocal(new Date(lunes.getTime()+i*86400000));
+      let pDia=previsionDia(v,fD,gf);
+      if(pDia==null){
+        const d=new Date(lunes.getTime()+i*86400000);
+        const ps=prevSem[DOW_ES[d.getDay()]];
+        pDia=ps?Math.round(((ps.Comida||0)+(ps.Cena||0))*trend):0;
+      }
+      estHastaHoy+=pDia;
     }
     // Real acumulado de los MISMOS días completados (para comparar manzanas con manzanas)
     const vrS=v.ventasRecientes||{};
@@ -1429,16 +1515,31 @@ function renderHomeRevo(box,r,v,pub){
     let ventasRealM=0; let hayRealM=false;
     Object.keys(vrM).forEach(f=>{ if(f.slice(0,7)===mesISO){ventasRealM+=vrM[f]||0;} });
     hayRealM=ventasRealM>0;
-    // Estimación mes completo: media diaria de últimos 3 meses × días del mes
-    const em=v.evolucionMensual||{};
-    const mesesHist=Object.keys(em).filter(m=>m!==mesISO).sort();
-    let estMesTotal=null;
-    if(mesesHist.length>=2){
-      const ult3=mesesHist.slice(-3);
-      const mediaD=ult3.reduce((s,m)=>{ const dias=new Date(+m.slice(0,4),+m.slice(5,7),0).getDate(); return s+(em[m]||0)/dias; },0)/ult3.length;
-      estMesTotal=Math.round(mediaD*diasEnMes);
+    // Previsión mes completo: mismo mes del año pasado × crecimiento
+    let estMesTotal=previsionMes(v,mesISO,gf);
+    if(estMesTotal==null){
+      // Fallback: media diaria de últimos 3 meses × días del mes
+      const em=v.evolucionMensual||{};
+      const mesesHist=Object.keys(em).filter(m=>m!==mesISO).sort();
+      if(mesesHist.length>=2){
+        const ult3=mesesHist.slice(-3);
+        const mediaD=ult3.reduce((s,m)=>{ const dias=new Date(+m.slice(0,4),+m.slice(5,7),0).getDate(); return s+(em[m]||0)/dias; },0)/ult3.length;
+        estMesTotal=Math.round(mediaD*diasEnMes);
+      }
     }
-    const estHastaHoyM=estMesTotal?Math.round(estMesTotal*diaActual/diasEnMes):null;
+    // Previsión acumulada hasta AYER (días completados del mes, respetando la distribución real
+    // del año pasado día a día — no un prorateo lineal, ya que fin de mes suele facturar más)
+    const yPrevM=hoyM.getFullYear()-1;
+    const bdPrevM=(v.porAño&&v.porAño[String(yPrevM)]&&v.porAño[String(yPrevM)].byDate)||null;
+    let estHastaHoyM=null;
+    if(bdPrevM){
+      let suma=0,n=0;
+      Object.keys(bdPrevM).forEach(f=>{
+        if(f.slice(0,7)===(String(yPrevM)+mesISO.slice(4))&&+f.slice(8,10)<diaActual){ suma+=bdPrevM[f]||0; n++; }
+      });
+      if(n)estHastaHoyM=Math.round(suma*(gf?gf.factor:1));
+    }
+    if(estHastaHoyM==null&&estMesTotal)estHastaHoyM=Math.round(estMesTotal*(diaActual-1)/diasEnMes); // fallback prorateo lineal
     if(hayRealM){
       ventas=Math.round(ventasRealM); estimado=false;
       periodoLbl='Mes actual ('+mesISO+')';
@@ -1447,7 +1548,10 @@ function renderHomeRevo(box,r,v,pub){
         varAnual={pct,añoPrev:'',nota:'vs previsión acumulada',_estTotal:estMesTotal};
       }
     } else {
-      if(mesesHist.length){ventas=em[mesesHist[mesesHist.length-1]];periodoLbl='Último mes ('+mesesHist[mesesHist.length-1]+')';estimado=false;}
+      const em=v.evolucionMensual||{};
+      const mesesHist=Object.keys(em).filter(m=>m!==mesISO).sort();
+      if(estMesTotal){ ventas=estMesTotal; estimado=true; periodoLbl='Previsión del mes'; }
+      else if(mesesHist.length){ventas=em[mesesHist[mesesHist.length-1]];periodoLbl='Último mes ('+mesesHist[mesesHist.length-1]+')';estimado=false;}
     }
     if(ventas&&capRef)comensales=Math.round(ventas/capRef);
     perComensal=capRef;
