@@ -1189,7 +1189,7 @@ function renderHome(){
 }
 
 // Período activo del dashboard (preparado para conectar Revo en tiempo real)
-let HOME_PERIOD='semana';
+let HOME_PERIOD='hoy';
 function setHomePeriod(p){
   HOME_PERIOD=p;
   renderHome();
@@ -1471,13 +1471,25 @@ function renderHomeRevo(box,r,v,pub){
         <div class="revo-hero-val">${ventasStr}</div>
         ${varAnual!=null?`
         <div class="revo-hero-var ${varAnual.pct>=0?'up':'down'}">
-          ${varAnual.pct>=0?'▲':'▼'} ${Math.abs(varAnual.pct)}% vs ${varAnual.añoPrev}${varAnual.nota||''}
+          ${varAnual.pct>=0?'▲':'▼'} ${Math.abs(varAnual.pct)}% vs ${varAnual.nota||varAnual.añoPrev}
         </div>`:''}
         <div class="revo-hero-lbl">
           ${periodoLbl||'Ventas'}
           ${estimado?'<span class="revo-tag">estimado</span>':''}
         </div>
+        ${HOME_PERIOD==='hoy'&&!estimado&&fc&&fc.dias[0]&&fc.dias[0].eur?`
+        <div style="font-size:12px;color:var(--tx3);margin-top:4px">Previsión: ${fmtE(fc.dias[0].eur)}</div>`:''}
       </div>
+
+
+
+
+
+
+
+
+
+
 
       <!-- Rejilla 2×2 de métricas -->
       <div class="revo-grid">
