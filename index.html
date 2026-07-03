@@ -1669,6 +1669,41 @@ function renderHomeRevo(box,r,v,pub){
 window.addEventListener('storage',e=>{if(e.key==='restaid_pub_v1'||e.key===FIJOS_KEY)renderHome();});
 document.addEventListener('DOMContentLoaded',renderHome);
 setTimeout(renderHome,0);
+// Precargar Ventas en segundo plano tras el login, para que Inicio siempre tenga datos frescos
+document.addEventListener('DOMContentLoaded',function(){ setTimeout(preloadVentasSilencioso, 600); });
+
+// Listener global de mensajes de los iframes (registrado UNA sola vez, no dentro de loadModule)
+window.addEventListener('message', function(e) {
+  if (e.data && e.data.type === 'restaid_open_copilot') { openCopilot(); return; }
+  if (e.data && e.data.type === 'restaid_apikey' && e.data.key) {
+    try { localStorage.setItem('restaid_copilot_apikey', e.data.key); } catch(err) {}
+  }
+  // Datos publicados por los módulos (necesario en file:// donde el localStorage está aislado)
+  if (e.data && e.data.type === 'restaid_pub' && e.data.key && e.data.value) {
+    try { localStorage.setItem(e.data.key, e.data.value); } catch(err) {}
+    console.log('[SHELL] Datos recibidos de módulo:', e.data.key);
+    // El evento 'storage' no se dispara en la misma pestaña que hace el setItem,
+    // así que refrescamos Inicio manualmente si está a la vista.
+    if (e.data.key === 'restaid_pub_v1') { try { renderHome(); } catch(err) {} }
+  }
+});
+
+/* Precarga silenciosa del módulo Ventas al entrar en Inicio, para que
+   autoRefreshPendiente y publishPub se ejecuten aunque el usuario no
+   abra el módulo manualmente. El iframe se carga oculto (sin .active). */
+function preloadVentasSilencioso(){
+  if (loadedModules.has('ventas')) return; // ya cargado (visible o no)
+  const frame = document.getElementById('frame-ventas');
+  if (!frame) return;
+  frame.src = MODULE_FILES.ventas;
+  loadedModules.add('ventas');
+  const _pass = localStorage.getItem('restaid_pass') || '';
+  if (_pass) {
+    setTimeout(function() {
+      try { frame.contentWindow.postMessage({ type: 'restaid_pass', pass: _pass }, '*'); } catch(e) {}
+    }, 800);
+  }
+}
 
 function loadModule(id, el) {
   // Nav active
@@ -1697,19 +1732,6 @@ function loadModule(id, el) {
   }
 
   frame.classList.add('active');
-
-  // Escuchar mensajes de los iframes (copiloto, etc.)
-window.addEventListener('message', function(e) {
-  if (e.data && e.data.type === 'restaid_open_copilot') { openCopilot(); return; }
-  if (e.data && e.data.type === 'restaid_apikey' && e.data.key) {
-    try { localStorage.setItem('restaid_copilot_apikey', e.data.key); } catch(err) {}
-  }
-  // Datos publicados por los módulos (necesario en file:// donde el localStorage está aislado)
-  if (e.data && e.data.type === 'restaid_pub' && e.data.key && e.data.value) {
-    try { localStorage.setItem(e.data.key, e.data.value); } catch(err) {}
-    console.log('[SHELL] Datos recibidos de módulo:', e.data.key);
-  }
-});
 
 // Propagar la contraseña de sesión al iframe (por si se usa file://; en Vercel
 // el localStorage ya es compartido al ser el mismo origen)
