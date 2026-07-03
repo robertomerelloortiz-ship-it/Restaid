@@ -857,7 +857,17 @@ function publishPub(g){
       ventasPorTurno,
       ventasPorZona,
       consumo,
+    // Últimos 7 días (para KPI de Ayer y mini-histórico reciente en index.html)
+    let ventasRecientes=null;
+    try{
+      if(g.byDate){
+        const fechas=Object.keys(g.byDate).sort().slice(-7);
+        ventasRecientes={};
+        fechas.forEach(f=>{ ventasRecientes[f]=Math.round(g.byDate[f]||0); });
+      }
+    }catch(e){}
       ventasHoy,
+      ventasRecientes,
       _ts:Date.now()
     };
     localStorage.setItem('restaid_pub_v1',JSON.stringify(pub));
