@@ -1,40 +1,56 @@
 // /api/revo.js — Proxy a la API de Revo XEF (Cegid).
-// El Personal Token vive solo aquí (variable de entorno REVO_TOKEN),
+// El token vive solo aquí (variable de entorno REVO_TOKEN),
 // nunca en el navegador. Mismo patrón de auth que claude.js y db.js.
 //
-// Uso desde los módulos de RESTAID (GET):
-//   fetch('/api/revo?resource=warehouses', { headers: { 'x-restaid-pass': PASS } })
-//   fetch('/api/revo?resource=stocks', ...)
-//   fetch('/api/revo?resource=orders&start=2025-01-01&end=2025-01-31', ...)
-//   fetch('/api/revo?resource=catalog', ...)
-//   fetch('/api/revo?resource=suppliers', ...)
+// Soporta dos modos de autenticación AUTO-DETECTADOS por longitud del token:
 //
-// Todos los recursos son solo lectura (GET). RESTAID no escribe en Revo.
+//   A) OAuth2 Personal Token (largo, ~200+ chars)
+//      - BASE: https://api.integrations.revoxef.works
+//      - Rutas: /classic/...
+//      - Headers: Authorization: Bearer {token}, Accept: application/json
+//
+//   B) Legacy API Token (corto, ~16 chars)
+//      - BASE: https://revoxef.works
+//      - Rutas: /api/external/v3/reports/... y /api/external/v2/...
+//      - Headers: tenant: {REVO_TENANT}, Authorization: Bearer {token}
+//      - Requiere variable REVO_TENANT (nombre de la cuenta, ej: "talabar")
+//
+// Uso desde los módulos de RESTAID (GET):
+//   fetch('/api/revo?resource=orders&start=2025-01-01&end=2025-01-31', ...)
 
-const BASE = 'https://api.integrations.revoxef.works';
-
-// Mapa de recursos disponibles.
-// Cada entrada define la ruta base en la API de Revo.
-// Los parámetros de filtro (fechas, página...) se añaden dinámicamente.
-const RESOURCES = {
+// ── Modo OAuth2 ──
+const BASE_OAUTH = 'https://api.integrations.revoxef.works';
+const RESOURCES_OAUTH = {
   warehouses: '/classic/warehouses',
   stocks:     '/classic/stocks',
-  orders:     '/classic/reports/v3/orders', // requiere start + end
-  catalog:    '/classic/catalog/items',    // "items" = todos los tipos en uno (tip de Cegid)
+  orders:     '/classic/reports/v3/orders',
+  catalog:    '/classic/catalog/items',
   suppliers:  '/classic/purchase/suppliers',
   payments:   '/classic/payments/methods',
   staff:      '/classic/staff',
   tables:     '/classic/tables',
 };
 
+// ── Modo Legacy ──
+const BASE_LEGACY = 'https://revoxef.works';
+const RESOURCES_LEGACY = {
+  warehouses: '/api/external/v2/warehouses',
+  stocks:     '/api/external/v2/stocks',
+  orders:     '/api/external/v3/reports/orders',
+  catalog:    '/api/external/v2/catalog/items',
+  suppliers:  '/api/external/v2/purchase/suppliers',
+  payments:   '/api/external/v2/payments/methods',
+  staff:      '/api/external/v2/staff',
+  tables:     '/api/external/v2/tables',
+};
+
 module.exports = async (req, res) => {
-  // Solo GET
   if (req.method !== 'GET') {
     res.status(405).json({ error: 'Método no permitido (solo GET)' });
     return;
   }
 
-  // Autorización: mismo patrón que claude.js (pass o modo personal)
+  // Autorización RESTAID
   const pass = req.headers['x-restaid-pass'] || '';
   const isPersonal = pass === 'personal';
   if (!isPersonal && (!process.env.RESTAID_PASS || pass !== process.env.RESTAID_PASS)) {
@@ -48,6 +64,16 @@ module.exports = async (req, res) => {
     return;
   }
 
+  // Auto-detectar modo por longitud del token
+  const isLegacy = token.length < 50;
+  const BASE = isLegacy ? BASE_LEGACY : BASE_OAUTH;
+  const RESOURCES = isLegacy ? RESOURCES_LEGACY : RESOURCES_OAUTH;
+
+  if (isLegacy && !process.env.REVO_TENANT) {
+    res.status(500).json({ error: 'Token legacy detectado: falta REVO_TENANT (nombre de cuenta, ej: "talabar")' });
+    return;
+  }
+
   // Recurso solicitado
   const resource = (req.query && req.query.resource) || '';
   const basePath = RESOURCES[resource];
@@ -58,30 +84,26 @@ module.exports = async (req, res) => {
     return;
   }
 
-  // Construimos los query params para Revo según el recurso
+  // Query params
   const params = new URLSearchParams();
 
   if (resource === 'orders') {
-    // Fechas obligatorias para el informe de ventas
     const start = req.query.start || '';
     const end   = req.query.end   || '';
     if (!start || !end) {
-      res.status(400).json({ error: 'El recurso "orders" requiere los parámetros start y end (YYYY-MM-DD)' });
+      res.status(400).json({ error: 'El recurso "orders" requiere start y end (YYYY-MM-DD)' });
       return;
     }
     params.set('start_date', start);
     params.set('end_date', end);
-    // Incluir detalles de contenido y pagos (útil para análisis de ventas)
     if (req.query.withContents)  params.set('withContents', '1');
     if (req.query.withPayments)  params.set('withPayments', '1');
     if (req.query.withInvoices)  params.set('withInvoices', '1');
   }
 
-  // Paginación: todos los recursos la soportan
   if (req.query.page)     params.set('page', req.query.page);
   if (req.query.perPage)  params.set('per_page', req.query.perPage);
 
-  // Filtros de stock: almacén concreto
   if (resource === 'stocks' && req.query.warehouseId) {
     params.set('warehouseId', req.query.warehouseId);
   }
@@ -89,22 +111,21 @@ module.exports = async (req, res) => {
   const qs = params.toString();
   const url = BASE + basePath + (qs ? '?' + qs : '');
 
+  // Cabeceras según modo
+  const headers = {
+    'Authorization': 'Bearer ' + token,
+    'Accept': 'application/json',
+  };
+  if (isLegacy) {
+    headers['tenant'] = process.env.REVO_TENANT;
+  }
+
   try {
-    const r = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Authorization': 'Bearer ' + token,
-        'Accept': 'application/json',
-      },
-    });
-
+    const r = await fetch(url, { method: 'GET', headers });
     const text = await r.text();
-
-    // Propagamos el status de Revo tal cual (200, 401, 404, 429...)
     res.status(r.status);
     res.setHeader('Content-Type', 'application/json');
     res.send(text);
-
   } catch (e) {
     res.status(502).json({
       error: 'No se pudo contactar con Revo XEF',
