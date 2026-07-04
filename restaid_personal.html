@@ -296,10 +296,20 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 </div>
 
 <script>
-const SB_URL='https://gtdsqvebuhdndfaiqoyj.supabase.co';
-const SB_KEY='sb_publishable_cu53L_4O6Rz-RlGurDI3Kg_CJHqaa8U';
-const SB_RESTAURANTE='default';
+/* Migrado al proxy /api/db: la clave de Supabase vive en el servidor.
+   Esta app usa el modo 'personal' (sin contraseña de admin), igual que
+   con /api/claude; el proxy solo le permite las tablas rrhh e inventario. */
 const API='/api/claude', ALB_MODEL='claude-sonnet-4-6';
+async function dbCall(payload){
+  const r=await fetch('/api/db',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','x-restaid-pass':'personal'},
+    body:JSON.stringify(payload)
+  });
+  const d=await r.json().catch(()=>({ok:false,error:'respuesta no válida'}));
+  if(!r.ok||!d.ok)throw new Error(d.error||('HTTP '+r.status));
+  return d;
+}
 const AVCOLORS=['#3E6E8E','#E8914A','#5A8A6A','#8A5A2A','#6A2A8A','#2A6A8A','#8A6A2A','#1D7A4A','#C0604E','#4A5A8A'];
 let _uidc=0;
 const uid=()=>Date.now().toString(36)+(_uidc++).toString(36)+Math.random().toString(36).slice(2,6);
@@ -310,8 +320,8 @@ let RRHH=null, INV=null, USER=null, albQueue=[];
 
 function aiHeaders(){return {'Content-Type':'application/json','x-restaid-pass':'personal'};}
 async function aiCheck(r){if(r.ok)return;let det='';try{const e=await r.json();det=e&&e.error&&e.error.message?': '+e.error.message:'';}catch(_){}const m={401:'clave de API no v\u00e1lida',429:'l\u00edmite de uso alcanzado',529:'IA saturada, reint\u00e9ntalo',400:'petici\u00f3n rechazada',500:'error interno IA'}[r.status]||('error '+r.status);throw new Error(m+det);}
-async function sbGet(table){try{const r=await fetch(`${SB_URL}/rest/v1/${table}?restaurante=eq.${SB_RESTAURANTE}&select=datos`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}});if(!r.ok)return null;const d=await r.json();return d&&d[0]?d[0].datos:null;}catch(e){console.error('sbGet '+table,e);return null;}}
-async function sbWrite(table,datos){try{datos._ts=Date.now();const rP=await fetch(`${SB_URL}/rest/v1/${table}?restaurante=eq.${SB_RESTAURANTE}`,{method:'PATCH',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=representation'},body:JSON.stringify({datos})});const txt=await rP.text().catch(()=>'');let patched=[];try{patched=JSON.parse(txt);}catch(e){}if(Array.isArray(patched)&&patched.length===0){await fetch(`${SB_URL}/rest/v1/${table}`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({restaurante:SB_RESTAURANTE,datos})});}return true;}catch(e){console.error('sbWrite '+table,e);return false;}}
+async function sbGet(table){try{const d=await dbCall({op:'get',table,select:'datos',limit:1});return d.rows&&d.rows[0]?d.rows[0].datos:null;}catch(e){console.error('sbGet '+table,e.message||e);return null;}}
+async function sbWrite(table,datos){try{datos._ts=Date.now();await dbCall({op:'upsert',table,datos});return true;}catch(e){console.error('sbWrite '+table,e.message||e);return false;}}
 
 /* ── Avatar helpers ── */
 function initials(name){return(name||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase();}

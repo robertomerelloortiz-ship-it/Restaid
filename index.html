@@ -2040,25 +2040,21 @@ function flushIframes() {
   });
 }
 
-/* Escribe directamente a Supabase desde el shell, sin depender del iframe.
-   Misma lógica que sbSetInv/sbWriteNow en los módulos. */
+/* Escribe a Supabase desde el shell vía proxy /api/db (la clave vive en el
+   servidor). El upsert PATCH→INSERT lo resuelve el propio proxy. */
 async function sbWriteFromShell(tabla, datos) {
-  const SB_URL_S = 'https://gtdsqvebuhdndfaiqoyj.supabase.co';
-  const SB_KEY_S = 'sb_publishable_cu53L_4O6Rz-RlGurDI3Kg_CJHqaa8U';
-  const SB_REST  = 'default';
   const TABLE_MAP = { inventario: 'inventario', rrhh: 'rrhh' };
   const sbTable = TABLE_MAP[tabla]; if (!sbTable) return;
   try {
-    const body = JSON.stringify({ datos });
-    const headers = { 'apikey': SB_KEY_S, 'Authorization': 'Bearer ' + SB_KEY_S, 'Content-Type': 'application/json', 'Prefer': 'return=representation' };
-    const rPatch = await fetch(`${SB_URL_S}/rest/v1/${sbTable}?restaurante=eq.${SB_REST}`, { method: 'PATCH', headers, body });
-    const txt = await rPatch.text().catch(() => '');
-    let patched = []; try { patched = JSON.parse(txt); } catch(e) {}
-    if (Array.isArray(patched) && patched.length === 0) {
-      await fetch(`${SB_URL_S}/rest/v1/${sbTable}`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ restaurante: SB_REST, datos }) });
-    }
+    const r = await fetch('/api/db', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-restaid-pass': localStorage.getItem('restaid_pass') || '' },
+      body: JSON.stringify({ op: 'upsert', table: sbTable, datos })
+    });
+    const d = await r.json().catch(() => ({ ok: false }));
+    if (!r.ok || !d.ok) throw new Error(d.error || ('HTTP ' + r.status));
     console.log('[SHELL] Supabase write OK:', tabla);
-  } catch(e) { console.warn('[SHELL] Supabase write error:', tabla, e); }
+  } catch(e) { console.warn('[SHELL] Supabase write error:', tabla, e.message || e); }
 }
 
 /* ── Resumen compacto de datos para el system prompt ── */

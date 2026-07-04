@@ -407,19 +407,23 @@ function sanitizeE(){
    Tabla: inventario (restaurante text, datos jsonb)
    Lectura al arrancar; escritura con debounce. Protección anti-carreras:
    LOCAL_DIRTY + timestamp _ts (last-write-wins). */
-const SB_URL='https://gtdsqvebuhdndfaiqoyj.supabase.co';
-const SB_KEY='sb_publishable_cu53L_4O6Rz-RlGurDI3Kg_CJHqaa8U';
-const SB_RESTAURANTE='default';
+/* Migrado al proxy /api/db: la clave de Supabase vive en el servidor. */
 const SB_TABLE='inventario';
+async function dbCall(payload){
+  const r=await fetch('/api/db',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','x-restaid-pass':localStorage.getItem('restaid_pass')||''},
+    body:JSON.stringify(payload)
+  });
+  const d=await r.json().catch(()=>({ok:false,error:'respuesta no válida'}));
+  if(!r.ok||!d.ok)throw new Error(d.error||('HTTP '+r.status));
+  return d;
+}
 
 async function sbGetInv(){
   try{
-    const r=await fetch(`${SB_URL}/rest/v1/${SB_TABLE}?restaurante=eq.${SB_RESTAURANTE}&select=datos`,{
-      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}
-    });
-    if(!r.ok)return null;
-    const d=await r.json();
-    return d&&d[0]?d[0].datos:null;
+    const d=await dbCall({op:'get',table:SB_TABLE,select:'datos',limit:1});
+    return d.rows&&d.rows[0]?d.rows[0].datos:null;
   }catch(e){return null;}
 }
 
@@ -430,22 +434,8 @@ function sbSetInv(){
 }
 async function sbWriteNow(){
   try{
-    const rPatch=await fetch(`${SB_URL}/rest/v1/${SB_TABLE}?restaurante=eq.${SB_RESTAURANTE}`,{
-      method:'PATCH',
-      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=representation'},
-      body:JSON.stringify({datos:E})
-    });
-    const patchTxt=await rPatch.text().catch(()=>'');
-    let patched=[];try{patched=JSON.parse(patchTxt);}catch(e){}
-    if(Array.isArray(patched)&&patched.length===0){
-      const rPost=await fetch(`${SB_URL}/rest/v1/${SB_TABLE}`,{
-        method:'POST',
-        headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
-        body:JSON.stringify({restaurante:SB_RESTAURANTE,datos:E})
-      });
-      if(!rPost.ok){const t=await rPost.text().catch(()=>'');console.warn('SB inv insert error',rPost.status,t.slice(0,150));}
-    }
-  }catch(e){console.warn('SB inv write error',e);}
+    await dbCall({op:'upsert',table:SB_TABLE,datos:E});
+  }catch(e){console.warn('SB inv write error',e.message||e);}
 }
 
 async function loadFromDB(){

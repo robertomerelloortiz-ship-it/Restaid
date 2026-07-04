@@ -175,29 +175,29 @@ window.addEventListener('message',function(e){
   if(e.data&&e.data.type==='restaid_request_pub'){try{if(typeof DB!=='undefined'&&DB)window.parent.postMessage({type:'restaid_pub',key:STORE,value:JSON.stringify(DB)},'*');}catch(err){}}
 });
 
-/* ════════════ Supabase (tabla: appcc — crear como rrhh: restaurante text, datos jsonb) ════════════ */
-const SB_URL='https://gtdsqvebuhdndfaiqoyj.supabase.co';
-const SB_KEY='sb_publishable_cu53L_4O6Rz-RlGurDI3Kg_CJHqaa8U';
-const SB_RESTAURANTE='default';
+/* ════════════ Supabase vía proxy /api/db (tabla: appcc — restaurante text, datos jsonb) ════════════ */
 const SB_TABLE='appcc';
+async function dbCall(payload){
+  const r=await fetch('/api/db',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','x-restaid-pass':localStorage.getItem('restaid_pass')||''},
+    body:JSON.stringify(payload)
+  });
+  const d=await r.json().catch(()=>({ok:false,error:'respuesta no válida'}));
+  if(!r.ok||!d.ok)throw new Error(d.error||('HTTP '+r.status));
+  return d;
+}
 async function sbGet(){
   try{
-    const r=await fetch(`${SB_URL}/rest/v1/${SB_TABLE}?restaurante=eq.${SB_RESTAURANTE}&select=datos`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}});
-    if(!r.ok)return null;const d=await r.json();return d&&d[0]?d[0].datos:null;
+    const d=await dbCall({op:'get',table:SB_TABLE,select:'datos',limit:1});
+    return d.rows&&d.rows[0]?d.rows[0].datos:null;
   }catch(e){return null;}
 }
 let SB_TIMER=null;
 function sbSet(){clearTimeout(SB_TIMER);SB_TIMER=setTimeout(sbWriteNow,1500);}
 async function sbWriteNow(){
   try{
-    const rPatch=await fetch(`${SB_URL}/rest/v1/${SB_TABLE}?restaurante=eq.${SB_RESTAURANTE}`,{
-      method:'PATCH',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=representation'},
-      body:JSON.stringify({datos:DB})});
-    const txt=await rPatch.text().catch(()=>'');let patched=[];try{patched=JSON.parse(txt);}catch(e){}
-    if(Array.isArray(patched)&&patched.length===0){
-      await fetch(`${SB_URL}/rest/v1/${SB_TABLE}`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
-        body:JSON.stringify({restaurante:SB_RESTAURANTE,datos:DB})});
-    }
+    await dbCall({op:'upsert',table:SB_TABLE,datos:DB});
   }catch(e){}
 }
 

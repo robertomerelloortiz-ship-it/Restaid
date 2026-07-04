@@ -2224,57 +2224,38 @@ function resetAll(){
    Lee platos, PVP y volumen del análisis de ventas (G). La IA propone
    un borrador de cada escandallo; el usuario revisa. Persiste en local.
 ═══════════════════════════════════════════════════════════════════ */
-const SB_URL='https://gtdsqvebuhdndfaiqoyj.supabase.co';
-const SB_KEY='sb_publishable_cu53L_4O6Rz-RlGurDI3Kg_CJHqaa8U';
+/* ── Supabase vía proxy /api/db (la clave vive en el servidor, no aquí) ──
+   Misma convención que /api/claude y /api/revo: cabecera x-restaid-pass. */
 const SB_RESTAURANTE='default';
-
-// Supabase helpers ventas
+async function dbCall(payload){
+  const r=await fetch('/api/db',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','x-restaid-pass':localStorage.getItem('restaid_pass')||''},
+    body:JSON.stringify(payload)
+  });
+  const d=await r.json().catch(()=>({ok:false,error:'respuesta no válida'}));
+  if(!r.ok||!d.ok)throw new Error(d.error||('HTTP '+r.status));
+  return d;
+}
 async function sbGetV(table){
   try{
-    const r=await fetch(`${SB_URL}/rest/v1/${table}?restaurante=eq.${SB_RESTAURANTE}&select=periodo,datos&order=periodo.asc`,{
-      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Range':'0-49','Prefer':'count=none'}
-    });
-    if(!r.ok){console.error('[RESTAID sbGetV]',table,r.status,await r.text().catch(()=>''));return[];}
-    const d=await r.json();
-    console.log('[RESTAID sbGetV]',table,'filas:',d.length,d.map(r=>r.periodo));
-    return d;
-  }catch(e){console.error('[RESTAID sbGetV error]',e);return[];}
+    const d=await dbCall({op:'get',table,select:'periodo,datos',order:'periodo.asc',limit:50});
+    console.log('[RESTAID sbGetV]',table,'filas:',d.rows.length,d.rows.map(r=>r.periodo));
+    return d.rows;
+  }catch(e){console.error('[RESTAID sbGetV error]',table,e.message||e);return[];}
 }
 async function sbGetOne(table){
   try{
-    const r=await fetch(`${SB_URL}/rest/v1/${table}?restaurante=eq.${SB_RESTAURANTE}&select=datos`,{
-      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}
-    });
-    const d=await r.json();return d&&d[0]?d[0].datos:null;
+    const d=await dbCall({op:'get',table,select:'datos',limit:1});
+    return d.rows&&d.rows[0]?d.rows[0].datos:null;
   }catch(e){return null;}
 }
 async function sbUpsert(table,body){
-  // Primero intentar PATCH (actualizar si existe)
-  const filtro=body.periodo
-    ?`restaurante=eq.${body.restaurante}&periodo=eq.${body.periodo}`
-    :`restaurante=eq.${body.restaurante}`;
+  // El upsert (PATCH y, si no existe la fila, INSERT) lo resuelve el servidor
   try{
-    const rPatch=await fetch(`${SB_URL}/rest/v1/${table}?${filtro}`,{
-      method:'PATCH',
-      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=representation'},
-      body:JSON.stringify({datos:body.datos})
-    });
-    const patchTxt=await rPatch.text().catch(()=>'');
-    console.log('SB PATCH response',table,body.periodo,rPatch.status,patchTxt.slice(0,100));
-    let patched=[];try{patched=JSON.parse(patchTxt);}catch(e){}
-    // Si el PATCH no actualizó nada (fila no existe), hacer INSERT
-    if(Array.isArray(patched)&&patched.length===0){
-      const rPost=await fetch(`${SB_URL}/rest/v1/${table}`,{
-        method:'POST',
-        headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
-        body:JSON.stringify(body)
-      });
-      if(!rPost.ok){const t=await rPost.text().catch(()=>'');console.warn('SB insert error',table,rPost.status,t.slice(0,150));}
-      else{console.log('SB INSERT OK',table,body.periodo||'');}
-    }else{
-      console.log('SB PATCH OK',table,body.periodo||'',Array.isArray(patched)?patched.length:'non-array');
-    }
-  }catch(e){console.warn('SB write error',e);}
+    const d=await dbCall({op:'upsert',table,periodo:body.periodo||null,datos:body.datos});
+    console.log('SB UPSERT OK',table,body.periodo||'',d.mode);
+  }catch(e){console.warn('SB write error',table,e.message||e);}
 }
 
 function detectPeriodo(rows){
@@ -2400,18 +2381,15 @@ function renderYearTabs(añoActivo){
 }
 
 async function sbPatch(table,filter,datos){
+  // Los call sites pasan el filtro PostgREST como string; extraemos el periodo
+  // y delegamos en el proxy (que siempre filtra además por restaurante).
   try{
-    const r=await fetch(`${SB_URL}/rest/v1/${table}?${filter}`,{
-      method:'PATCH',
-      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=representation'},
-      body:JSON.stringify({datos})
-    });
-    const txt=await r.text().catch(()=>'');
-    let rows=[];try{rows=JSON.parse(txt);}catch(e){}
-    const updated=Array.isArray(rows)&&rows.length>0;
-    console.log('sbPatch',table,updated?'updated '+rows.length:'no rows',filter.slice(0,60));
-    return updated;
-  }catch(e){console.warn('SB patch error',e);return false;}
+    const m=String(filter||'').match(/periodo=eq\.([^&]+)/);
+    const periodo=m?decodeURIComponent(m[1]):null;
+    const d=await dbCall({op:'patch',table,periodo,datos});
+    console.log('sbPatch',table,d.updated?'updated':'no rows',periodo||'(sin periodo)');
+    return !!d.updated;
+  }catch(e){console.warn('SB patch error',table,e.message||e);return false;}
 }
 async function saveVentasToDB(añoParam){
   if(!G){console.warn('[RESTAID] saveVentasToDB: sin datos G');return;}
@@ -3103,6 +3081,37 @@ loadVentasFromDB();
 function isoLocal(d) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
+
+/* ───────────────────────────────────────────────────────────────────
+   consolidarDiasRevo — decide qué días persistir y con qué valor.
+   REGLA: no rellenar a 0 ni avanzar d1 más allá del ÚLTIMO día con
+   datos reales de la API (frontera de consolidación de Revo).
+   Los huecos INTERIORES (festivos entre días con datos) sí van a 0.
+   Si no hay ningún pedido → no consolidar nada (nuevoD1 = null), para
+   no pisar ventas reales con ceros de días aún sin cerrar en el TPV.
+   Función pura → cubierta por test_consolidar_revo.js (11 tests).
+─────────────────────────────────────────────────────────────────── */
+function consolidarDiasRevo(orders, desde, hoy) {
+  var totalPorDia = {};
+  var ultimoConDatos = null;
+  orders.forEach(function(o) {
+    var fecha = (o.oberta || o.tancada || '').slice(0, 10);
+    if (fecha && fecha >= desde && fecha <= hoy) {
+      totalPorDia[fecha] = (totalPorDia[fecha] || 0) + (o.total || 0);
+      if (!ultimoConDatos || fecha > ultimoConDatos) ultimoConDatos = fecha;
+    }
+  });
+  if (!ultimoConDatos) return { totalPorDia: {}, nuevoD1: null };
+  var cur = new Date(desde + 'T12:00:00');
+  var fin = new Date(ultimoConDatos + 'T12:00:00'); // hasta la frontera real, NO hasta hoy
+  while (cur <= fin) {
+    var f = isoLocal(cur);
+    if (totalPorDia[f] == null) totalPorDia[f] = 0;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return { totalPorDia: totalPorDia, nuevoD1: ultimoConDatos };
+}
+
 async function fetchRevoRange(desdeISO, hastaISO, pass) {
   var all = [];
   // Añadir 1 día al final para capturar pedidos abiertos el último día del rango
@@ -3194,27 +3203,18 @@ async function autoRefreshPendiente() {
     }
 
     // Calcular total por día a partir de los pedidos.
-    // IMPORTANTE: usamos 'oberta' (apertura) como fecha del pedido, no 'tancada' (cierre).
-    // En TalaBar los turnos cierran de madrugada (1-2am del día siguiente), por lo que
-    // 'tancada' puede ser del día siguiente al de la venta real.
-    var totalPorDia = {};
-    orders.forEach(function(o) {
-      var fecha = (o.oberta || o.tancada || '').slice(0, 10);
-      // Solo contabilizar si la fecha de apertura cae dentro del rango pedido
-      if (fecha && fecha >= desde && fecha <= fechaHoy) {
-        totalPorDia[fecha] = (totalPorDia[fecha] || 0) + (o.total || 0);
-      }
-    });
-    // Garantizar que TODOS los días del rango quedan en byDate, aunque sean 0€ (cierre).
-    // Sin esto, los días sin pedidos no aparecen en ventasRecientes y el index.html
-    // no puede distinguir "día cerrado" de "dato no descargado aún".
-    var curRango=new Date(desde+'T12:00:00');
-    var finRango=new Date(fechaHoy+'T12:00:00');
-    while(curRango<=finRango){
-      var fRango=isoLocal(curRango);
-      if(totalPorDia[fRango]==null) totalPorDia[fRango]=0;
-      curRango.setDate(curRango.getDate()+1);
+    // IMPORTANTE: la API filtra por 'oberta' (apertura), no por 'tancada' (cierre),
+    // y solo expone días cuyo turno ya se ha cerrado/consolidado en el TPV.
+    // consolidarDiasRevo rellena a 0 SOLO los huecos interiores (festivos) y nunca
+    // más allá del último día con datos reales, para no cementar a 0 días de julio
+    // que aún no están consolidados (bug que grababa ventas reales como 0€).
+    var _cons = consolidarDiasRevo(orders, desde, fechaHoy);
+    if (_cons.nuevoD1 === null) {
+      // Revo no ha consolidado ningún día del rango todavía: no tocar nada, d1 intacto.
+      console.log('[RESTAID auto] Revo sin datos consolidados en ' + desde + ' → ' + fechaHoy + '; histórico intacto');
+      return;
     }
+    var totalPorDia = _cons.totalPorDia;
 
     if (gActivo && G && G.byDate) {
       // Fusionar: los días de Revo prevalecen sobre los de Supabase
