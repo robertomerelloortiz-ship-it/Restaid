@@ -1524,17 +1524,43 @@ function calcularCuadranteAuto(){
   // ── Paso 3: Asignación ──────────────────────────────────────────────
   const salaEmps=DB.empleados.filter(e=>['Sala','Barra'].includes(e.rol)&&!e.bajaIT);
   const cocEmps=DB.empleados.filter(e=>['Cocina','Office'].includes(e.rol)&&!e.bajaIT);
-  const DURACION={Comida:5,Cena:4}; // horas por turno
+  const DURACION={Comida:5,Cena:4};
   const INI={Comida:'12:00',Cena:'20:00'};
   const FIN={Comida:'17:00',Cena:'00:00'};
 
-  // Seguimiento de horas asignadas por empleado
   const horasAsig={};DB.empleados.forEach(e=>{horasAsig[e.id]=0;});
-  // Vacaciones esta semana
   const lunesISO=lunes.toISOString().slice(0,10);
   const domISO=new Date(lunes);domISO.setUTCDate(domISO.getUTCDate()+6);
   const domISOStr=domISO.toISOString().slice(0,10);
   const enVacaciones=e=>(e.vacaciones||[]).some(v=>v.inicio<=domISOStr&&v.fin>=lunesISO);
+
+  // ── Pre-planificación: bloque de descanso de ≥3 turnos consecutivos ──
+  // 14 turnos en la semana: índice 0=Lun-Com, 1=Lun-Cen, 2=Mar-Com ... 13=Dom-Cen
+  const TURNOS_SEQ=[];
+  DIAS.forEach((d,di)=>['Comida','Cena'].forEach(t=>TURNOS_SEQ.push({dia:d,di,turno:t})));
+  // Todos los bloques posibles de 3 turnos consecutivos (índices 0..11)
+  const BLOQUES_POSIBLES=TURNOS_SEQ.slice(0,-2).map((_,i)=>[i,i+1,i+2]);
+
+  const bloqueDescanso={};
+  DB.empleados.filter(e=>!enVacaciones(e)).forEach(e=>{
+    const dIdx=e.diaDescanso?DIAS_FULL.indexOf(e.diaDescanso):-1;
+    const puntuarBloque=b=>{
+      let score=0;
+      b.forEach(i=>{
+        const t=TURNOS_SEQ[i];
+        if(dIdx>=0&&t.di===dIdx)score+=10;
+        if(dIdx>=0&&(t.di===dIdx-1||t.di===dIdx+1))score+=5;
+        // Penalizar viernes noche y sábado (alta demanda)
+        if(t.di===4&&t.turno==='Cena')score-=3;
+        if(t.di===5)score-=4;
+      });
+      return score;
+    };
+    const mejor=BLOQUES_POSIBLES.slice().sort((a,b)=>puntuarBloque(b)-puntuarBloque(a))[0];
+    bloqueDescanso[e.id]=new Set(mejor.map(i=>`${TURNOS_SEQ[i].dia}|${TURNOS_SEQ[i].turno}`));
+  });
+
+  const enBloqueDescanso=(e,dia,turno)=>bloqueDescanso[e.id]&&bloqueDescanso[e.id].has(`${dia}|${turno}`);
 
   const asignaciones=[];
 
@@ -1548,31 +1574,26 @@ function calcularCuadranteAuto(){
       const needSala=Math.max(minSala,comensales>0?Math.ceil(comensales/ratioSala):minSala);
       const needCoc=Math.max(minCocina,comensales>0?Math.ceil(comensales/ratioCocina):minCocina);
 
-      // Candidatos válidos: no de vacaciones, no es su día de descanso, no supera contrato
       const dur=DURACION[turno];
-      // Filtro turno preferido: si tiene preferencia exclusiva, no asignar al otro turno
       const cumpleTurnoPref=e=>{const tp=(e.horarioHabitual||{}).turnoPref;if(!tp||tp==='Ambos')return true;return tp===turno;};
-      // Horas concretas del turno si las tiene definidas
       const horasTurno=e=>{const hh=e.horarioHabitual||{};if(hh.horaIni&&hh.horaFin)return{ini:hh.horaIni,fin:hh.horaFin};return{ini:INI[turno],fin:FIN[turno]};};
 
       const candidatosSala=salaEmps
-        .filter(e=>!enVacaciones(e)&&(!e.diaDescanso||DIAS_FULL[di]!==e.diaDescanso)&&cumpleTurnoPref(e))
-        .filter(e=>horasAsig[e.id]+(dur)<=(e.horasContrato||40)+1)
+        .filter(e=>!enVacaciones(e)&&(!e.diaDescanso||DIAS_FULL[di]!==e.diaDescanso)&&cumpleTurnoPref(e)&&!enBloqueDescanso(e,dia,turno))
+        .filter(e=>horasAsig[e.id]+dur<=(e.horasContrato||40)+1)
         .sort((a,b)=>horasAsig[a.id]-horasAsig[b.id]);
 
       const candidatosCoc=cocEmps
-        .filter(e=>!enVacaciones(e)&&(!e.diaDescanso||DIAS_FULL[di]!==e.diaDescanso)&&cumpleTurnoPref(e))
-        .filter(e=>horasAsig[e.id]+(dur)<=(e.horasContrato||40)+1)
+        .filter(e=>!enVacaciones(e)&&(!e.diaDescanso||DIAS_FULL[di]!==e.diaDescanso)&&cumpleTurnoPref(e)&&!enBloqueDescanso(e,dia,turno))
+        .filter(e=>horasAsig[e.id]+dur<=(e.horasContrato||40)+1)
         .sort((a,b)=>horasAsig[a.id]-horasAsig[b.id]);
 
-      // Asignar sala
       const asigSala=candidatosSala.slice(0,needSala);
       asigSala.forEach(e=>{
         const ht=horasTurno(e);
         asignaciones.push({id:uid(),empId:e.id,dia,turno,ini:ht.ini,fin:ht.fin});
         horasAsig[e.id]+=dur;
       });
-      // Asignar cocina
       const asigCoc=candidatosCoc.slice(0,needCoc);
       asigCoc.forEach(e=>{
         const ht=horasTurno(e);
