@@ -3112,6 +3112,76 @@ function consolidarDiasRevo(orders, desde, hoy) {
   return { totalPorDia: totalPorDia, nuevoD1: ultimoConDatos };
 }
 
+
+/* ───────────────────────────────────────────────────────────────────────────
+   mergeIncrementalRevo — actualiza G con pedidos nuevos de forma ADITIVA.
+   Solo procesa pedidos con fecha > d1Previo (sin doble conteo).
+   Cubierta por test_merge_incremental.js (42 tests).
+─────────────────────────────────────────────────────────────────────────── */
+function mergeIncrementalRevo(G, orders, d1Previo) {
+  var r = Object.assign({}, G);
+  var nuevos = orders.filter(function(o) {
+    var f = (o.oberta || "").slice(0, 10);
+    return f && f > d1Previo;
+  });
+  if (!nuevos.length) return r;
+  var fechasPorDia = {};
+  nuevos.forEach(function(o) {
+    var fecha = (o.oberta || "").slice(0, 10);
+    var hora  = (o.oberta || "").slice(11, 16);
+    var total = o.total || 0;
+    var comensales = Math.max(1, o.comensales || 1);
+    var zona  = getZona(String(o.mesa || ""));
+    var day   = (function(iso){ var d=new Date(iso+"T12:00:00"); return ["Dom","Lun","Mar","u004dié","Jue","Vie","Sáb"][d.getDay()]; })(fecha);
+    var mes   = fecha.slice(0, 7);
+    var h     = parseInt(hora.slice(0, 2));
+    var min   = parseInt(hora.slice(3, 5));
+    var turno = turnoLabel(hora);
+    r.byDate = r.byDate || {}; r.byDate[fecha] = (r.byDate[fecha] || 0) + total;
+    r.byMonth = r.byMonth || {}; r.byMonth[mes] = (r.byMonth[mes] || 0) + total;
+    r.totVen = (r.totVen || 0) + total;
+    r.byDay = r.byDay || {}; r.byDay[day] = (r.byDay[day] || 0) + total;
+    r.byTurno = r.byTurno || {}; r.byTurno[turno] = (r.byTurno[turno] || 0) + total;
+    r.byDayTurno = r.byDayTurno || {}; r.byDayTurno[day+"|"+turno] = (r.byDayTurno[day+"|"+turno] || 0) + total;
+    if (!fechasPorDia[day]) fechasPorDia[day] = {};
+    fechasPorDia[day][fecha] = 1;
+    if (h >= 0) { var slot = String(h).padStart(2,"0") + ":" + (min < 30 ? "00" : "30"); r.halfHour = r.halfHour || {}; r.halfHour[slot] = (r.halfHour[slot] || 0) + total; }
+    r.nT = (r.nT || 0) + 1;
+    r.allComs = (r.allComs || 0) + comensales;
+    var zt = zona + "|" + turno;
+    r.eurosZT = r.eurosZT || {}; r.eurosZT[zt] = (r.eurosZT[zt] || 0) + total;
+    r.comZT = r.comZT || {}; r.comZT[zt] = (r.comZT[zt] || 0) + comensales;
+    r.tickZT = r.tickZT || {}; r.tickZT[zt] = (r.tickZT[zt] || 0) + 1;
+    var contents = o.contents || [];
+    contents.forEach(function(c) {
+      var prod = String(c.name || "?").trim(), cat = String(c.category || "Sin cat").trim();
+      var qty = Math.max(1, c.quantity || 1), tot = c.totalPrice || 0, emp = String(c.employeeName || "?").trim();
+      r.byPE = r.byPE || {}; r.byPE[prod] = (r.byPE[prod] || 0) + tot;
+      r.byPU = r.byPU || {}; r.byPU[prod] = (r.byPU[prod] || 0) + qty;
+      r.byPC = r.byPC || {}; r.byPC[prod] = cat;
+      r.byCE = r.byCE || {}; r.byCE[cat] = (r.byCE[cat] || 0) + tot;
+      r.byCU = r.byCU || {}; r.byCU[cat] = (r.byCU[cat] || 0) + qty;
+      if (isBev(cat)) r.totBebE = (r.totBebE || 0) + tot; else r.totCocE = (r.totCocE || 0) + tot;
+      var pk = prod + "||" + mes;
+      r.byPlatoMonthE = r.byPlatoMonthE || {}; r.byPlatoMonthE[pk] = (r.byPlatoMonthE[pk] || 0) + tot;
+      r.byPlatoMonthU = r.byPlatoMonthU || {}; r.byPlatoMonthU[pk] = (r.byPlatoMonthU[pk] || 0) + qty;
+      r.byEE = r.byEE || {}; r.byEE[emp] = (r.byEE[emp] || 0) + tot;
+      r.byEU = r.byEU || {}; r.byEU[emp] = (r.byEU[emp] || 0) + qty;
+    });
+  });
+  var dates = Object.keys(r.byDate).sort();
+  r.d0 = G.d0 && G.d0 < dates[0] ? G.d0 : (dates[0] || G.d0);
+  r.d1 = dates[dates.length - 1] || G.d1;
+  r.nDays = dates.length;
+  r.byDayCount = Object.assign({}, G.byDayCount || {});
+  Object.keys(fechasPorDia).forEach(function(day) { r.byDayCount[day] = (r.byDayCount[day] || 0) + Object.keys(fechasPorDia[day]).length; });
+  r.byDayAvg = {};
+  Object.keys(r.byDay || {}).forEach(function(day) { if (r.byDayCount[day]) r.byDayAvg[day] = r.byDay[day] / r.byDayCount[day]; });
+  var fmtD = function(s) { return s ? s.split("-").reverse().join("/") : ""; };
+  r.periodStr = r.d0 === r.d1 ? fmtD(r.d0) : fmtD(r.d0) + " u2013 " + fmtD(r.d1);
+  return r;
+}
+
 async function fetchRevoRange(desdeISO, hastaISO, pass) {
   var all = [];
   // Añadir 1 día al final para capturar pedidos abiertos el último día del rango
@@ -3215,26 +3285,14 @@ async function autoRefreshPendiente() {
       return;
     }
     var totalPorDia = _cons.totalPorDia;
+    var d1Previo = G.d1 || desde;
 
     if (gActivo && G && G.byDate) {
-      // Fusionar: los días de Revo prevalecen sobre los de Supabase
-      Object.assign(G.byDate, totalPorDia);
-
-      // Recalcular resumen del G
-      var dates = Object.keys(G.byDate).sort();
-      var totVen = Object.values(G.byDate).reduce(function(s, v) { return s + v; }, 0);
-      var byMonth = {};
-      dates.forEach(function(d) {
-        var m = d.slice(0, 7);
-        byMonth[m] = (byMonth[m] || 0) + G.byDate[d];
-      });
-      var fmtD = function(s) { return s ? s.split('-').reverse().join('/') : ''; };
-      G.d0 = dates[0];
-      G.d1 = dates[dates.length - 1];
-      G.nDays = dates.length;
-      G.totVen = totVen;
-      G.byMonth = byMonth;
-      G.periodStr = G.d0 === G.d1 ? fmtD(G.d0) : fmtD(G.d0) + ' \u2013 ' + fmtD(G.d1);
+      // Merge completo con todos los agregados aditivos (productos, categorías,
+      // empleados, zonas, turnos, comensales) — no solo byDate como antes.
+      var gMerged = mergeIncrementalRevo(G, orders, d1Previo);
+      // Copiar todos los campos actualizados a G (in-place, para compatibilidad con el resto del código)
+      Object.keys(gMerged).forEach(function(k) { G[k] = gMerged[k]; });
       if ($('tbSub')) $('tbSub').textContent = G.periodStr;
 
       AÑOS_DISPONIBLES[añoStr] = JSON.parse(JSON.stringify(G, function(_, v) {
@@ -3242,12 +3300,11 @@ async function autoRefreshPendiente() {
       }));
       renderAll();
       publishPub(G);
-      // Sin delay: guardar inmediatamente para que d1 quede persistido aunque se cierre la pestaña
       await saveVentasToDB(añoStr);
 
       var nDias = Object.keys(totalPorDia).length;
       console.log('[RESTAID auto] ' + orders.length + ' pedidos de ' + nDias +
-                  ' días fusionados (' + desde + ' → ' + fechaHoy + '). d1 guardado: ' + G.d1);
+                  ' días fusionados (full merge). d1: ' + G.d1);
     } else {
       // Año no existe en Supabase: análisis completo desde cero
       console.log('[RESTAID auto] Año ' + añoStr + ' nuevo, arrancando análisis completo…');
