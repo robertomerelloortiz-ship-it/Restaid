@@ -575,7 +575,7 @@ window.addEventListener('message', function(e) {
     try { if (typeof DB !== 'undefined' && DB) window.parent.postMessage({type:'restaid_pub',key:STORE,value:JSON.stringify(DB)},'*'); } catch(err) {}
   }
 });
-function defaultDB(){return{empleados:[],semanas:{},fichajes:[],config:{targetPct:30,ssMult:1.32,premiumExtra:1.5,ticketMedio:18,ratioSala:25,ratioCocina:30},semanaActual:null};}
+function defaultDB(){return{empleados:[],semanas:{},fichajes:[],config:{targetPct:30,ssMult:1.32,premiumExtra:1.5,ticketMedio:18,ratioSala:25,ratioCocina:30,minSala:2,minCocina:1},semanaActual:null};}
 function loadDB(){try{const s=localStorage.getItem(STORE);if(!s)return defaultDB();const d=JSON.parse(s);return{...defaultDB(),...d,config:{...defaultDB().config,...(d.config||{})}};}catch(e){return defaultDB();}}
 let LOCAL_DIRTY=false;
 function saveDB(){LOCAL_DIRTY=true;DB._ts=Date.now();try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(e){console.error('No se pudo guardar',e);}try{window.parent.postMessage({type:'restaid_pub',key:STORE,value:JSON.stringify(DB)},'*');}catch(e){}publishCore();sbSetRRHH();}
@@ -1375,10 +1375,14 @@ function openConfig(){
       <div class="field"><label>Ratio sala (comensales/camarero)</label><input type="number" step="1" id="cf-rsala" value="${c.ratioSala}"></div>
       <div class="field"><label>Ratio cocina (comensales/cocinero)</label><input type="number" step="1" id="cf-rcoc" value="${c.ratioCocina}"></div>
     </div>
+    <div class="field-row">
+      <div class="field"><label>Mínimo sala por turno</label><input type="number" step="1" min="1" id="cf-minsala" value="${c.minSala||2}"><div class="field-hint">Camareros mínimos aunque haya poca demanda.</div></div>
+      <div class="field"><label>Mínimo cocina por turno</label><input type="number" step="1" min="1" id="cf-mincoc" value="${c.minCocina||1}"><div class="field-hint">Cocineros mínimos por turno.</div></div>
+    </div>
     <div class="modal-actions"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-amber btn-sm" onclick="saveConfig()">Guardar</button></div>
   </div></div>`;
 }
-function saveConfig(){DB.config.targetPct=parseFloat($('cf-target').value)||30;DB.config.ssMult=parseFloat($('cf-ss').value)||1.32;DB.config.premiumExtra=parseFloat($('cf-prem').value)||1.5;const _tk=parseFloat($('cf-ticket').value)||18;if(_tk!==DB.config.ticketMedio)DB.config.ticketMedioManual=true;DB.config.ticketMedio=_tk;DB.config.ratioSala=parseInt($('cf-rsala').value)||25;DB.config.ratioCocina=parseInt($('cf-rcoc').value)||30;saveDB();closeModal();updateSidebar();showPage($$('.tab.active')[0]?.dataset.page||'resumen');toast('Parámetros guardados');}
+function saveConfig(){DB.config.targetPct=parseFloat($('cf-target').value)||30;DB.config.ssMult=parseFloat($('cf-ss').value)||1.32;DB.config.premiumExtra=parseFloat($('cf-prem').value)||1.5;const _tk=parseFloat($('cf-ticket').value)||18;if(_tk!==DB.config.ticketMedio)DB.config.ticketMedioManual=true;DB.config.ticketMedio=_tk;DB.config.ratioSala=parseInt($('cf-rsala').value)||25;DB.config.ratioCocina=parseInt($('cf-rcoc').value)||30;DB.config.minSala=Math.max(1,parseInt($('cf-minsala').value)||2);DB.config.minCocina=Math.max(1,parseInt($('cf-mincoc').value)||1);saveDB();closeModal();updateSidebar();showPage($$('.tab.active')[0]?.dataset.page||'resumen');toast('Parámetros guardados');}
 
 /* ═══════════════════════════════════════════════════════════════════
    GENERACIÓN DE CUADRANTE CON IA — guiado con prefs y conflictos
@@ -1401,7 +1405,7 @@ function openCuadAI(){
       <p class="panel-desc">El algoritmo respetará horas de contrato, días de descanso y vacaciones de cada persona.</p>
       ${prefsHtml}
     </div>
-    <div class="ai-hint">Dotación: ≈1 cam./${DB.config.ratioSala} comensales · 1 coc./${DB.config.ratioCocina} comensales · ticket medio ${DB.config.ticketMedio}€ · objetivo coste laboral ≤ ${DB.config.targetPct}%. Ajusta estos parámetros en Configuración.</div>
+    <div class="ai-hint">Dotación: mín. ${DB.config.minSala||2} sala · mín. ${DB.config.minCocina||1} cocina · ratio ≈1 cam./${DB.config.ratioSala} comensales · 1 coc./${DB.config.ratioCocina} comensales · ticket medio ${DB.config.ticketMedio}€ · objetivo coste laboral ≤ ${DB.config.targetPct}%. Ajusta en Configuración.</div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn btn-ghost btn-sm" onclick="openCuadAI()">Cerrar</button>
       <button class="btn btn-amber btn-sm" id="ai-gen-btn" onclick="generarCuadranteIA()">⚡ Generar cuadrante</button>
@@ -1526,9 +1530,10 @@ function calcularCuadranteAuto(){
     ['Comida','Cena'].forEach(turno=>{
       const ventaTurno=vDia[turno]||0;
       const comensales=ventaTurno>0?Math.round(ventaTurno/ticketMed):0;
-      // Si no hay ventas previstas, poner dotación mínima de 1 sala + 1 cocina
-      const needSala=comensales>0?Math.max(1,Math.ceil(comensales/ratioSala)):1;
-      const needCoc=comensales>0?Math.max(1,Math.ceil(comensales/ratioCocina)):1;
+      const minSala=cfg.minSala||2;
+      const minCocina=cfg.minCocina||1;
+      const needSala=Math.max(minSala,comensales>0?Math.ceil(comensales/ratioSala):minSala);
+      const needCoc=Math.max(minCocina,comensales>0?Math.ceil(comensales/ratioCocina):minCocina);
 
       // Candidatos válidos: no de vacaciones, no es su día de descanso, no supera contrato
       const dur=DURACION[turno];
