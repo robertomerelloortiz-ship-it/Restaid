@@ -382,7 +382,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
 .ia-action-btns{display:flex;gap:5px;flex-shrink:0}
 .ia-action-btns .btn{font-size:11px;padding:4px 10px}
 /* Cuadrante secciones */
-.cuad-section-hd{background:var(--navy);color:#fff;padding:7px 12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;display:flex;align-items:center;gap:8px}
+.cuad-section-hd{background:var(--navy);color:#fff;padding:7px 12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;display:flex;align-items:center;gap:8px;position:sticky;left:0;z-index:3}
 .cuad-section-hd .count-badge{background:rgba(255,255,255,.15);padding:1px 7px;border-radius:9px;font-size:10px;font-weight:600}
 .cuad-staff{font-size:9.5px;font-weight:700;padding:4px 6px!important;text-align:center}
 .cuad-staff-ok{color:var(--green);background:var(--green-bg)}
@@ -1429,7 +1429,7 @@ async function llamarCuadranteIA(peticiones){
   const ventasList=DIAS.map(d=>{const v=w.ventas[d]||{};return `  ${d}: Comida ${v.Comida||0}€, Cena ${v.Cena||0}€`;}).join('\n');
   const sys=`Eres un jefe de sala experto en planificación de turnos en España. Genera cuadrantes que: (1) cubren demanda por ventas, (2) respetan horas de contrato, días de descanso estándar y preferencias, (3) NO asignan a personas de vacaciones, (4) mantienen coste laboral ≤${DB.config.targetPct}%, (5) garantizan dotación mínima (≈1 cam/${DB.config.ratioSala} comensales, 1 coc/${DB.config.ratioCocina}, ticket medio ${DB.config.ticketMedio}€). Turnos: Comida (12-17h) y Cena (20-00h). No asignes donde ventas=0 (cerrado). Si hay conflictos de descanso (varios quieren el mismo día), explícalos brevemente al final pero genera igualmente la mejor opción. Responde SOLO JSON válido sin texto ni backticks.`;
   const usr=`EMPLEADOS:\n${empList}\n\nVENTAS PREVISTAS:\n${ventasList}\n\nPETICIONES:\n${peticiones||'ninguna'}\n\nDevuelve: {"asignaciones":[{"empId":"<id>","dia":"Lun","turno":"Comida","ini":"12:00","fin":"17:00"}],"conflictos":"texto breve o null"}`;
-  const res=await fetch(API_URL,{method:'POST',headers:aiHeaders(),body:JSON.stringify({model:MODEL,max_tokens:1200,system:sys,messages:[{role:'user',content:usr}]})});
+  const res=await fetch(API_URL,{method:'POST',headers:aiHeaders(),body:JSON.stringify({model:MODEL,max_tokens:2500,system:sys,messages:[{role:'user',content:usr}]})});
   if(!res.ok)throw new Error('HTTP '+res.status);
   const data=await res.json();const txt=data.content.filter(b=>b.type==='text').map(b=>b.text).join('');
   const j=parseJson(txt);if(!j||!j.asignaciones)return null;

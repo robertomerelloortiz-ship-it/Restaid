@@ -72,7 +72,7 @@ td{padding:9px 12px;border-bottom:1px solid var(--bdr);vertical-align:middle}
 tr:last-child td{border-bottom:none}
 tr:hover td{background:rgba(26,43,60,.025)}
 .td-num{font-family:var(--ff-mono);font-size:12.5px;text-align:right}
-.td-actions{display:flex;gap:4px;justify-content:flex-end}
+.td-actions{white-space:nowrap;text-align:right;padding-right:8px!important}.td-actions .acts{display:inline-flex;gap:4px;justify-content:flex-end}
 .badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;white-space:nowrap}
 .badge-green{background:#E8F5EE;color:var(--green)}.badge-red{background:#FDECEA;color:var(--red)}
 .badge-amber{background:#FFF3E0;color:#B86A00}.badge-navy{background:#EBF0F5;color:var(--navy2)}
@@ -801,11 +801,11 @@ function rIngs(){
         <td class="td-num" style="color:var(--tx3)">${fc(i.stockMin||0,2)}</td>
         <td>${pv?`<span class="badge badge-gray">${esc(pv.nombre)}</span>`:'<span style="color:var(--tx3)">—</span>'}</td>
         <td style="text-align:center">${np>0?`<span class="badge badge-amber">${np}</span>`:'<span style="color:var(--tx3)">0</span>'}</td>
-        <td class="td-actions">
+        <td class="td-actions"><div class="acts">
           <button class="btn-icon" title="Movimiento" onclick="openMovM('${i.id}')">↕</button>
           <button class="btn-icon" title="Editar" onclick="openIngModal('${i.id}')">✎</button>
           <button class="btn-icon" style="color:var(--red)" onclick="delIng('${i.id}')">✕</button>
-        </td>
+        </div></td>
       </tr>`;
     }).join('');
 
@@ -946,7 +946,7 @@ function rMovs(){
       <td class="td-num">${fc(m.cantidad,2)} ${esc(i?.unidad||'')}${m.cantidadCompra&&m.unidadCompra&&m.unidadCompra!==m.unidad?`<div style="font-size:10px;color:var(--tx3)">(${fc(m.cantidadCompra,m.cantidadCompra%1?2:0)} ${esc(m.unidadCompra)})</div>`:''}</td>
       <td class="td-num">${cd>0?fcp(cd):'—'}</td>
       <td style="color:var(--tx3);font-size:12px">${esc(m.motivo||'—')}</td>
-      <td class="td-actions"><button class="btn-icon" title="Editar" onclick="editMov('${m.id}')">✎</button><button class="btn-icon" style="color:var(--red)" title="Eliminar" onclick="delMov('${m.id}')">✕</button></td>
+      <td class="td-actions"><div class="acts"><button class="btn-icon" title="Editar" onclick="editMov('${m.id}')">✎</button><button class="btn-icon" style="color:var(--red)" title="Eliminar" onclick="delMov('${m.id}')">✕</button></div></td>
     </tr>`;}).join('');
   pg.innerHTML=`<div class="sec-head"><h2>Movimientos de stock</h2><div class="actions">
     <button class="btn btn-ghost btn-sm" onclick="openMovM()">+ Manual</button>

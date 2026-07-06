@@ -411,7 +411,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
 .diag-acc li:first-child:before{background:var(--green)}
 .rec-head{display:grid;grid-template-columns:1fr 56px 48px 78px 22px;gap:6px;font-size:9.5px;text-transform:uppercase;color:var(--tx3);font-weight:600;margin-bottom:5px;padding:0 2px}
 .rec-line{display:grid;grid-template-columns:1fr 56px 48px 78px 22px;gap:6px;align-items:center;margin-bottom:6px}
-.rec-line input{padding:6px 8px;border:1px solid var(--bdr-strong);border-radius:5px;font-size:11.5px;font-family:'DM Sans',sans-serif;width:100%}
+.rec-line input{padding:6px 8px;border:1px solid var(--bdr-strong);border-radius:5px;font-size:11.5px;font-family:'DM Sans',sans-serif;width:100%;min-width:0;box-sizing:border-box}
 .rec-line input:focus{outline:none;border-color:var(--amber)}
 .rec-line .del{cursor:pointer;color:var(--tx3);text-align:center;font-size:15px}
 .rec-line .del:hover{color:var(--red)}
@@ -2740,13 +2740,13 @@ function escRenderModal(){
       const _ings=invIngredientes(); const _has=_ings.length>0;
       return ESC_LINES.map((l,i)=>{
         const _ingInput=_has
-          ?`<select style="flex:2;padding:5px 7px;border:1px solid var(--bdr-strong);border-radius:6px;font-size:12.5px;font-family:inherit" onchange="escUpd(${i},'ing',this.value);escRecalcLine(${i})"><option value="">— Ingrediente —</option>${_ings.map(g=>`<option value="${escAttr(g.nombre)}" ${l.ing===g.nombre?'selected':''}>${escAttr(g.nombre)} (${fc(g.precio||0,2)}€/${escAttr(g.unidad||'ud')})</option>`).join('')}</select>`
-          :`<input style="flex:2" value="${escAttr(l.ing)}" placeholder="Ingrediente" onchange="escUpd(${i},'ing',this.value)">`;
+          ?`<select style="padding:5px 7px;border:1px solid var(--bdr-strong);border-radius:6px;font-size:12.5px;font-family:inherit;min-width:0;width:100%;box-sizing:border-box" onchange="escUpd(${i},'ing',this.value);escRecalcLine(${i})"><option value="">— Ingrediente —</option>${_ings.map(g=>`<option value="${escAttr(g.nombre)}" ${l.ing===g.nombre?'selected':''}>${escAttr(g.nombre)} (${fc(g.precio||0,2)}€/${escAttr(g.unidad||'ud')})</option>`).join('')}</select>`
+          :`<input style="min-width:0;width:100%;box-sizing:border-box" value="${escAttr(l.ing)}" placeholder="Ingrediente" onchange="escUpd(${i},'ing',this.value)">`;
         const _calc=calcImporte(l.ing,l.cant,l.ud);
         const _coste=_has&&l.ing&&_calc!==''
           ?`<span style="width:70px;text-align:right;font-family:var(--ff-mono);font-size:13px;padding:0 4px">${fc(_calc,2)}</span>`
           :`<input style="width:70px;text-align:right" value="${escAttr(l.importe)}" placeholder="0,40" onchange="escUpd(${i},'importe',this.value)">`;
-        return`<div class="rec-line">${_ingInput}<input style="width:70px;text-align:right" value="${escAttr(l.cant)}" placeholder="120" onchange="escUpd(${i},'cant',this.value);escRecalcLine(${i})"><input style="width:55px;text-align:center" value="${escAttr(l.ud||'')}" placeholder="g" onchange="escUpd(${i},'ud',this.value);escRecalcLine(${i})">${_coste}<span class="del" onclick="escDel(${i})">×</span></div>`;
+        return`<div class="rec-line">${_ingInput}<input style="text-align:right" value="${escAttr(l.cant)}" placeholder="120" onchange="escUpd(${i},'cant',this.value);escRecalcLine(${i})"><input style="text-align:center" value="${escAttr(l.ud||'')}" placeholder="g" onchange="escUpd(${i},'ud',this.value);escRecalcLine(${i})">${_coste}<span class="del" onclick="escDel(${i})">×</span></div>`;
       }).join('');
     })()}</div>
     <button class="mini-btn" style="margin-top:4px" onclick="escAdd()">+ Añadir ingrediente</button>
