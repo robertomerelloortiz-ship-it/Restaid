@@ -575,7 +575,7 @@ window.addEventListener('message', function(e) {
     try { if (typeof DB !== 'undefined' && DB) window.parent.postMessage({type:'restaid_pub',key:STORE,value:JSON.stringify(DB)},'*'); } catch(err) {}
   }
 });
-function defaultDB(){return{empleados:[],semanas:{},fichajes:[],config:{targetPct:30,ssMult:1.32,premiumExtra:1.5,ticketMedio:18,ratioSala:25,ratioCocina:30,minSala:2,minCocina:1,turnoComidaIni:'12:00',turnoComidaFin:'17:00',turnoCenaIni:'20:00',turnoCenaFin:'00:00'},semanaActual:null};}
+function defaultDB(){return{empleados:[],semanas:{},fichajes:[],config:{targetPct:30,ssMult:1.32,premiumExtra:1.5,ticketMedio:18,ratioSala:25,ratioCocina:30,minSala:2,minCocina:1,servicioIni:'12:00',servicioFin:'01:00',umbralCena:'17:00'},semanaActual:null};}
 function loadDB(){try{const s=localStorage.getItem(STORE);if(!s)return defaultDB();const d=JSON.parse(s);return{...defaultDB(),...d,config:{...defaultDB().config,...(d.config||{})}};}catch(e){return defaultDB();}}
 let LOCAL_DIRTY=false;
 function saveDB(){LOCAL_DIRTY=true;DB._ts=Date.now();try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(e){console.error('No se pudo guardar',e);}try{window.parent.postMessage({type:'restaid_pub',key:STORE,value:JSON.stringify(DB)},'*');}catch(e){}publishCore();sbSetRRHH();}
@@ -1145,13 +1145,14 @@ function openTurno(empId,dia){
   $('modal-host').innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()"><div class="modal">
     <h3>${esc(e.nombre)} · ${DIAS_FULL[DIAS.indexOf(dia)]}</h3>
     <p class="modal-desc">${e.diaDescanso&&DIAS_FULL[DIAS.indexOf(dia)]===e.diaDescanso?'<strong style="color:var(--ylw)">⚠ Este es su día de descanso estándar.</strong><br>':''}Marca los turnos que trabaja. Déjalo en blanco para librar.</p>
-    ${TURNOS.map(tn=>{const a=byTurno[tn]||{};const on=!!byTurno[tn];const cfg=DB.config||{};const def=tn==='Comida'?{i:cfg.turnoComidaIni||'12:00',f:cfg.turnoComidaFin||'17:00'}:{i:cfg.turnoCenaIni||'20:00',f:cfg.turnoCenaFin||'00:00'};
+    ${TURNOS.map(tn=>{const a=byTurno[tn]||{};const on=!!byTurno[tn];const cfg=DB.config||{};const sIni=cfg.servicioIni||'12:00';const sFin=cfg.servicioFin||'01:00';const umbral=cfg.umbralCena||'17:00';const def=tn==='Comida'?{i:sIni,f:umbral}:{i:umbral,f:sFin};
       return `<div class="field" style="border:1px solid var(--bdr);border-radius:7px;padding:.7rem .85rem;margin-bottom:.7rem">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px"><input type="checkbox" id="tn-${tn}" ${on?'checked':''} style="width:auto" onchange="document.getElementById('tn-${tn}-fields').style.opacity=this.checked?'1':'.4'"> ${tn}</label>
         <div id="tn-${tn}-fields" class="field-row" style="opacity:${on?'1':'.4'}">
-          <div><label style="font-size:11px;color:var(--tx3)">Entrada</label><input type="time" id="tn-${tn}-ini" value="${a.ini||def.i}"></div>
+          <div><label style="font-size:11px;color:var(--tx3)">Entrada</label><input type="time" id="tn-${tn}-ini" value="${a.ini||def.i}" min="${sIni}"></div>
           <div><label style="font-size:11px;color:var(--tx3)">Salida</label><input type="time" id="tn-${tn}-fin" value="${a.fin||def.f}"></div>
         </div>
+        <div style="font-size:10.5px;color:var(--tx3);margin-top:4px">Servicio ${sIni}–${sFin} · Umbral Comida/Cena: ${umbral}</div>
       </div>`;}).join('')}
     <div class="modal-actions"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-amber btn-sm" onclick="saveTurno('${empId}','${dia}')">Guardar</button></div>
   </div></div>`;
@@ -1398,19 +1399,15 @@ function openConfig(){
     <div style="border-top:1px solid var(--bdr);margin:.75rem 0 .5rem;padding-top:.75rem">
       <div style="font-size:11.5px;font-weight:700;color:var(--tx2);margin-bottom:.6rem">Horario del restaurante</div>
       <div class="field-row">
-        <div class="field"><label>Turno Comida — apertura</label><input type="time" id="cf-com-ini" value="${c.turnoComidaIni||'12:00'}"></div>
-        <div class="field"><label>Turno Comida — cierre</label><input type="time" id="cf-com-fin" value="${c.turnoComidaFin||'17:00'}"></div>
+        <div class="field"><label>Apertura del servicio</label><input type="time" id="cf-srv-ini" value="${c.servicioIni||'12:00'}"></div>
+        <div class="field"><label>Cierre del servicio</label><input type="time" id="cf-srv-fin" value="${c.servicioFin||'01:00'}"></div>
+        <div class="field"><label>Umbral Comida → Cena</label><input type="time" id="cf-umbral" value="${c.umbralCena||'17:00'}"><div class="field-hint">Turnos que empiecen antes de esta hora se etiquetan como Comida.</div></div>
       </div>
-      <div class="field-row">
-        <div class="field"><label>Turno Cena — apertura</label><input type="time" id="cf-cen-ini" value="${c.turnoCenaIni||'20:00'}"></div>
-        <div class="field"><label>Turno Cena — cierre</label><input type="time" id="cf-cen-fin" value="${c.turnoCenaFin||'00:00'}"></div>
-      </div>
-      <div class="field-hint" style="margin-top:4px">Estas horas son los defaults al asignar un turno manualmente. Cada empleado puede tener una entrada/salida distinta.</div>
     </div>
     <div class="modal-actions"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-amber btn-sm" onclick="saveConfig()">Guardar</button></div>
   </div></div>`;
 }
-function saveConfig(){DB.config.targetPct=parseFloat($('cf-target').value)||30;DB.config.ssMult=parseFloat($('cf-ss').value)||1.32;DB.config.premiumExtra=parseFloat($('cf-prem').value)||1.5;const _tk=parseFloat($('cf-ticket').value)||18;if(_tk!==DB.config.ticketMedio)DB.config.ticketMedioManual=true;DB.config.ticketMedio=_tk;DB.config.ratioSala=parseInt($('cf-rsala').value)||25;DB.config.ratioCocina=parseInt($('cf-rcoc').value)||30;DB.config.minSala=Math.max(1,parseInt($('cf-minsala').value)||2);DB.config.minCocina=Math.max(1,parseInt($('cf-mincoc').value)||1);DB.config.turnoComidaIni=$('cf-com-ini').value||'12:00';DB.config.turnoComidaFin=$('cf-com-fin').value||'17:00';DB.config.turnoCenaIni=$('cf-cen-ini').value||'20:00';DB.config.turnoCenaFin=$('cf-cen-fin').value||'00:00';saveDB();closeModal();updateSidebar();showPage($$('.tab.active')[0]?.dataset.page||'resumen');toast('Parámetros guardados');}
+function saveConfig(){DB.config.targetPct=parseFloat($('cf-target').value)||30;DB.config.ssMult=parseFloat($('cf-ss').value)||1.32;DB.config.premiumExtra=parseFloat($('cf-prem').value)||1.5;const _tk=parseFloat($('cf-ticket').value)||18;if(_tk!==DB.config.ticketMedio)DB.config.ticketMedioManual=true;DB.config.ticketMedio=_tk;DB.config.ratioSala=parseInt($('cf-rsala').value)||25;DB.config.ratioCocina=parseInt($('cf-rcoc').value)||30;DB.config.minSala=Math.max(1,parseInt($('cf-minsala').value)||2);DB.config.minCocina=Math.max(1,parseInt($('cf-mincoc').value)||1);DB.config.servicioIni=$('cf-srv-ini').value||'12:00';DB.config.servicioFin=$('cf-srv-fin').value||'01:00';DB.config.umbralCena=$('cf-umbral').value||'17:00';saveDB();closeModal();updateSidebar();showPage($$('.tab.active')[0]?.dataset.page||'resumen');toast('Parámetros guardados');}
 
 /* ═══════════════════════════════════════════════════════════════════
    GENERACIÓN DE CUADRANTE CON IA — guiado con prefs y conflictos
@@ -1433,7 +1430,7 @@ function openCuadAI(){
       <p class="panel-desc">El algoritmo respetará horas de contrato, días de descanso y vacaciones de cada persona.</p>
       ${prefsHtml}
     </div>
-    <div class="ai-hint">Dotación: mín. ${DB.config.minSala||2} sala · mín. ${DB.config.minCocina||1} cocina · ratio ≈1 cam./${DB.config.ratioSala} comensales · 1 coc./${DB.config.ratioCocina} comensales · ticket medio ${DB.config.ticketMedio}€ · objetivo coste laboral ≤ ${DB.config.targetPct}%.<br>Horario restaurante: Comida ${DB.config.turnoComidaIni||'12:00'}–${DB.config.turnoComidaFin||'17:00'} · Cena ${DB.config.turnoCenaIni||'20:00'}–${DB.config.turnoCenaFin||'00:00'}. Ajusta en Configuración.</div>
+    <div class="ai-hint">Servicio corrido ${DB.config.servicioIni||'12:00'}–${DB.config.servicioFin||'01:00'} · Umbral Comida/Cena: ${DB.config.umbralCena||'17:00'} · Dotación mín. ${DB.config.minSala||2} sala · ${DB.config.minCocina||1} cocina · objetivo ≤ ${DB.config.targetPct}%. Ajusta en Configuración.</div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn btn-ghost btn-sm" onclick="openCuadAI()">Cerrar</button>
       <button class="btn btn-amber btn-sm" id="ai-gen-btn" onclick="generarCuadranteIA()">⚡ Generar cuadrante</button>
@@ -1539,12 +1536,21 @@ function calcularCuadranteAuto(){
   // ── Paso 3: Asignación por urgencia con balanceo iterativo ──────────
   const salaEmps=DB.empleados.filter(e=>['Sala','Barra'].includes(e.rol));
   const cocEmps=DB.empleados.filter(e=>['Cocina','Office'].includes(e.rol));
-  const INI={Comida:cfg.turnoComidaIni||'12:00',Cena:cfg.turnoCenaIni||'20:00'};
-  const FIN={Comida:cfg.turnoComidaFin||'17:00',Cena:cfg.turnoCenaFin||'00:00'};
-  // Calcular duración real de cada turno desde los horarios del restaurante
-  const parseHM=s=>{if(!s)return null;const[h,m]=(s||'').split(':').map(Number);return h+(m||0)/60;};
-  const calcDur=(ini,fin)=>{let i=parseHM(ini),f=parseHM(fin);if(i==null||f==null)return 5;if(f<=i)f+=24;return Math.max(1,Math.round((f-i)*2)/2);};// redondea a 0.5h
-  const DURACION={Comida:calcDur(INI.Comida,FIN.Comida),Cena:calcDur(INI.Cena,FIN.Cena)};
+  const SRV_INI=cfg.servicioIni||'12:00';
+  const SRV_FIN=cfg.servicioFin||'01:00';
+  const UMBRAL_CENA=cfg.umbralCena||'17:00';
+  // Duración total del servicio
+  const calcDur=(ini,fin)=>{let i=parseHM(ini),f=parseHM(fin);if(i==null||f==null)return 13;if(f<=i)f+=24;return Math.max(1,Math.round((f-i)*10)/10);};
+  const DUR_SERVICIO=calcDur(SRV_INI,SRV_FIN);
+  // Función para determinar turno visual según hora de inicio
+  const turnoDeHora=ini=>{const h=parseHM(ini),u=parseHM(UMBRAL_CENA);return(h!=null&&u!=null&&h<u)?'Comida':'Cena';};
+  // DURACION por turno: horas típicas dentro del servicio (para cálculo de contrato)
+  // Un empleado trabaja X horas dentro del servicio de DUR_SERVICIO horas
+  // Estimamos horas por turno como horasContrato/díasLaborables ≈ horasContrato/6
+  const horasPorTurno=e=>Math.min(Math.round((e.horasContrato||40)/6*2)/2,DUR_SERVICIO);// redondea a 0.5h
+  const DURACION={Comida:DUR_SERVICIO/2,Cena:DUR_SERVICIO/2};// solo para compatibilidad con puedeTrabajar
+  const INI={Comida:SRV_INI,Cena:UMBRAL_CENA};
+  const FIN={Comida:UMBRAL_CENA,Cena:SRV_FIN};
   const MAX_HORAS_DIA=9;
   const TOLERANCIA=1;
 
@@ -1741,29 +1747,63 @@ function calcularCuadranteAuto(){
     if(!asignoAlguno)break;
   }
 
-  // ── Paso 4: Escalonar horarios usando la curva de media hora ─────────
-  // Para cada (dia, turno), re-calcular ini/fin de los empleados sin horario fijo
+  // ── Paso 4: Escalonar horarios en el servicio corrido ─────────────────
+  // Para cada día, re-calcular ini/fin de empleados sin horario fijo propio
+  // usando la curva halfHour sobre el servicio completo (SRV_INI → SRV_FIN)
   DIAS.forEach(dia=>{
-    ['Comida','Cena'].forEach(turno=>{
-      const asigsTurno=asignaciones.filter(a=>a.dia===dia&&a.turno===turno&&a._sinEscalonar);
-      if(!asigsTurno.length)return;
-      const n=asigsTurno.length;
-      // Calcular horas de contrato representativas (media de los asignados)
-      const durMedia=asigsTurno.reduce((s,a)=>{
+    // Recoger todos los asignados sin horario fijo, sin importar turno
+    const asigsDia=asignaciones.filter(a=>a.dia===dia&&a._sinEscalonar);
+    if(!asigsDia.length){asignaciones.filter(a=>a.dia===dia).forEach(a=>delete a._sinEscalonar);return;}
+
+    // Agrupar por grupo (sala/cocina) para escalonar cada grupo por separado
+    ['sala','cocina'].forEach(grupo=>{
+      const filtroRol=grupo==='sala'?esSala:esCocina;
+      const asigs=asigsDia.filter(a=>{const e=disponibles.find(x=>x.id===a.empId);return e&&filtroRol(e);});
+      if(!asigs.length)return;
+
+      // Calcular horas individuales de cada empleado en este servicio
+      const bloques=asigs.map(a=>{
         const e=disponibles.find(x=>x.id===a.empId);
-        return s+Math.min(e?(e.horasContrato||40):DURACION[turno],DURACION[turno]);
-      },0)/n;
-      const bloques=escalonarTurno(n,INI[turno],FIN[turno],halfHourCurva,durMedia);
-      // Asignar bloques escalonados ordenando empleados por horas semanales (menos horas → turno antes)
-      asigsTurno.sort((a,b)=>{
-        const eA=disponibles.find(x=>x.id===a.empId),eB=disponibles.find(x=>x.id===b.empId);
-        return (eA?eA.horasContrato||40:40)-(eB?eB.horasContrato||40:40);
+        const hEmp=e?horasPorTurno(e):DUR_SERVICIO/2;
+        return{a,hEmp};
       });
-      asigsTurno.forEach((a,i)=>{
-        if(bloques[i]){a.ini=bloques[i].ini;a.fin=bloques[i].fin;}
+
+      // Escalonar cada empleado individualmente según sus horas
+      // Ordenar: los que más horas tienen primero (cubren el pico completo)
+      bloques.sort((a,b)=>b.hEmp-a.hEmp);
+
+      // Calcular posiciones escalonadas para el grupo
+      const n=bloques.length;
+      // Construir lista de {emp, durEmp} para escalonamiento grupal
+      // Usamos durEmp de cada uno individualmente
+      const residual=halfHourCurva?Object.keys(halfHourCurva).map(k=>({h:parseHM(k),pct:halfHourCurva[k]||0})).filter(s=>s.h!=null&&s.h>=parseHM(SRV_INI)&&s.h<parseHM(SRV_FIN)+(parseHM(SRV_FIN)<=parseHM(SRV_INI)?24:0)).sort((a,b)=>a.h-b.h):[];
+      const sIniH=parseHM(SRV_INI);let sFinH=parseHM(SRV_FIN);if(sFinH<=sIniH)sFinH+=24;
+      const toHH=h=>{const hN=((h%24)+24)%24;return String(Math.floor(hN)).padStart(2,'0')+':'+String(Math.round((hN%1)*60)).padStart(2,'0');};
+      const paso=0.5;
+      const res=residual.map(s=>({...s}));
+
+      bloques.forEach(({a,hEmp})=>{
+        const durE=Math.min(hEmp,sFinH-sIniH);
+        let mejor=null,mejorS=-1;
+        for(let h=sIniH;h<=sFinH-durE+0.01;h+=paso){
+          const yaEn=bloques.filter(b=>b._iniH!=null&&Math.abs(b._iniH-h)<0.1).length;
+          if(yaEn>=2)continue;
+          const s=res.filter(x=>x.h>=h&&x.h<h+durE).reduce((s,x)=>s+x.pct,0);
+          if(s>mejorS){mejorS=s;mejor=h;}
+        }
+        if(mejor==null)mejor=sIniH; // fallback: apertura
+        a._iniH=mejor;// marcar para evitar colisiones en el siguiente empleado
+        res.forEach(x=>{if(x.h>=mejor&&x.h<mejor+durE)x.pct*=0.4;});
+        // Asignar turno visual según umbral
+        const turnoVisual=turnoDeHora(toHH(mejor));
+        a.ini=toHH(mejor);
+        a.fin=toHH(mejor+durE);
+        a.turno=turnoVisual;
         delete a._sinEscalonar;
       });
     });
+    // Limpiar marcadores temporales
+    asignaciones.filter(a=>a.dia===dia).forEach(a=>{delete a._iniH;delete a._sinEscalonar;});
   });
 
   return asignaciones;
