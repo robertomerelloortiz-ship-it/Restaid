@@ -1527,41 +1527,68 @@ function calcularCuadranteAuto(){
   const DURACION={Comida:5,Cena:4};
   const INI={Comida:'12:00',Cena:'20:00'};
   const FIN={Comida:'17:00',Cena:'00:00'};
+  const MAX_HORAS_DIA=9; // Máximo horas en un mismo día (permite doblar Comida+Cena = 9h)
 
-  const horasAsig={};DB.empleados.forEach(e=>{horasAsig[e.id]=0;});
+  const horasAsig={};    // horas semanales acumuladas por empleado
+  const horasDia={};     // horas en el día actual por empleado {empId: {dia: horas}}
+  DB.empleados.forEach(e=>{horasAsig[e.id]=0;horasDia[e.id]={};});
+
   const lunesISO=lunes.toISOString().slice(0,10);
   const domISO=new Date(lunes);domISO.setUTCDate(domISO.getUTCDate()+6);
   const domISOStr=domISO.toISOString().slice(0,10);
   const enVacaciones=e=>(e.vacaciones||[]).some(v=>v.inicio<=domISOStr&&v.fin>=lunesISO);
 
   // ── Pre-planificación: bloque de descanso de ≥3 turnos consecutivos ──
-  // 14 turnos en la semana: índice 0=Lun-Com, 1=Lun-Cen, 2=Mar-Com ... 13=Dom-Cen
+  // Distribuido para que no coincidan demasiados del mismo rol en el mismo bloque
   const TURNOS_SEQ=[];
   DIAS.forEach((d,di)=>['Comida','Cena'].forEach(t=>TURNOS_SEQ.push({dia:d,di,turno:t})));
-  // Todos los bloques posibles de 3 turnos consecutivos (índices 0..11)
   const BLOQUES_POSIBLES=TURNOS_SEQ.slice(0,-2).map((_,i)=>[i,i+1,i+2]);
 
+  // Contabilizar cuántos empleados de cada rol ya tienen asignado cada bloque
+  const bloqueUsos={}; // "bloque_idx|rol" -> count
   const bloqueDescanso={};
-  DB.empleados.filter(e=>!enVacaciones(e)).forEach(e=>{
+
+  // Ordenar empleados por diaDescanso definido primero (tienen más restricciones)
+  const empOrdenados=[...DB.empleados.filter(e=>!enVacaciones(e))].sort((a,b)=>{
+    const aD=a.diaDescanso?0:1, bD=b.diaDescanso?0:1;
+    return aD-bD;
+  });
+
+  empOrdenados.forEach(e=>{
     const dIdx=e.diaDescanso?DIAS_FULL.indexOf(e.diaDescanso):-1;
-    const puntuarBloque=b=>{
+    const rolGrupo=['Sala','Barra'].includes(e.rol)?'sala':'cocina';
+
+    const puntuarBloque=(b,idx)=>{
       let score=0;
+      // Penalizar bloques ya muy usados por el mismo rol (distribuir descansos)
+      const usos=bloqueUsos[`${idx}|${rolGrupo}`]||0;
+      score-=usos*8;
       b.forEach(i=>{
         const t=TURNOS_SEQ[i];
+        // Bonus si cubre día de descanso habitual y adyacentes
         if(dIdx>=0&&t.di===dIdx)score+=10;
-        if(dIdx>=0&&(t.di===dIdx-1||t.di===dIdx+1))score+=5;
-        // Penalizar viernes noche y sábado (alta demanda)
+        if(dIdx>=0&&(t.di===dIdx-1||t.di===dIdx+1))score+=4;
+        // Penalizar alta demanda (vie noche, sáb)
         if(t.di===4&&t.turno==='Cena')score-=3;
-        if(t.di===5)score-=4;
+        if(t.di===5)score-=5;
+        // Penalizar domingo también (suele ser importante)
+        if(t.di===6)score-=2;
       });
       return score;
     };
-    const mejor=BLOQUES_POSIBLES.slice().sort((a,b)=>puntuarBloque(b)-puntuarBloque(a))[0];
-    bloqueDescanso[e.id]=new Set(mejor.map(i=>`${TURNOS_SEQ[i].dia}|${TURNOS_SEQ[i].turno}`));
+
+    const mejorIdx=BLOQUES_POSIBLES.map((b,idx)=>({b,idx,s:puntuarBloque(b,idx)}))
+      .sort((a,b)=>b.s-a.s)[0].idx;
+    bloqueDescanso[e.id]=new Set(BLOQUES_POSIBLES[mejorIdx].map(i=>`${TURNOS_SEQ[i].dia}|${TURNOS_SEQ[i].turno}`));
+    // Registrar uso de este bloque para este rol
+    bloqueUsos[`${mejorIdx}|${rolGrupo}`]=(bloqueUsos[`${mejorIdx}|${rolGrupo}`]||0)+1;
   });
 
   const enBloqueDescanso=(e,dia,turno)=>bloqueDescanso[e.id]&&bloqueDescanso[e.id].has(`${dia}|${turno}`);
 
+  // ── Asignación por turnos, ordenando para distribuir horas equitativamente ──
+  // Estrategia: en cada turno, el candidato con menos horas acumuladas tiene prioridad.
+  // Para evitar saturar días: si ya tiene turno ese día, solo se le asigna si no supera MAX_HORAS_DIA.
   const asignaciones=[];
 
   DIAS.forEach((dia,di)=>{
@@ -1577,28 +1604,35 @@ function calcularCuadranteAuto(){
       const dur=DURACION[turno];
       const cumpleTurnoPref=e=>{const tp=(e.horarioHabitual||{}).turnoPref;if(!tp||tp==='Ambos')return true;return tp===turno;};
       const horasTurno=e=>{const hh=e.horarioHabitual||{};if(hh.horaIni&&hh.horaFin)return{ini:hh.horaIni,fin:hh.horaFin};return{ini:INI[turno],fin:FIN[turno]};};
+      const horasDiaEmp=(e)=>horasDia[e.id][dia]||0;
 
-      const candidatosSala=salaEmps
-        .filter(e=>!enVacaciones(e)&&(!e.diaDescanso||DIAS_FULL[di]!==e.diaDescanso)&&cumpleTurnoPref(e)&&!enBloqueDescanso(e,dia,turno))
-        .filter(e=>horasAsig[e.id]+dur<=(e.horasContrato||40)+1)
-        .sort((a,b)=>horasAsig[a.id]-horasAsig[b.id]);
+      const filtroBase=e=>
+        !enVacaciones(e) &&
+        (!e.diaDescanso||DIAS_FULL[di]!==e.diaDescanso) &&
+        cumpleTurnoPref(e) &&
+        !enBloqueDescanso(e,dia,turno) &&
+        horasAsig[e.id]+dur<=(e.horasContrato||40)+1 &&
+        horasDiaEmp(e)+dur<=MAX_HORAS_DIA;
 
-      const candidatosCoc=cocEmps
-        .filter(e=>!enVacaciones(e)&&(!e.diaDescanso||DIAS_FULL[di]!==e.diaDescanso)&&cumpleTurnoPref(e)&&!enBloqueDescanso(e,dia,turno))
-        .filter(e=>horasAsig[e.id]+dur<=(e.horasContrato||40)+1)
-        .sort((a,b)=>horasAsig[a.id]-horasAsig[b.id]);
+      // Ordenar: primero los que menos horas semanales llevan, desempate por menos horas hoy
+      const ordenar=(a,b)=>horasAsig[a.id]!==horasAsig[b.id]
+        ?horasAsig[a.id]-horasAsig[b.id]
+        :horasDiaEmp(a)-horasDiaEmp(b);
 
-      const asigSala=candidatosSala.slice(0,needSala);
-      asigSala.forEach(e=>{
+      const candidatosSala=salaEmps.filter(filtroBase).sort(ordenar);
+      const candidatosCoc=cocEmps.filter(filtroBase).sort(ordenar);
+
+      candidatosSala.slice(0,needSala).forEach(e=>{
         const ht=horasTurno(e);
         asignaciones.push({id:uid(),empId:e.id,dia,turno,ini:ht.ini,fin:ht.fin});
         horasAsig[e.id]+=dur;
+        horasDia[e.id][dia]=(horasDia[e.id][dia]||0)+dur;
       });
-      const asigCoc=candidatosCoc.slice(0,needCoc);
-      asigCoc.forEach(e=>{
+      candidatosCoc.slice(0,needCoc).forEach(e=>{
         const ht=horasTurno(e);
         asignaciones.push({id:uid(),empId:e.id,dia,turno,ini:ht.ini,fin:ht.fin});
         horasAsig[e.id]+=dur;
+        horasDia[e.id][dia]=(horasDia[e.id][dia]||0)+dur;
       });
     });
   });
