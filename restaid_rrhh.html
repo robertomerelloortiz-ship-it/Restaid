@@ -1418,7 +1418,7 @@ function generarCuadranteIA(){
   llamarCuadranteIA(peticiones).then(asigs=>{
     if(asigs===null){btn.innerHTML='✨ Generar cuadrante';btn.disabled=false;toast('No pude generar el cuadrante');}
     else if(asigs.length){w.asignaciones=asigs.map(a=>({id:uid(),empId:a.empId,dia:a.dia,turno:a.turno,ini:a.ini,fin:a.fin}));saveDB();CUAD_AI_OPEN=false;renderCuadrante();updateSidebar();toast('Cuadrante generado · revísalo y ajusta lo que quieras');}
-    else{btn.innerHTML='✨ Generar cuadrante';btn.disabled=false;toast('La IA generó 0 turnos — introduce ventas previstas o añade una petición específica');}
+    else{btn.innerHTML='✨ Generar cuadrante';btn.disabled=false;toast('La IA generó 0 turnos válidos — revisa la consola (F12) para ver el detalle');}
   }).catch(()=>{btn.innerHTML='✨ Generar cuadrante';btn.disabled=false;toast('No pude conectar con la IA.');});
 }
 async function llamarCuadranteIA(peticiones){
@@ -1433,10 +1433,15 @@ async function llamarCuadranteIA(peticiones){
   const res=await fetch(API_URL,{method:'POST',headers:aiHeaders(),body:JSON.stringify({model:MODEL,max_tokens:2500,system:sys,messages:[{role:'user',content:usr}]})});
   if(!res.ok)throw new Error('HTTP '+res.status);
   const data=await res.json();const txt=data.content.filter(b=>b.type==='text').map(b=>b.text).join('');
-  const j=parseJson(txt);if(!j||!j.asignaciones)return null;
+  console.log('[CuadIA] respuesta raw:', txt.slice(0,300));
+  const j=parseJson(txt);if(!j||!j.asignaciones){console.warn('[CuadIA] parseJson falló o sin asignaciones',txt.slice(0,200));return null;}
   if(j.conflictos)toast('⚠ '+j.conflictos);
   const validIds=new Set(DB.empleados.map(e=>e.id));
-  return j.asignaciones.filter(a=>validIds.has(a.empId)&&DIAS.includes(a.dia)&&TURNOS.includes(a.turno)&&a.ini&&a.fin);
+  // Normalizar turno: acepta variantes de mayúsculas y sinónimos
+  const normTurno=t=>{const s=(t||'').toLowerCase();if(s.includes('com')||s.includes('alm'))return'Comida';if(s.includes('cen')||s.includes('noch'))return'Cena';return t;};
+  const asigs=j.asignaciones.map(a=>({...a,turno:normTurno(a.turno)})).filter(a=>validIds.has(a.empId)&&DIAS.includes(a.dia)&&TURNOS.includes(a.turno)&&a.ini&&a.fin);
+  console.log('[CuadIA] asignaciones válidas:',asigs.length,'de',j.asignaciones.length);
+  return asigs;
 }
 function parseJson(txt){try{return JSON.parse(txt);}catch(e){const m=txt.match(/\{[\s\S]*\}/);if(m){try{return JSON.parse(m[0]);}catch(e2){return null;}}return null;}}
 
