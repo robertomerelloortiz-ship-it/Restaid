@@ -1593,6 +1593,55 @@ function calcularCuadranteAuto(){
     bloqueUsos[`${mejorIdx}|${rolGrupo}`]=(bloqueUsos[`${mejorIdx}|${rolGrupo}`]||0)+1;
   });
 
+  // ── Leer curva de media hora del pub (publicada por Ventas) ──
+  let halfHourCurva=null;
+  try{let pub={};try{pub=JSON.parse(localStorage.getItem('restaid_pub_v1')||'{}')||{};}catch(e){}halfHourCurva=(pub.ventas&&pub.ventas.halfHourCurva)||null;}catch(e){}
+
+  // ── Función de escalonamiento de horarios por curva de demanda ──────
+  const toHHMM=h=>{const hN=((h%24)+24)%24;const hh=Math.floor(hN);const mm=Math.round((hN-hh)*60);return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0');};
+  function escalonarTurno(n,tIni,tFin,curva,hContrato){
+    const iH=parseHM(tIni);let fH=parseHM(tFin);if(fH<=iH)fH+=24;
+    const durT=fH-iH;const durE=Math.min(hContrato,durT);
+    if(n===1||Math.abs(durE-durT)<0.1)return Array.from({length:n},()=>({ini:tIni,fin:tFin}));
+    // Filtrar franjas del turno
+    const slots=[];
+    if(curva){
+      Object.keys(curva).forEach(k=>{
+        const h=parseHM(k);if(h===null)return;
+        const hA=h<iH?h+24:h;
+        if(hA>=iH&&hA<fH)slots.push({h:hA,pct:curva[k]||0});
+      });
+      slots.sort((a,b)=>a.h-b.h);
+    }
+    if(!slots.length){
+      // Sin curva: distribución uniforme
+      const margen=fH-iH-durE;const paso=n>1?margen/(n-1):0;
+      return Array.from({length:n},(_,i)=>({ini:toHHMM(iH+i*paso),fin:toHHMM(iH+i*paso+durE)}));
+    }
+    // Greedy: elegir posiciones (paso 30min) que maximicen demanda residual
+    const paso=0.5;const posibles=[];
+    for(let h=iH;h<=fH-durE+0.01;h+=paso){
+      const dem=slots.filter(s=>s.h>=h&&s.h<h+durE).reduce((s,x)=>s+x.pct,0);
+      posibles.push({h,dem});
+    }
+    const residual=slots.map(s=>({...s}));const elegidos=[];
+    for(let k=0;k<n;k++){
+      let mejor=null,mejorS=-1;
+      posibles.forEach(p=>{
+        const yaEn=elegidos.filter(e=>Math.abs(e.h-p.h)<0.1).length;
+        if(yaEn>=2)return;
+        const s=residual.filter(x=>x.h>=p.h&&x.h<p.h+durE).reduce((s,x)=>s+x.pct,0);
+        if(s>mejorS){mejorS=s;mejor=p;}
+      });
+      if(!mejor)break;
+      elegidos.push(mejor);
+      residual.forEach(x=>{if(x.h>=mejor.h&&x.h<mejor.h+durE)x.pct*=0.4;});
+    }
+    // Rellenar con uniformes si faltan
+    while(elegidos.length<n){const margen=fH-iH-durE;const i=elegidos.length;elegidos.push({h:iH+Math.min(i*(margen/Math.max(n-1,1)),margen)});}
+    return elegidos.sort((a,b)=>a.h-b.h).map(e=>({ini:toHHMM(e.h),fin:toHHMM(e.h+durE)}));
+  }
+
   // Dotación deseada por (día, turno, grupo)
   const minSala=cfg.minSala||2;
   const minCocina=cfg.minCocina||1;
@@ -1627,12 +1676,15 @@ function calcularCuadranteAuto(){
   };
 
   const asignaciones=[];
+  // doAsignar: usa el horario habitual del empleado si lo tiene, o el del turno (sin escalonar aún)
   const doAsignar=(emp,dia,turno,grupo)=>{
     const dur=DURACION[turno];
     const hh=emp.horarioHabitual||{};
+    // Si el empleado tiene horario concreto definido, usarlo directamente
     const ini=(hh.horaIni&&hh.horaFin)?hh.horaIni:INI[turno];
     const fin=(hh.horaIni&&hh.horaFin)?hh.horaFin:FIN[turno];
-    asignaciones.push({id:uid(),empId:emp.id,dia,turno,ini,fin});
+    const hContratoEmp=Math.min(hh.horaIni&&hh.horaFin?calcDur(hh.horaIni,hh.horaFin):dur,(emp.horasContrato||40));
+    asignaciones.push({id:uid(),empId:emp.id,dia,turno,ini,fin,_sinEscalonar:!(hh.horaIni&&hh.horaFin)});
     horasAsig[emp.id]+=dur;
     horasDia[emp.id][dia]=(horasDia[emp.id][dia]||0)+dur;
     asignado[emp.id].add(`${dia}|${turno}`);
@@ -1688,6 +1740,31 @@ function calcularCuadranteAuto(){
     }
     if(!asignoAlguno)break;
   }
+
+  // ── Paso 4: Escalonar horarios usando la curva de media hora ─────────
+  // Para cada (dia, turno), re-calcular ini/fin de los empleados sin horario fijo
+  DIAS.forEach(dia=>{
+    ['Comida','Cena'].forEach(turno=>{
+      const asigsTurno=asignaciones.filter(a=>a.dia===dia&&a.turno===turno&&a._sinEscalonar);
+      if(!asigsTurno.length)return;
+      const n=asigsTurno.length;
+      // Calcular horas de contrato representativas (media de los asignados)
+      const durMedia=asigsTurno.reduce((s,a)=>{
+        const e=disponibles.find(x=>x.id===a.empId);
+        return s+Math.min(e?(e.horasContrato||40):DURACION[turno],DURACION[turno]);
+      },0)/n;
+      const bloques=escalonarTurno(n,INI[turno],FIN[turno],halfHourCurva,durMedia);
+      // Asignar bloques escalonados ordenando empleados por horas semanales (menos horas → turno antes)
+      asigsTurno.sort((a,b)=>{
+        const eA=disponibles.find(x=>x.id===a.empId),eB=disponibles.find(x=>x.id===b.empId);
+        return (eA?eA.horasContrato||40:40)-(eB?eB.horasContrato||40:40);
+      });
+      asigsTurno.forEach((a,i)=>{
+        if(bloques[i]){a.ini=bloques[i].ini;a.fin=bloques[i].fin;}
+        delete a._sinEscalonar;
+      });
+    });
+  });
 
   return asignaciones;
 }
