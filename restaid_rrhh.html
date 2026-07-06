@@ -1521,121 +1521,155 @@ function calcularCuadranteAuto(){
   const ratioCocina=cfg.ratioCocina||35;
   const ticketMed=cfg.ticketMedio||25;
 
-  // ── Paso 3: Asignación ──────────────────────────────────────────────
-  const salaEmps=DB.empleados.filter(e=>['Sala','Barra'].includes(e.rol)&&!e.bajaIT);
-  const cocEmps=DB.empleados.filter(e=>['Cocina','Office'].includes(e.rol)&&!e.bajaIT);
+  // ── Paso 3: Asignación por urgencia con balanceo iterativo ──────────
+  const salaEmps=DB.empleados.filter(e=>['Sala','Barra'].includes(e.rol));
+  const cocEmps=DB.empleados.filter(e=>['Cocina','Office'].includes(e.rol));
   const DURACION={Comida:5,Cena:4};
   const INI={Comida:'12:00',Cena:'20:00'};
   const FIN={Comida:'17:00',Cena:'00:00'};
-  const MAX_HORAS_DIA=9; // Máximo horas en un mismo día (permite doblar Comida+Cena = 9h)
+  const MAX_HORAS_DIA=9;
+  const TOLERANCIA=1;
 
-  const horasAsig={};    // horas semanales acumuladas por empleado
-  const horasDia={};     // horas en el día actual por empleado {empId: {dia: horas}}
-  DB.empleados.forEach(e=>{horasAsig[e.id]=0;horasDia[e.id]={};});
-
+  const activos=DB.empleados.filter(e=>!e.bajaIT);
   const lunesISO=lunes.toISOString().slice(0,10);
-  const domISO=new Date(lunes);domISO.setUTCDate(domISO.getUTCDate()+6);
-  const domISOStr=domISO.toISOString().slice(0,10);
+  const domISO2=new Date(lunes);domISO2.setUTCDate(domISO2.getUTCDate()+6);
+  const domISOStr=domISO2.toISOString().slice(0,10);
   const enVacaciones=e=>(e.vacaciones||[]).some(v=>v.inicio<=domISOStr&&v.fin>=lunesISO);
+  const disponibles=activos.filter(e=>!enVacaciones(e));
+  const esSala=e=>['Sala','Barra'].includes(e.rol);
+  const esCocina=e=>['Cocina','Office'].includes(e.rol);
 
-  // ── Pre-planificación: bloque de descanso de ≥3 turnos consecutivos ──
-  // Distribuido para que no coincidan demasiados del mismo rol en el mismo bloque
+  // Bloque de descanso de ≥3 turnos consecutivos por empleado
   const TURNOS_SEQ=[];
   DIAS.forEach((d,di)=>['Comida','Cena'].forEach(t=>TURNOS_SEQ.push({dia:d,di,turno:t})));
   const BLOQUES_POSIBLES=TURNOS_SEQ.slice(0,-2).map((_,i)=>[i,i+1,i+2]);
 
-  // Contabilizar cuántos empleados de cada rol ya tienen asignado cada bloque
-  const bloqueUsos={}; // "bloque_idx|rol" -> count
+  const bloqueUsos={};
   const bloqueDescanso={};
-
-  // Ordenar empleados por diaDescanso definido primero (tienen más restricciones)
-  const empOrdenados=[...DB.empleados.filter(e=>!enVacaciones(e))].sort((a,b)=>{
-    const aD=a.diaDescanso?0:1, bD=b.diaDescanso?0:1;
-    return aD-bD;
-  });
+  const empOrdenados=[...disponibles].sort((a,b)=>(a.diaDescanso?0:1)-(b.diaDescanso?0:1));
 
   empOrdenados.forEach(e=>{
     const dIdx=e.diaDescanso?DIAS_FULL.indexOf(e.diaDescanso):-1;
-    const rolGrupo=['Sala','Barra'].includes(e.rol)?'sala':'cocina';
-
-    const puntuarBloque=(b,idx)=>{
-      let score=0;
-      // Penalizar bloques ya muy usados por el mismo rol (distribuir descansos)
+    const rolGrupo=esSala(e)?'sala':'cocina';
+    const idxUsados=Object.keys(bloqueUsos).filter(k=>k.endsWith('|'+rolGrupo)&&bloqueUsos[k]>0).map(k=>parseInt(k.split('|')[0],10));
+    const puntuar=(b,idx)=>{
+      let s=0;
       const usos=bloqueUsos[`${idx}|${rolGrupo}`]||0;
-      score-=usos*8;
+      s-=usos*usos*25;
+      idxUsados.forEach(iu=>{
+        const overlap=b.filter(i=>BLOQUES_POSIBLES[iu].includes(i)).length;
+        s-=overlap*overlap*3;
+      });
       b.forEach(i=>{
         const t=TURNOS_SEQ[i];
-        // Bonus si cubre día de descanso habitual y adyacentes
-        if(dIdx>=0&&t.di===dIdx)score+=10;
-        if(dIdx>=0&&(t.di===dIdx-1||t.di===dIdx+1))score+=4;
-        // Penalizar alta demanda (vie noche, sáb)
-        if(t.di===4&&t.turno==='Cena')score-=3;
-        if(t.di===5)score-=5;
-        // Penalizar domingo también (suele ser importante)
-        if(t.di===6)score-=2;
+        if(dIdx>=0&&t.di===dIdx)s+=10;
+        if(dIdx>=0&&(t.di===dIdx-1||t.di===dIdx+1))s+=4;
+        if(t.di===4&&t.turno==='Cena')s-=3;
+        if(t.di===5)s-=5;
+        if(t.di===6)s-=2;
       });
-      return score;
+      return s;
     };
-
-    const mejorIdx=BLOQUES_POSIBLES.map((b,idx)=>({b,idx,s:puntuarBloque(b,idx)}))
-      .sort((a,b)=>b.s-a.s)[0].idx;
+    const mejorIdx=BLOQUES_POSIBLES.map((b,idx)=>({b,idx,s:puntuar(b,idx)})).sort((a,b)=>b.s-a.s)[0].idx;
     bloqueDescanso[e.id]=new Set(BLOQUES_POSIBLES[mejorIdx].map(i=>`${TURNOS_SEQ[i].dia}|${TURNOS_SEQ[i].turno}`));
-    // Registrar uso de este bloque para este rol
     bloqueUsos[`${mejorIdx}|${rolGrupo}`]=(bloqueUsos[`${mejorIdx}|${rolGrupo}`]||0)+1;
   });
 
-  const enBloqueDescanso=(e,dia,turno)=>bloqueDescanso[e.id]&&bloqueDescanso[e.id].has(`${dia}|${turno}`);
+  // Dotación deseada por (día, turno, grupo)
+  const minSala=cfg.minSala||2;
+  const minCocina=cfg.minCocina||1;
+  const dotDeseada={};
+  DIAS.forEach(d=>{
+    const v=ventPrev[d]||{Comida:0,Cena:0};
+    ['Comida','Cena'].forEach(t=>{
+      const venta=v[t]||0;
+      const comensales=venta>0?Math.round(venta/ticketMed):0;
+      dotDeseada[`${d}|${t}|sala`]=Math.max(minSala,comensales>0?Math.ceil(comensales/ratioSala):minSala);
+      dotDeseada[`${d}|${t}|cocina`]=Math.max(minCocina,comensales>0?Math.ceil(comensales/ratioCocina):minCocina);
+    });
+  });
 
-  // ── Asignación por turnos, ordenando para distribuir horas equitativamente ──
-  // Estrategia: en cada turno, el candidato con menos horas acumuladas tiene prioridad.
-  // Para evitar saturar días: si ya tiene turno ese día, solo se le asigna si no supera MAX_HORAS_DIA.
+  // Estado
+  const horasAsig={};disponibles.forEach(e=>{horasAsig[e.id]=0;});
+  const horasDia={};disponibles.forEach(e=>{horasDia[e.id]={};});
+  const dotActual={};
+  const asignado={};disponibles.forEach(e=>{asignado[e.id]=new Set();});
+
+  const puedeTrabajar=(e,dia,di,turno,ignoraContrato)=>{
+    if(e.bajaIT)return false;
+    if(enVacaciones(e))return false;
+    if(e.diaDescanso&&DIAS_FULL[di]===e.diaDescanso)return false;
+    if(bloqueDescanso[e.id]&&bloqueDescanso[e.id].has(`${dia}|${turno}`))return false;
+    const tp=(e.horarioHabitual||{}).turnoPref;
+    if(tp&&tp!=='Ambos'&&tp!==turno)return false;
+    const dur=DURACION[turno];
+    if(!ignoraContrato&&(horasAsig[e.id]||0)+dur>(e.horasContrato||40)+TOLERANCIA)return false;
+    if((horasDia[e.id]&&horasDia[e.id][dia]||0)+dur>MAX_HORAS_DIA)return false;
+    return true;
+  };
+
   const asignaciones=[];
+  const doAsignar=(emp,dia,turno,grupo)=>{
+    const dur=DURACION[turno];
+    const hh=emp.horarioHabitual||{};
+    const ini=(hh.horaIni&&hh.horaFin)?hh.horaIni:INI[turno];
+    const fin=(hh.horaIni&&hh.horaFin)?hh.horaFin:FIN[turno];
+    asignaciones.push({id:uid(),empId:emp.id,dia,turno,ini,fin});
+    horasAsig[emp.id]+=dur;
+    horasDia[emp.id][dia]=(horasDia[emp.id][dia]||0)+dur;
+    asignado[emp.id].add(`${dia}|${turno}`);
+    dotActual[`${dia}|${turno}|${grupo}`]=(dotActual[`${dia}|${turno}|${grupo}`]||0)+1;
+  };
 
+  // FASE 1: cubrir dotación mínima (prioridad absoluta)
   DIAS.forEach((dia,di)=>{
-    const vDia=ventPrev[dia]||{Comida:0,Cena:0};
     ['Comida','Cena'].forEach(turno=>{
-      const ventaTurno=vDia[turno]||0;
-      const comensales=ventaTurno>0?Math.round(ventaTurno/ticketMed):0;
-      const minSala=cfg.minSala||2;
-      const minCocina=cfg.minCocina||1;
-      const needSala=Math.max(minSala,comensales>0?Math.ceil(comensales/ratioSala):minSala);
-      const needCoc=Math.max(minCocina,comensales>0?Math.ceil(comensales/ratioCocina):minCocina);
-
-      const dur=DURACION[turno];
-      const cumpleTurnoPref=e=>{const tp=(e.horarioHabitual||{}).turnoPref;if(!tp||tp==='Ambos')return true;return tp===turno;};
-      const horasTurno=e=>{const hh=e.horarioHabitual||{};if(hh.horaIni&&hh.horaFin)return{ini:hh.horaIni,fin:hh.horaFin};return{ini:INI[turno],fin:FIN[turno]};};
-      const horasDiaEmp=(e)=>horasDia[e.id][dia]||0;
-
-      const filtroBase=e=>
-        !enVacaciones(e) &&
-        (!e.diaDescanso||DIAS_FULL[di]!==e.diaDescanso) &&
-        cumpleTurnoPref(e) &&
-        !enBloqueDescanso(e,dia,turno) &&
-        horasAsig[e.id]+dur<=(e.horasContrato||40)+1 &&
-        horasDiaEmp(e)+dur<=MAX_HORAS_DIA;
-
-      // Ordenar: primero los que menos horas semanales llevan, desempate por menos horas hoy
-      const ordenar=(a,b)=>horasAsig[a.id]!==horasAsig[b.id]
-        ?horasAsig[a.id]-horasAsig[b.id]
-        :horasDiaEmp(a)-horasDiaEmp(b);
-
-      const candidatosSala=salaEmps.filter(filtroBase).sort(ordenar);
-      const candidatosCoc=cocEmps.filter(filtroBase).sort(ordenar);
-
-      candidatosSala.slice(0,needSala).forEach(e=>{
-        const ht=horasTurno(e);
-        asignaciones.push({id:uid(),empId:e.id,dia,turno,ini:ht.ini,fin:ht.fin});
-        horasAsig[e.id]+=dur;
-        horasDia[e.id][dia]=(horasDia[e.id][dia]||0)+dur;
-      });
-      candidatosCoc.slice(0,needCoc).forEach(e=>{
-        const ht=horasTurno(e);
-        asignaciones.push({id:uid(),empId:e.id,dia,turno,ini:ht.ini,fin:ht.fin});
-        horasAsig[e.id]+=dur;
-        horasDia[e.id][dia]=(horasDia[e.id][dia]||0)+dur;
+      ['sala','cocina'].forEach(grupo=>{
+        const key=`${dia}|${turno}|${grupo}`;
+        const deseada=dotDeseada[key]||0;
+        const filtroRol=grupo==='sala'?esSala:esCocina;
+        while((dotActual[key]||0)<deseada){
+          let cands=disponibles.filter(e=>filtroRol(e)&&!asignado[e.id].has(`${dia}|${turno}`)&&puedeTrabajar(e,dia,di,turno,false));
+          if(!cands.length)cands=disponibles.filter(e=>filtroRol(e)&&!asignado[e.id].has(`${dia}|${turno}`)&&puedeTrabajar(e,dia,di,turno,true));
+          if(!cands.length)break;
+          cands.sort((a,b)=>{
+            const pctA=(horasAsig[a.id]||0)/(a.horasContrato||40);
+            const pctB=(horasAsig[b.id]||0)/(b.horasContrato||40);
+            if(pctA!==pctB)return pctA-pctB;
+            return (horasDia[a.id]&&horasDia[a.id][dia]||0)-(horasDia[b.id]&&horasDia[b.id][dia]||0);
+          });
+          doAsignar(cands[0],dia,turno,grupo);
+        }
       });
     });
   });
+
+  // FASE 2: rellenar hasta contrato sin sobredotar demasiado
+  const MAX_ITER=200;
+  let iter=0;
+  while(iter++<MAX_ITER){
+    const conDeficit=disponibles.filter(e=>(horasAsig[e.id]||0)<(e.horasContrato||40)-TOLERANCIA);
+    if(!conDeficit.length)break;
+    conDeficit.sort((a,b)=>((b.horasContrato||40)-(horasAsig[b.id]||0))-((a.horasContrato||40)-(horasAsig[a.id]||0)));
+    let asignoAlguno=false;
+    for(const emp of conDeficit){
+      const grupo=esSala(emp)?'sala':'cocina';
+      let mejor=null,mejorSc=-Infinity;
+      DIAS.forEach((dia,di)=>['Comida','Cena'].forEach(turno=>{
+        if(asignado[emp.id].has(`${dia}|${turno}`))return;
+        if(!puedeTrabajar(emp,dia,di,turno,false))return;
+        const key=`${dia}|${turno}|${grupo}`;
+        const dot=dotActual[key]||0;
+        const des=dotDeseada[key]||1;
+        const sobrec=dot-des;
+        if(sobrec>=1)return;
+        const sc=-sobrec;
+        if(sc>mejorSc){mejorSc=sc;mejor={dia,turno,grupo};}
+      }));
+      if(mejor){doAsignar(emp,mejor.dia,mejor.turno,mejor.grupo);asignoAlguno=true;}
+    }
+    if(!asignoAlguno)break;
+  }
 
   return asignaciones;
 }
