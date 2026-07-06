@@ -923,6 +923,7 @@ function empCard(e,w){
       <div class="emp-card-stat"><span>Contrato</span><span>${e.horasContrato?fc(e.horasContrato,0)+' h/sem':'—'}</span></div>
       <div class="emp-card-stat"><span>Planif. esta semana</span><span style="color:${over?'var(--red)':'inherit'}">${fc(hSem,1)} h</span></div>
       <div class="emp-card-stat"><span>Descanso estándar</span><span>${e.diaDescanso?esc(e.diaDescanso):'—'}</span></div>
+      ${(()=>{const hh=e.horarioHabitual||{};const parts=[];if(hh.turnoPref)parts.push(hh.turnoPref==='Ambos'?'Ambos turnos':hh.turnoPref==='Comida'?'Solo mediodía':'Solo noche');if(hh.franja)parts.push(hh.franja);if(hh.horaIni&&hh.horaFin)parts.push(hh.horaIni+'–'+hh.horaFin);return parts.length?`<div class="emp-card-stat"><span>Horario habitual</span><span>${parts.join(' · ')}</span></div>`:'';})()}
       <div class="emp-card-stat"><span>Pasivo laboral</span><span>${pasivo>0?`<span class="pasivo-tag">${fk(pasivo)} €</span>`:'—'}</span></div>`}
     </div>
     <div class="emp-card-acts">
@@ -950,6 +951,17 @@ function openEmpModal(id){
     <div class="field-row">
       <div class="field"><label>Fecha de incorporación</label><input id="em-alta" type="date" value="${e.fechaAlta||''}"></div>
       <div class="field"><label>Día de descanso estándar</label><select id="em-descanso"><option value="">Sin definir</option>${DIAS_FULL.map(d=>`<option ${e.diaDescanso===d?'selected':''}>${d}</option>`).join('')}</select></div>
+    </div>
+    <div style="border-top:1px solid var(--bdr);margin:.75rem 0 .5rem;padding-top:.75rem">
+      <div style="font-size:11.5px;font-weight:700;color:var(--tx2);margin-bottom:.6rem">Horario habitual</div>
+      <div class="field-row">
+        <div class="field"><label>Turno preferido</label><select id="em-turno-pref"><option value="">Sin preferencia</option><option value="Comida" ${(e.horarioHabitual||{}).turnoPref==='Comida'?'selected':''}>Solo Comida (mediodía)</option><option value="Cena" ${(e.horarioHabitual||{}).turnoPref==='Cena'?'selected':''}>Solo Cena (noche)</option><option value="Ambos" ${(e.horarioHabitual||{}).turnoPref==='Ambos'?'selected':''}>Ambos turnos</option></select><div class="field-hint">El cuadrante respetará esta preferencia al asignar turnos.</div></div>
+        <div class="field"><label>Franjas horarias</label><select id="em-franja"><option value="">Sin definir</option><option value="mañana" ${(e.horarioHabitual||{}).franja==='mañana'?'selected':''}>Mañana (antes de 15h)</option><option value="tarde" ${(e.horarioHabitual||{}).franja==='tarde'?'selected':''}>Tarde (después de 15h)</option><option value="partido" ${(e.horarioHabitual||{}).franja==='partido'?'selected':''}>Partido (comida + cena)</option></select></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Entrada habitual <span style="font-weight:400;color:var(--tx3)">(opcional)</span></label><input id="em-hora-ini" type="time" value="${(e.horarioHabitual||{}).horaIni||''}"></div>
+        <div class="field"><label>Salida habitual <span style="font-weight:400;color:var(--tx3)">(opcional)</span></label><input id="em-hora-fin" type="time" value="${(e.horarioHabitual||{}).horaFin||''}"></div>
+      </div>
     </div>
     <div class="field-row">
       <div class="field"><label>PIN de fichaje (4 dígitos)</label><input id="em-pin" type="text" inputmode="numeric" maxlength="4" value="${e.pin||''}" placeholder="Ej. 1234"><div class="field-hint">Cada persona ficha su entrada/salida con este PIN. Debe ser único.</div></div>
@@ -1000,7 +1012,8 @@ function saveEmp(id){
   const salarioHora=salarioBrutoMes>0?salarioBrutoMes/(horasContrato*4.33):0;
   const bajaIT=!!($('em-bajaIT')?.checked);
   const costeITMes=bajaIT?(parseFloat($('em-costeIT')?.value)||0):0;
-  const obj={nombre,rol:$('em-rol').value,contrato:$('em-contrato').value,salarioBrutoMes,salarioHora,horasContrato,fechaAlta:$('em-alta').value||'',diaDescanso:$('em-descanso').value||'',pin,bajaIT,costeITMes};
+  const obj={nombre,rol:$('em-rol').value,contrato:$('em-contrato').value,salarioBrutoMes,salarioHora,horasContrato,fechaAlta:$('em-alta').value||'',diaDescanso:$('em-descanso').value||'',pin,bajaIT,costeITMes,
+    horarioHabitual:{turnoPref:$('em-turno-pref').value||'',franja:$('em-franja').value||'',horaIni:$('em-hora-ini').value||'',horaFin:$('em-hora-fin').value||''}};
   if(id){const e=emp(id);Object.assign(e,obj);}
   else{obj.id=uid();obj.cumple='';obj.prefs='';obj.skills=[];obj.personal={};obj.vacaciones=[];obj.imagen='';DB.empleados.push(obj);}
   saveDB();closeModal();renderEmpleados();updateSidebar();toast(id?'Empleado actualizado':'Empleado añadido');
@@ -1394,7 +1407,7 @@ function openCuadAI(){
   const prefsHtml=DB.empleados.map(e=>{
     const vacs=(e.vacaciones||[]).filter(v=>{const m=weekIdToMonday(DB.semanaActual);const s=new Date(m);const end=new Date(m);end.setUTCDate(end.getUTCDate()+6);return new Date(v.inicio)<=end&&new Date(v.fin)>=s;});
     const vacTxt=vacs.length?'<span style="color:var(--red);font-weight:600"> · ¡DE VACACIONES!</span>':'';
-    return `<div style="font-size:12px;padding:4px 0;border-bottom:1px solid var(--bg)"><strong>${esc(e.nombre)}</strong> (${esc(e.rol)}) — ${e.horasContrato||40}h/sem${e.diaDescanso?' · libra '+e.diaDescanso:''}${e.prefs?' · '+esc(e.prefs):''}${vacTxt}</div>`;
+    return `<div style="font-size:12px;padding:4px 0;border-bottom:1px solid var(--bg)"><strong>${esc(e.nombre)}</strong> (${esc(e.rol)}) — ${e.horasContrato||40}h/sem${e.diaDescanso?' · libra '+e.diaDescanso:''}${(()=>{const hh=e.horarioHabitual||{};const p=[];if(hh.turnoPref&&hh.turnoPref!=='Ambos')p.push(hh.turnoPref==='Comida'?'solo mediodía':'solo noche');if(hh.horaIni&&hh.horaFin)p.push(hh.horaIni+'–'+hh.horaFin);return p.length?' · '+p.join(', '):'';})()}${vacTxt}</div>`;
   }).join('');
   panel.innerHTML=`<div class="aiguide">
     <div class="aiguide-step"><div class="aiguide-step-lbl"><span class="aiguide-step-n">1</span>Ventas previstas por turno (€) <span style="font-weight:400;color:var(--tx3);font-size:11px;margin-left:4px">— opcional, se calculan solas desde el histórico</span></div>
@@ -1537,26 +1550,33 @@ function calcularCuadranteAuto(){
 
       // Candidatos válidos: no de vacaciones, no es su día de descanso, no supera contrato
       const dur=DURACION[turno];
+      // Filtro turno preferido: si tiene preferencia exclusiva, no asignar al otro turno
+      const cumpleTurnoPref=e=>{const tp=(e.horarioHabitual||{}).turnoPref;if(!tp||tp==='Ambos')return true;return tp===turno;};
+      // Horas concretas del turno si las tiene definidas
+      const horasTurno=e=>{const hh=e.horarioHabitual||{};if(hh.horaIni&&hh.horaFin)return{ini:hh.horaIni,fin:hh.horaFin};return{ini:INI[turno],fin:FIN[turno]};};
+
       const candidatosSala=salaEmps
-        .filter(e=>!enVacaciones(e)&&(!e.diaDescanso||DIAS_FULL[di]!==e.diaDescanso))
-        .filter(e=>horasAsig[e.id]+(dur)<=(e.horasContrato||40)+1) // +1 tolerancia
-        .sort((a,b)=>horasAsig[a.id]-horasAsig[b.id]); // primero los que menos horas llevan
+        .filter(e=>!enVacaciones(e)&&(!e.diaDescanso||DIAS_FULL[di]!==e.diaDescanso)&&cumpleTurnoPref(e))
+        .filter(e=>horasAsig[e.id]+(dur)<=(e.horasContrato||40)+1)
+        .sort((a,b)=>horasAsig[a.id]-horasAsig[b.id]);
 
       const candidatosCoc=cocEmps
-        .filter(e=>!enVacaciones(e)&&(!e.diaDescanso||DIAS_FULL[di]!==e.diaDescanso))
+        .filter(e=>!enVacaciones(e)&&(!e.diaDescanso||DIAS_FULL[di]!==e.diaDescanso)&&cumpleTurnoPref(e))
         .filter(e=>horasAsig[e.id]+(dur)<=(e.horasContrato||40)+1)
         .sort((a,b)=>horasAsig[a.id]-horasAsig[b.id]);
 
       // Asignar sala
       const asigSala=candidatosSala.slice(0,needSala);
       asigSala.forEach(e=>{
-        asignaciones.push({id:uid(),empId:e.id,dia,turno,ini:INI[turno],fin:FIN[turno]});
+        const ht=horasTurno(e);
+        asignaciones.push({id:uid(),empId:e.id,dia,turno,ini:ht.ini,fin:ht.fin});
         horasAsig[e.id]+=dur;
       });
       // Asignar cocina
       const asigCoc=candidatosCoc.slice(0,needCoc);
       asigCoc.forEach(e=>{
-        asignaciones.push({id:uid(),empId:e.id,dia,turno,ini:INI[turno],fin:FIN[turno]});
+        const ht=horasTurno(e);
+        asignaciones.push({id:uid(),empId:e.id,dia,turno,ini:ht.ini,fin:ht.fin});
         horasAsig[e.id]+=dur;
       });
     });
