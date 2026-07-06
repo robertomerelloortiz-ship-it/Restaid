@@ -1416,8 +1416,9 @@ function generarCuadranteIA(){
   const peticiones=$('ai-peticiones').value.trim();
   const btn=$('ai-gen-btn');btn.innerHTML='<span class="spin"></span> Generando...';btn.disabled=true;
   llamarCuadranteIA(peticiones).then(asigs=>{
-    if(asigs&&asigs.length){w.asignaciones=asigs.map(a=>({id:uid(),empId:a.empId,dia:a.dia,turno:a.turno,ini:a.ini,fin:a.fin}));saveDB();CUAD_AI_OPEN=false;renderCuadrante();updateSidebar();toast('Cuadrante generado · revísalo y ajusta lo que quieras');}
-    else{btn.innerHTML='✨ Generar cuadrante';btn.disabled=false;toast('No pude generar el cuadrante');}
+    if(asigs===null){btn.innerHTML='✨ Generar cuadrante';btn.disabled=false;toast('No pude generar el cuadrante');}
+    else if(asigs.length){w.asignaciones=asigs.map(a=>({id:uid(),empId:a.empId,dia:a.dia,turno:a.turno,ini:a.ini,fin:a.fin}));saveDB();CUAD_AI_OPEN=false;renderCuadrante();updateSidebar();toast('Cuadrante generado · revísalo y ajusta lo que quieras');}
+    else{btn.innerHTML='✨ Generar cuadrante';btn.disabled=false;toast('La IA generó 0 turnos — introduce ventas previstas o añade una petición específica');}
   }).catch(()=>{btn.innerHTML='✨ Generar cuadrante';btn.disabled=false;toast('No pude conectar con la IA.');});
 }
 async function llamarCuadranteIA(peticiones){
@@ -1427,7 +1428,7 @@ async function llamarCuadranteIA(peticiones){
     return `  id:${e.id} | ${e.nombre} | rol:${e.rol} | ${fc(calcSalarioHora(e))}€/h | contrato:${e.horasContrato||40}h/sem | descanso:${e.diaDescanso||'sin definir'} | prefs:${e.prefs||'ninguna'}${vacs.length?' | ¡DE VACACIONES esta semana!':''}`;
   }).join('\n');
   const ventasList=DIAS.map(d=>{const v=w.ventas[d]||{};return `  ${d}: Comida ${v.Comida||0}€, Cena ${v.Cena||0}€`;}).join('\n');
-  const sys=`Eres un jefe de sala experto en planificación de turnos en España. Genera cuadrantes que: (1) cubren demanda por ventas, (2) respetan horas de contrato, días de descanso estándar y preferencias, (3) NO asignan a personas de vacaciones, (4) mantienen coste laboral ≤${DB.config.targetPct}%, (5) garantizan dotación mínima (≈1 cam/${DB.config.ratioSala} comensales, 1 coc/${DB.config.ratioCocina}, ticket medio ${DB.config.ticketMedio}€). Turnos: Comida (12-17h) y Cena (20-00h). No asignes donde ventas=0 (cerrado). Si hay conflictos de descanso (varios quieren el mismo día), explícalos brevemente al final pero genera igualmente la mejor opción. Responde SOLO JSON válido sin texto ni backticks.`;
+  const sys=`Eres un jefe de sala experto en planificación de turnos en España. Genera cuadrantes que: (1) cubren demanda por ventas, (2) respetan horas de contrato, días de descanso estándar y preferencias, (3) NO asignan a personas de vacaciones, (4) mantienen coste laboral ≤${DB.config.targetPct}%, (5) garantizan dotación mínima (≈1 cam/${DB.config.ratioSala} comensales, 1 coc/${DB.config.ratioCocina}, ticket medio ${DB.config.ticketMedio}€). Turnos: Comida (12-17h) y Cena (20-00h). Si las ventas previstas son 0 en todos los días, genera igualmente un cuadrante equilibrado con la dotación mínima razonable para un restaurante. Si hay conflictos de descanso (varios quieren el mismo día), explícalos brevemente al final pero genera igualmente la mejor opción. Responde SOLO JSON válido sin texto ni backticks.`;
   const usr=`EMPLEADOS:\n${empList}\n\nVENTAS PREVISTAS:\n${ventasList}\n\nPETICIONES:\n${peticiones||'ninguna'}\n\nDevuelve: {"asignaciones":[{"empId":"<id>","dia":"Lun","turno":"Comida","ini":"12:00","fin":"17:00"}],"conflictos":"texto breve o null"}`;
   const res=await fetch(API_URL,{method:'POST',headers:aiHeaders(),body:JSON.stringify({model:MODEL,max_tokens:2500,system:sys,messages:[{role:'user',content:usr}]})});
   if(!res.ok)throw new Error('HTTP '+res.status);
