@@ -1579,6 +1579,14 @@ function calcularCuadranteV2(){
 // 4. Optimización de coste
 // 5. Preferencias
 // ═══════════════════════════════════════════════════════════════════════
+// Algoritmo de cuadrante v3
+// Prioridades:
+// 1. Restricciones legales/contractuales
+// 2. Cobertura de servicio (minSala/minCocina en franjas con demanda)
+// 3. Equilibrio de plantilla (todos llegan a contrato, repartido en semana)
+// 4. Optimización de coste
+// 5. Preferencias
+// ═══════════════════════════════════════════════════════════════════════
 
 const MIN_BLOQUE = 3;
 const MAX_BLOQUE = 10;
@@ -1755,10 +1763,16 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
   disponibles.forEach(e => {
     const grupo = esSala(e) ? 'sala' : 'cocina';
     const contrato = e.horasContrato || 40;
+    // Si tiene turno preferido exclusivo, el bloque efectivo es menor (solo cubre mitad del servicio)
+    const tp = (e.horarioHabitual || {}).turnoPref;
+    const durServicio = srvFinH - srvIniH;
+    const maxBloqueEfectivo = (tp === 'Comida' || tp === 'Cena')
+      ? Math.min(MAX_BLOQUE, durServicio / 2)
+      : MAX_BLOQUE;
     // Cuántos días necesita trabajar como mínimo
-    const diasMin = Math.ceil(contrato / MAX_BLOQUE);
+    const diasMin = Math.ceil(contrato / maxBloqueEfectivo);
     // Cuántos días puede trabajar como máximo (sin exceder MAX_HORAS_DIA)
-    const diasMax = Math.min(7, Math.floor(contrato / MIN_BLOQUE));
+    const diasMax = Math.min(6, Math.floor(contrato / MIN_BLOQUE));
 
     // Días elegibles para este empleado (no descanso)
     const diasElegibles = DIAS.map((d, di) => ({ d, di }))
@@ -1777,13 +1791,15 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
         const mismoGrupo = grupo === 'sala' ? esSala(empData) : esCocina(empData);
         return mismoGrupo && diasPorEmpleado[empId].includes(d);
       }).length;
+      // Penalización logarítmica: distribuye sin bloquear
+      // Con muchos empleados ya asignados, penaliza más; con pocos, casi nada
       const empsTotalesRol = disponibles.filter(e => grupo === 'sala' ? esSala(e) : esCocina(e)).length;
       const penalizacion = yaAsignados > 0 ? Math.log(yaAsignados + 1) / Math.log(empsTotalesRol + 1) * 3 : 0;
       return { d, di, score: demandaDia * bonusFDS - penalizacion };
     }).sort((a, b) => b.score - a.score);
 
     // Máximo 6 días (todo empleado tiene al menos 1 día libre)
-    const diasObjetivo = Math.min(6, Math.min(diasMax, Math.max(diasMin, Math.ceil(contrato / 6))));
+    const diasObjetivo = Math.min(6, Math.min(diasMax, Math.max(diasMin, Math.ceil(contrato / maxBloqueEfectivo))));
     diasPorEmpleado[e.id] = diasPuntuados.slice(0, diasObjetivo).map(x => x.d);
   });
 
