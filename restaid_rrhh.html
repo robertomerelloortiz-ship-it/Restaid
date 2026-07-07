@@ -575,7 +575,7 @@ window.addEventListener('message', function(e) {
     try { if (typeof DB !== 'undefined' && DB) window.parent.postMessage({type:'restaid_pub',key:STORE,value:JSON.stringify(DB)},'*'); } catch(err) {}
   }
 });
-function defaultDB(){return{empleados:[],semanas:{},fichajes:[],config:{targetPct:30,ssMult:1.32,premiumExtra:1.5,ticketMedio:18,ratioSala:25,ratioCocina:30,minSala:2,minCocina:1,servicioIni:'12:00',servicioFin:'01:00',umbralCena:'17:00'},semanaActual:null};}
+function defaultDB(){return{empleados:[],semanas:{},fichajes:[],config:{targetPct:30,ssMult:1.32,premiumExtra:1.5,ticketMedio:18,ratioSala:25,ratioCocina:30,minSala:2,minCocina:1,umbralMinimo:3,servicioIni:'12:00',servicioFin:'01:00',umbralCena:'17:00'},semanaActual:null};}
 function loadDB(){try{const s=localStorage.getItem(STORE);if(!s)return defaultDB();const d=JSON.parse(s);return{...defaultDB(),...d,config:{...defaultDB().config,...(d.config||{})}};}catch(e){return defaultDB();}}
 let LOCAL_DIRTY=false;
 function saveDB(){LOCAL_DIRTY=true;DB._ts=Date.now();try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(e){console.error('No se pudo guardar',e);}try{window.parent.postMessage({type:'restaid_pub',key:STORE,value:JSON.stringify(DB)},'*');}catch(e){}publishCore();sbSetRRHH();}
@@ -1393,8 +1393,9 @@ function openConfig(){
       <div class="field"><label>Ratio cocina (comensales/cocinero)</label><input type="number" step="1" id="cf-rcoc" value="${c.ratioCocina}"></div>
     </div>
     <div class="field-row">
-      <div class="field"><label>Mínimo sala por turno</label><input type="number" step="1" min="1" id="cf-minsala" value="${c.minSala||2}"><div class="field-hint">Camareros mínimos aunque haya poca demanda.</div></div>
-      <div class="field"><label>Mínimo cocina por turno</label><input type="number" step="1" min="1" id="cf-mincoc" value="${c.minCocina||1}"><div class="field-hint">Cocineros mínimos por turno.</div></div>
+      <div class="field"><label>Mínimo sala por turno</label><input type="number" step="1" min="1" id="cf-minsala" value="${c.minSala||2}"><div class="field-hint">Camareros mínimos en servicio activo.</div></div>
+      <div class="field"><label>Mínimo cocina por turno</label><input type="number" step="1" min="1" id="cf-mincoc" value="${c.minCocina||1}"><div class="field-hint">Cocineros mínimos en servicio activo.</div></div>
+      <div class="field"><label>Umbral mínimo (comensales)</label><input type="number" step="1" min="1" id="cf-umbral-min" value="${c.umbralMinimo||3}"><div class="field-hint">Por debajo de este nº de comensales, mínimo 1 persona (apertura/cierre).</div></div>
     </div>
     <div style="border-top:1px solid var(--bdr);margin:.75rem 0 .5rem;padding-top:.75rem">
       <div style="font-size:11.5px;font-weight:700;color:var(--tx2);margin-bottom:.6rem">Horario del restaurante</div>
@@ -1407,7 +1408,7 @@ function openConfig(){
     <div class="modal-actions"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-amber btn-sm" onclick="saveConfig()">Guardar</button></div>
   </div></div>`;
 }
-function saveConfig(){DB.config.targetPct=parseFloat($('cf-target').value)||30;DB.config.ssMult=parseFloat($('cf-ss').value)||1.32;DB.config.premiumExtra=parseFloat($('cf-prem').value)||1.5;const _tk=parseFloat($('cf-ticket').value)||18;if(_tk!==DB.config.ticketMedio)DB.config.ticketMedioManual=true;DB.config.ticketMedio=_tk;DB.config.ratioSala=parseInt($('cf-rsala').value)||25;DB.config.ratioCocina=parseInt($('cf-rcoc').value)||30;DB.config.minSala=Math.max(1,parseInt($('cf-minsala').value)||2);DB.config.minCocina=Math.max(1,parseInt($('cf-mincoc').value)||1);DB.config.servicioIni=$('cf-srv-ini').value||'12:00';DB.config.servicioFin=$('cf-srv-fin').value||'01:00';DB.config.umbralCena=$('cf-umbral').value||'17:00';saveDB();closeModal();updateSidebar();showPage($$('.tab.active')[0]?.dataset.page||'resumen');toast('Parámetros guardados');}
+function saveConfig(){DB.config.targetPct=parseFloat($('cf-target').value)||30;DB.config.ssMult=parseFloat($('cf-ss').value)||1.32;DB.config.premiumExtra=parseFloat($('cf-prem').value)||1.5;const _tk=parseFloat($('cf-ticket').value)||18;if(_tk!==DB.config.ticketMedio)DB.config.ticketMedioManual=true;DB.config.ticketMedio=_tk;DB.config.ratioSala=parseInt($('cf-rsala').value)||25;DB.config.ratioCocina=parseInt($('cf-rcoc').value)||30;DB.config.minSala=Math.max(1,parseInt($('cf-minsala').value)||2);DB.config.minCocina=Math.max(1,parseInt($('cf-mincoc').value)||1);DB.config.umbralMinimo=Math.max(1,parseInt($('cf-umbral-min').value)||3);DB.config.servicioIni=$('cf-srv-ini').value||'12:00';DB.config.servicioFin=$('cf-srv-fin').value||'01:00';DB.config.umbralCena=$('cf-umbral').value||'17:00';saveDB();closeModal();updateSidebar();showPage($$('.tab.active')[0]?.dataset.page||'resumen');toast('Parámetros guardados');}
 
 /* ═══════════════════════════════════════════════════════════════════
    GENERACIÓN DE CUADRANTE CON IA — guiado con prefs y conflictos
@@ -1587,6 +1588,7 @@ function calcularDemandaFranjas(ventasDia, curvaDia, config, franjas) {
   const ratioCocina = config.ratioCocina || 30;
   const minSala = config.minSala || 2;
   const minCocina = config.minCocina || 1;
+  const umbralMin = config.umbralMinimo || 3; // comensales mínimos para aplicar mínimo de plantilla
 
   const demanda = {};
   franjas.forEach(f => {
@@ -1594,9 +1596,13 @@ function calcularDemandaFranjas(ventasDia, curvaDia, config, franjas) {
     const comensales = pct > 0 ? (ventasDia * pct) / ticketMed : 0;
     const necesarioSala = comensales > 0 ? Math.ceil(comensales * 2 / ratioSala) : 0;
     const necesarioCoc = comensales > 0 ? Math.ceil(comensales * 2 / ratioCocina) : 0;
+    // Aplicar mínimo completo solo si hay suficientes comensales; si no, mínimo 1 (apertura/cierre)
+    const minEfectivoSala = comensales >= umbralMin ? minSala : (comensales > 0 ? 1 : 0);
+    const minEfectivoCoc = comensales >= umbralMin ? minCocina : (comensales > 0 ? 1 : 0);
+    // Regla dura: durante el servicio siempre mínimo 1 sala y 1 cocina (alguien abre/cierra)
     demanda[f.hStr] = {
-      sala: Math.max(pct > 0 ? minSala : 0, necesarioSala),
-      cocina: Math.max(pct > 0 ? minCocina : 0, necesarioCoc)
+      sala: Math.max(1, Math.max(minEfectivoSala, necesarioSala)),
+      cocina: Math.max(1, Math.max(minEfectivoCoc, necesarioCoc))
     };
   });
   return demanda;
