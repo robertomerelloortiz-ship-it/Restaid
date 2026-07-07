@@ -1778,24 +1778,21 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
     const diasElegibles = DIAS.map((d, di) => ({ d, di }))
       .filter(({ di }) => puedeTrabajarDia(e, di));
 
-    // Puntuar cada día:
-    // - Score base: demanda del día
-    // - Bonus FDS
-    // - Penalización: cuántos empleados del mismo rol ya tienen ese día (distribuir)
+    // Puntuar cada día usando RATIO de ocupación (asignados/demanda), no resta absoluta.
+    // Esto evita que Vie/Sáb/Dom (mayor demanda base) siempre ganen sobre Mar/Mié/Jue.
     const diasPuntuados = diasElegibles.map(({ d, di }) => {
       const demandaDia = franjas.reduce((s, f) => s + (demanda[d][f.hStr][grupo] || 0), 0);
-      const bonusFDS = (di === 5 || di === 6) ? 1.2 : 1;
       const yaAsignados = Object.keys(diasPorEmpleado).filter(empId => {
         const empData = disponibles.find(x => x.id === empId);
         if (!empData) return false;
         const mismoGrupo = grupo === 'sala' ? esSala(empData) : esCocina(empData);
         return mismoGrupo && diasPorEmpleado[empId].includes(d);
       }).length;
-      // Penalización logarítmica: distribuye sin bloquear
-      // Con muchos empleados ya asignados, penaliza más; con pocos, casi nada
-      const empsTotalesRol = disponibles.filter(e => grupo === 'sala' ? esSala(e) : esCocina(e)).length;
-      const penalizacion = yaAsignados > 0 ? Math.log(yaAsignados + 1) / Math.log(empsTotalesRol + 1) * 3 : 0;
-      return { d, di, score: demandaDia * bonusFDS - penalizacion };
+      // Ratio de ocupación: cuántos ya cubren este día relativo a su demanda
+      const ratioOcupacion = demandaDia > 0 ? yaAsignados / demandaDia : yaAsignados;
+      const bonusFDS = (di === 5 || di === 6) ? 1.05 : 1; // bonus mínimo, no debe dominar
+      const score = (1 / (ratioOcupacion + 0.15)) * bonusFDS;
+      return { d, di, score };
     }).sort((a, b) => b.score - a.score);
 
     // Máximo 6 días (todo empleado tiene al menos 1 día libre)
