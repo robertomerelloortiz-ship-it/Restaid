@@ -575,7 +575,7 @@ window.addEventListener('message', function(e) {
     try { if (typeof DB !== 'undefined' && DB) window.parent.postMessage({type:'restaid_pub',key:STORE,value:JSON.stringify(DB)},'*'); } catch(err) {}
   }
 });
-function defaultDB(){return{empleados:[],semanas:{},fichajes:[],config:{targetPct:30,ssMult:1.32,premiumExtra:1.5,ticketMedio:18,ratioSala:25,ratioCocina:30,minSala:2,minCocina:1,umbralMinimo:3,servicioIni:'12:00',servicioFin:'01:00',umbralCena:'17:00'},semanaActual:null};}
+function defaultDB(){return{empleados:[],semanas:{},fichajes:[],config:{targetPct:30,ssMult:1.32,premiumExtra:1.5,ticketMedio:18,ratioSala:25,ratioCocina:30,minSala:2,minCocina:1,umbralMinimo:3,llegadaAntes:60,servicioIni:'12:00',servicioFin:'01:00',umbralCena:'17:00'},semanaActual:null};}
 function loadDB(){try{const s=localStorage.getItem(STORE);if(!s)return defaultDB();const d=JSON.parse(s);return{...defaultDB(),...d,config:{...defaultDB().config,...(d.config||{})}};}catch(e){return defaultDB();}}
 let LOCAL_DIRTY=false;
 function saveDB(){LOCAL_DIRTY=true;DB._ts=Date.now();try{localStorage.setItem(STORE,JSON.stringify(DB));}catch(e){console.error('No se pudo guardar',e);}try{window.parent.postMessage({type:'restaid_pub',key:STORE,value:JSON.stringify(DB)},'*');}catch(e){}publishCore();sbSetRRHH();}
@@ -1400,15 +1400,16 @@ function openConfig(){
     <div style="border-top:1px solid var(--bdr);margin:.75rem 0 .5rem;padding-top:.75rem">
       <div style="font-size:11.5px;font-weight:700;color:var(--tx2);margin-bottom:.6rem">Horario del restaurante</div>
       <div class="field-row">
-        <div class="field"><label>Apertura del servicio</label><input type="time" id="cf-srv-ini" value="${c.servicioIni||'12:00'}"></div>
+        <div class="field"><label>Apertura del servicio</label><input type="time" id="cf-srv-ini" value="${c.servicioIni||'12:00'}"><div class="field-hint">Hora de apertura al público (para calcular demanda).</div></div>
         <div class="field"><label>Cierre del servicio</label><input type="time" id="cf-srv-fin" value="${c.servicioFin||'01:00'}"></div>
+        <div class="field"><label>Llegada antes de apertura (min)</label><input type="number" step="15" min="0" max="120" id="cf-llegada-antes" value="${c.llegadaAntes||60}"><div class="field-hint">Minutos antes de la apertura que puede llegar el primer empleado (quien abre).</div></div>
         <div class="field"><label>Umbral Comida → Cena</label><input type="time" id="cf-umbral" value="${c.umbralCena||'17:00'}"><div class="field-hint">Turnos que empiecen antes de esta hora se etiquetan como Comida.</div></div>
       </div>
     </div>
     <div class="modal-actions"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-amber btn-sm" onclick="saveConfig()">Guardar</button></div>
   </div></div>`;
 }
-function saveConfig(){DB.config.targetPct=parseFloat($('cf-target').value)||30;DB.config.ssMult=parseFloat($('cf-ss').value)||1.32;DB.config.premiumExtra=parseFloat($('cf-prem').value)||1.5;const _tk=parseFloat($('cf-ticket').value)||18;if(_tk!==DB.config.ticketMedio)DB.config.ticketMedioManual=true;DB.config.ticketMedio=_tk;DB.config.ratioSala=parseInt($('cf-rsala').value)||25;DB.config.ratioCocina=parseInt($('cf-rcoc').value)||30;DB.config.minSala=Math.max(1,parseInt($('cf-minsala').value)||2);DB.config.minCocina=Math.max(1,parseInt($('cf-mincoc').value)||1);DB.config.umbralMinimo=Math.max(1,parseInt($('cf-umbral-min').value)||3);DB.config.servicioIni=$('cf-srv-ini').value||'12:00';DB.config.servicioFin=$('cf-srv-fin').value||'01:00';DB.config.umbralCena=$('cf-umbral').value||'17:00';saveDB();closeModal();updateSidebar();showPage($$('.tab.active')[0]?.dataset.page||'resumen');toast('Parámetros guardados');}
+function saveConfig(){DB.config.targetPct=parseFloat($('cf-target').value)||30;DB.config.ssMult=parseFloat($('cf-ss').value)||1.32;DB.config.premiumExtra=parseFloat($('cf-prem').value)||1.5;const _tk=parseFloat($('cf-ticket').value)||18;if(_tk!==DB.config.ticketMedio)DB.config.ticketMedioManual=true;DB.config.ticketMedio=_tk;DB.config.ratioSala=parseInt($('cf-rsala').value)||25;DB.config.ratioCocina=parseInt($('cf-rcoc').value)||30;DB.config.minSala=Math.max(1,parseInt($('cf-minsala').value)||2);DB.config.minCocina=Math.max(1,parseInt($('cf-mincoc').value)||1);DB.config.umbralMinimo=Math.max(1,parseInt($('cf-umbral-min').value)||3);DB.config.llegadaAntes=Math.max(0,parseInt($('cf-llegada-antes').value)||60);DB.config.servicioIni=$('cf-srv-ini').value||'12:00';DB.config.servicioFin=$('cf-srv-fin').value||'01:00';DB.config.umbralCena=$('cf-umbral').value||'17:00';saveDB();closeModal();updateSidebar();showPage($$('.tab.active')[0]?.dataset.page||'resumen');toast('Parámetros guardados');}
 
 /* ═══════════════════════════════════════════════════════════════════
    GENERACIÓN DE CUADRANTE CON IA — guiado con prefs y conflictos
@@ -1570,6 +1571,14 @@ function calcularCuadranteV2(){
 // 4. Optimización de coste
 // 5. Preferencias
 // ═══════════════════════════════════════════════════════════════════════
+// Algoritmo de cuadrante v3
+// Prioridades:
+// 1. Restricciones legales/contractuales
+// 2. Cobertura de servicio (minSala/minCocina en franjas con demanda)
+// 3. Equilibrio de plantilla (todos llegan a contrato, repartido en semana)
+// 4. Optimización de coste
+// 5. Preferencias
+// ═══════════════════════════════════════════════════════════════════════
 
 const MIN_BLOQUE = 3;
 const MAX_BLOQUE = 10;
@@ -1601,16 +1610,27 @@ function calcularDemandaFranjas(ventasDia, curvaDia, config, franjas) {
   const ratioCocina = config.ratioCocina || 30;
   const minSala = config.minSala || 2;
   const minCocina = config.minCocina || 1;
+  const umbralMin = config.umbralMinimo || 3;
+  // Hora real de apertura al público (para demanda)
+  const srvIniH = parseHM(config.servicioIni || '12:00');
 
   const demanda = {};
   franjas.forEach(f => {
+    // Franja previa a apertura al público: solo 1 persona (quien abre/prepara)
+    if (f.h < srvIniH) {
+      demanda[f.hStr] = { sala: 1, cocina: 1 };
+      return;
+    }
     const pct = (curvaDia && curvaDia[f.hStr]) ? curvaDia[f.hStr] / 100 : 0;
     const comensales = pct > 0 ? (ventasDia * pct) / ticketMed : 0;
     const necesarioSala = comensales > 0 ? Math.ceil(comensales * 2 / ratioSala) : 0;
     const necesarioCoc = comensales > 0 ? Math.ceil(comensales * 2 / ratioCocina) : 0;
+    const minEfectivoSala = comensales >= umbralMin ? minSala : (comensales > 0 ? 1 : 0);
+    const minEfectivoCoc = comensales >= umbralMin ? minCocina : (comensales > 0 ? 1 : 0);
+    // Regla dura: durante el servicio siempre mínimo 1
     demanda[f.hStr] = {
-      sala: Math.max(pct > 0 ? minSala : 0, necesarioSala),
-      cocina: Math.max(pct > 0 ? minCocina : 0, necesarioCoc)
+      sala: Math.max(1, Math.max(minEfectivoSala, necesarioSala)),
+      cocina: Math.max(1, Math.max(minEfectivoCoc, necesarioCoc))
     };
   });
   return demanda;
@@ -1624,7 +1644,10 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
   const srvIni = cfg.servicioIni || '12:00';
   const srvFin = cfg.servicioFin || '01:00';
   const umbral = parseHM(cfg.umbralCena || '17:00');
+  // llegadaAntes: minutos antes de servicioIni que puede llegar el primer empleado
+  const llegadaAntesMin = cfg.llegadaAntes || 0;
   const srvIniH = parseHM(srvIni);
+  const laboralIniH = srvIniH - llegadaAntesMin / 60; // hora desde la que se pueden asignar bloques
   let srvFinH = parseHM(srvFin);
   if (srvFinH <= srvIniH) srvFinH += 24;
 
@@ -1638,7 +1661,8 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
   const esSala = e => ['Sala', 'Barra'].includes(e.rol);
   const esCocina = e => ['Cocina', 'Office'].includes(e.rol);
 
-  const franjas = generarFranjas(srvIni, srvFin);
+  const laboralIniStr = toHHMM(laboralIniH);
+  const franjas = generarFranjas(laboralIniStr, srvFin);
 
   // ── Demanda por (día, franja) ─────────────────────────────────────────
   const demanda = {};
@@ -1685,7 +1709,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
   // Verificar si un bloque cabe en el día para este empleado
   const bloqueCabe = (empId, iniH, durH) => {
     const finH = iniH + durH;
-    if (iniH < srvIniH || finH > srvFinH) return false;
+    if (iniH < laboralIniH || finH > srvFinH) return false;
     const existentes = bloquesEmpDia[`${empId}|_`] || []; // placeholder, se pasa por día
     return true; // la verificación real se hace en colocarBloque
   };
@@ -1693,7 +1717,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
   // Colocar un bloque — verificación completa
   const colocarBloque = (emp, dia, iniH, durH) => {
     const finH = iniH + durH;
-    if (iniH < srvIniH || finH > srvFinH) return null;
+    if (iniH < laboralIniH || finH > srvFinH) return null;
     if (!turnoCompatible(emp, iniH)) return null;
     if ((horasAsig[emp.id] || 0) + durH > (emp.horasContrato || 40) + TOLERANCIA) return null;
 
@@ -1782,7 +1806,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
     const grupo = esSala(emp) ? 'sala' : 'cocina';
     let mejorIni = null, mejorScore = -Infinity;
 
-    for (let iniH = srvIniH; iniH <= srvFinH - durH + 0.01; iniH += 0.5) {
+    for (let iniH = laboralIniH; iniH <= srvFinH - durH + 0.01; iniH += 0.5) {
       if (!turnoCompatible(emp, iniH)) continue;
       // Verificar restricciones sin colocar
       const finH = iniH + durH;
@@ -1900,7 +1924,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
 
       // Buscar posición con score positivo
       let mejorIni = null, mejorScore = -Infinity;
-      for (let iniH = srvIniH; iniH <= srvFinH - durExtra + 0.01; iniH += 0.5) {
+      for (let iniH = laboralIniH; iniH <= srvFinH - durExtra + 0.01; iniH += 0.5) {
         const finH = iniH + durExtra;
         let bloqueado = false;
         for (const b of existentes) {
