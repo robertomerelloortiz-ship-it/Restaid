@@ -1567,6 +1567,7 @@ const MAX_BLOQUE = 10;
 const MAX_HORAS_DIA = 10;
 const MIN_PAUSA_PARTIDO = 2;
 const TOLERANCIA = 1;
+const toHHMM = h => { const hN=((h%24)+24)%24,hh=Math.floor(hN),mm=Math.round((hN-hh)*60); return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0'); };
 
 
 function generarFranjas(servicioIni, servicioFin) {
