@@ -1587,6 +1587,14 @@ function calcularCuadranteV2(){
 // 4. Optimización de coste
 // 5. Preferencias
 // ═══════════════════════════════════════════════════════════════════════
+// Algoritmo de cuadrante v3
+// Prioridades:
+// 1. Restricciones legales/contractuales
+// 2. Cobertura de servicio (minSala/minCocina en franjas con demanda)
+// 3. Equilibrio de plantilla (todos llegan a contrato, repartido en semana)
+// 4. Optimización de coste
+// 5. Preferencias
+// ═══════════════════════════════════════════════════════════════════════
 
 const MIN_BLOQUE = 3;
 const MAX_BLOQUE = 10;
@@ -1647,15 +1655,23 @@ function calcularDemandaFranjas(ventasDia, curvaDia, config, franjas) {
 /**
  * generarCuadrante v3
  */
+/**
+ * generarCuadrante v4 — enfoque unificado por franja
+ *
+ * En vez de fases separadas (elegir días → duración → posición), un único
+ * bucle que en cada iteración busca la (día, franja, grupo) con MAYOR déficit
+ * real de cobertura y asigna el bloque que mejor lo resuelve. Esto garantiza
+ * que comida y cena se cubren de forma independiente — un empleado cubriendo
+ * el pico de comida no "satisface" artificialmente la demanda de cena.
+ */
 function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, semanaMonday }) {
   const cfg = config || {};
   const srvIni = cfg.servicioIni || '12:00';
   const srvFin = cfg.servicioFin || '01:00';
   const umbral = parseHM(cfg.umbralCena || '17:00');
-  // llegadaAntes: minutos antes de servicioIni que puede llegar el primer empleado
   const llegadaAntesMin = cfg.llegadaAntes || 0;
   const srvIniH = parseHM(srvIni);
-  const laboralIniH = srvIniH - llegadaAntesMin / 60; // hora desde la que se pueden asignar bloques
+  const laboralIniH = srvIniH - llegadaAntesMin / 60;
   let srvFinH = parseHM(srvFin);
   if (srvFinH <= srvIniH) srvFinH += 24;
 
@@ -1672,39 +1688,24 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
   const laboralIniStr = toHHMM(laboralIniH);
   const franjas = generarFranjas(laboralIniStr, srvFin);
 
-  // ── Demanda por (día, franja) ─────────────────────────────────────────
+  // ── Demanda por (día, franja, grupo) ────────────────────────────────
   const demanda = {};
   DIAS.forEach(d => {
     demanda[d] = calcularDemandaFranjas(ventasPorDia[d] || 0, curvasPorDia[d] || null, cfg, franjas);
   });
 
-  // Déficit total de demanda por día (suma de franjas sin cubrir)
-  const deficitDia = (dia, grupo, cubierto) => {
-    let def = 0;
-    franjas.forEach(f => {
-      const nec = demanda[dia][f.hStr][grupo] || 0;
-      const cub = (cubierto[dia] && cubierto[dia][f.hStr] && cubierto[dia][f.hStr][grupo]) || 0;
-      if (nec > cub) def += (nec - cub);
-    });
-    return def;
-  };
-
-  // ── Estado compartido ────────────────────────────────────────────────
+  // ── Estado ────────────────────────────────────────────────────────────
   const bloques = [];
-  const horasAsig = {};
-  disponibles.forEach(e => { horasAsig[e.id] = 0; });
-  const cubierto = {};
+  const horasAsig = {}; disponibles.forEach(e => { horasAsig[e.id] = 0; });
+  const horasDiaEmp = {}; disponibles.forEach(e => { horasDiaEmp[e.id] = {}; }); // {empId: {dia: horas}}
+  const cubierto = {}; // cubierto[dia][franja][grupo]
   DIAS.forEach(d => {
     cubierto[d] = {};
     franjas.forEach(f => { cubierto[d][f.hStr] = { sala: 0, cocina: 0 }; });
   });
   const bloquesEmpDia = {}; // "empId|dia" -> [{iniH, finH}]
 
-  // ── Helpers de restricciones ─────────────────────────────────────────
-  const puedeTrabajarDia = (e, di) => {
-    if (e.diaDescanso && DIAS_FULL[di] === e.diaDescanso) return false;
-    return true;
-  };
+  const puedeTrabajarDia = (e, di) => !(e.diaDescanso && DIAS_FULL[di] === e.diaDescanso);
 
   const turnoCompatible = (e, iniH) => {
     const tp = (e.horarioHabitual || {}).turnoPref;
@@ -1714,18 +1715,11 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
     return true;
   };
 
-  // Verificar si un bloque cabe en el día para este empleado
-  const bloqueCabe = (empId, iniH, durH) => {
-    const finH = iniH + durH;
-    if (iniH < laboralIniH || finH > srvFinH) return false;
-    const existentes = bloquesEmpDia[`${empId}|_`] || []; // placeholder, se pasa por día
-    return true; // la verificación real se hace en colocarBloque
-  };
-
-  // Colocar un bloque — verificación completa
-  const colocarBloque = (emp, dia, iniH, durH) => {
+  // ── Colocar un bloque, con todas las verificaciones ──────────────────
+  const intentarColocar = (emp, dia, di, iniH, durH) => {
     const finH = iniH + durH;
     if (iniH < laboralIniH || finH > srvFinH) return null;
+    if (!puedeTrabajarDia(emp, di)) return null;
     if (!turnoCompatible(emp, iniH)) return null;
     if ((horasAsig[emp.id] || 0) + durH > (emp.horasContrato || 40) + TOLERANCIA) return null;
 
@@ -1735,101 +1729,59 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
     if (horasDia + durH > MAX_HORAS_DIA) return null;
 
     for (const b of existentes) {
-      if (iniH < b.finH && finH > b.iniH) return null; // solapamiento
+      if (iniH < b.finH && finH > b.iniH) return null;
       const pausa = iniH >= b.finH ? iniH - b.finH : b.iniH - finH;
       if (pausa > 0 && pausa < MIN_PAUSA_PARTIDO) return null;
     }
 
-    const iniStr = toHHMM(iniH);
-    const finStr = toHHMM(finH);
     const turno = iniH < umbral ? 'Comida' : 'Cena';
-    const bloque = { id: uid(), empId: emp.id, dia, ini: iniStr, fin: finStr, turno };
+    const bloque = { id: uid(), empId: emp.id, dia, ini: toHHMM(iniH), fin: toHHMM(finH), turno };
     bloques.push(bloque);
     horasAsig[emp.id] = (horasAsig[emp.id] || 0) + durH;
+    horasDiaEmp[emp.id][dia] = (horasDiaEmp[emp.id][dia] || 0) + durH;
     bloquesEmpDia[key] = [...existentes, { iniH, finH }].sort((a, b) => a.iniH - b.iniH);
     const grupo = esSala(emp) ? 'sala' : 'cocina';
-    franjas.forEach(f => {
-      if (f.h >= iniH && f.h < finH) cubierto[dia][f.hStr][grupo]++;
-    });
+    franjas.forEach(f => { if (f.h >= iniH && f.h < finH) cubierto[dia][f.hStr][grupo]++; });
     return bloque;
   };
 
-  // ── FASE A: Planificar días de trabajo por empleado ───────────────────
-  // Para cada empleado, elegir en qué días trabaja esta semana.
-  // diasNecesarios = ceil(horasContrato / MAX_BLOQUE) → mínimo días
-  // Elegir los días con más déficit de cobertura para su rol
-  const diasPorEmpleado = {}; // empId -> [dia, ...]
-
-  disponibles.forEach(e => {
-    const grupo = esSala(e) ? 'sala' : 'cocina';
-    const contrato = e.horasContrato || 40;
-    // Si tiene turno preferido exclusivo, el bloque efectivo es menor (solo cubre mitad del servicio)
-    const tp = (e.horarioHabitual || {}).turnoPref;
+  // ── Duración objetivo para un empleado dado su déficit de contrato ───
+  // Se calcula dinámicamente: cuántos días le quedan "razonables" y reparte
+  const duracionObjetivo = (emp) => {
+    const restante = (emp.horasContrato || 40) - (horasAsig[emp.id] || 0);
+    if (restante <= 0) return 0;
+    const tp = (emp.horarioHabitual || {}).turnoPref;
     const durServicio = srvFinH - srvIniH;
     const maxBloqueEfectivo = (tp === 'Comida' || tp === 'Cena')
       ? Math.min(MAX_BLOQUE, durServicio / 2)
       : MAX_BLOQUE;
-    // Cuántos días necesita trabajar como mínimo
-    const diasMin = Math.ceil(contrato / maxBloqueEfectivo);
-    // Cuántos días puede trabajar como máximo (sin exceder MAX_HORAS_DIA)
-    const diasMax = Math.min(6, Math.floor(contrato / MIN_BLOQUE));
+    // Si tiene horario fijo, usar esa duración directamente
+    if (emp.horarioHabitual && emp.horarioHabitual.horaIni && emp.horarioHabitual.horaFin) {
+      let i = parseHM(emp.horarioHabitual.horaIni), f = parseHM(emp.horarioHabitual.horaFin);
+      if (f <= i) f += 24;
+      return Math.min(MAX_BLOQUE, f - i);
+    }
+    // Estimar cuántos días le quedan por trabajar (máx 6 total, menos los ya usados)
+    const diasYaTrabajados = new Set(bloques.filter(b => b.empId === emp.id).map(b => b.dia)).size;
+    const diasRestantesEstimados = Math.max(1, 6 - diasYaTrabajados);
+    const dur = restante / diasRestantesEstimados;
+    return Math.min(maxBloqueEfectivo, Math.max(MIN_BLOQUE, Math.round(dur * 2) / 2));
+  };
 
-    // Días elegibles para este empleado (no descanso)
-    const diasElegibles = DIAS.map((d, di) => ({ d, di }))
-      .filter(({ di }) => puedeTrabajarDia(e, di));
-
-    // Puntuar cada día usando RATIO de ocupación (asignados/demanda), no resta absoluta.
-    // Esto evita que Vie/Sáb/Dom (mayor demanda base) siempre ganen sobre Mar/Mié/Jue.
-    const diasPuntuados = diasElegibles.map(({ d, di }) => {
-      const demandaDia = franjas.reduce((s, f) => s + (demanda[d][f.hStr][grupo] || 0), 0);
-      const yaAsignados = Object.keys(diasPorEmpleado).filter(empId => {
-        const empData = disponibles.find(x => x.id === empId);
-        if (!empData) return false;
-        const mismoGrupo = grupo === 'sala' ? esSala(empData) : esCocina(empData);
-        return mismoGrupo && diasPorEmpleado[empId].includes(d);
-      }).length;
-      // Ratio de ocupación: cuántos ya cubren este día relativo a su demanda
-      const ratioOcupacion = demandaDia > 0 ? yaAsignados / demandaDia : yaAsignados;
-      const bonusFDS = (di === 5 || di === 6) ? 1.05 : 1; // bonus mínimo, no debe dominar
-      const score = (1 / (ratioOcupacion + 0.15)) * bonusFDS;
-      return { d, di, score };
-    }).sort((a, b) => b.score - a.score);
-
-    // Máximo 6 días (todo empleado tiene al menos 1 día libre)
-    const diasObjetivo = Math.min(6, Math.min(diasMax, Math.max(diasMin, Math.ceil(contrato / maxBloqueEfectivo))));
-    diasPorEmpleado[e.id] = diasPuntuados.slice(0, diasObjetivo).map(x => x.d);
-  });
-
-  // ── FASE B: Calcular duración por bloque ─────────────────────────────
-  // Con los días ya decididos, la duración es simplemente:
-  // duracion = horasContrato / diasAsignados (redondeado a 0.5h, entre MIN y MAX)
-  const duracionPorEmp = {};
-  disponibles.forEach(e => {
-    const dias = diasPorEmpleado[e.id] || [];
-    if (!dias.length) { duracionPorEmp[e.id] = 0; return; }
-    const contrato = e.horasContrato || 40;
-    const durRaw = contrato / dias.length;
-    // Redondear a múltiplo de 0.5h, clamp entre MIN_BLOQUE y MAX_BLOQUE
-    const dur = Math.min(MAX_BLOQUE, Math.max(MIN_BLOQUE, Math.round(durRaw * 2) / 2));
-    duracionPorEmp[e.id] = dur;
-  });
-
-  // ── FASE C: Posicionar bloques usando la curva de demanda ─────────────
-  // Para cada (empleado, día asignado), encontrar la hora de inicio
-  // que mejor cubre la demanda no cubierta de ese día.
-  const posicionarBloque = (emp, dia, durH) => {
-    const grupo = esSala(emp) ? 'sala' : 'cocina';
+  // ── Buscar mejor posición de inicio para un bloque de durH horas
+  //    que cubra lo mejor posible la franja de déficit (anclaFranjaH) ────
+  const mejorPosicionCercaDe = (emp, dia, di, durH, anclaFranjaH, grupo) => {
     let mejorIni = null, mejorScore = -Infinity;
-
     for (let iniH = laboralIniH; iniH <= srvFinH - durH + 0.01; iniH += 0.5) {
-      if (!turnoCompatible(emp, iniH)) continue;
-      // Verificar restricciones sin colocar
       const finH = iniH + durH;
+      // Debe cubrir la franja ancla para ser candidato relevante a esta llamada
+      if (anclaFranjaH < iniH || anclaFranjaH >= finH) continue;
+      if (!turnoCompatible(emp, iniH)) continue;
       const key = `${emp.id}|${dia}`;
       const existentes = bloquesEmpDia[key] || [];
-      let bloqueado = false;
       const horasDia = existentes.reduce((s, b) => s + (b.finH - b.iniH), 0);
-      if (horasDia + durH > MAX_HORAS_DIA) break;
+      if (horasDia + durH > MAX_HORAS_DIA) continue;
+      let bloqueado = false;
       for (const b of existentes) {
         if (iniH < b.finH && finH > b.iniH) { bloqueado = true; break; }
         const pausa = iniH >= b.finH ? iniH - b.finH : b.iniH - finH;
@@ -1837,7 +1789,6 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
       }
       if (bloqueado) continue;
 
-      // Score = demanda no cubierta en este bloque / durH (eficiencia por hora)
       let demandaNoCubierta = 0, sobredotacion = 0;
       franjas.forEach(f => {
         if (f.h < iniH || f.h >= finH) return;
@@ -1846,121 +1797,109 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
         if (nec > cub) demandaNoCubierta += (nec - cub);
         else sobredotacion += (cub - nec + 1);
       });
-      const vecesUsada = bloques.filter(b => b.empId === emp.id && b.ini === toHHMM(iniH)).length;
-      const score = (demandaNoCubierta / durH) - sobredotacion * 0.3 - vecesUsada * 0.5;
+      const score = demandaNoCubierta - sobredotacion * 0.3;
       if (score > mejorScore) { mejorScore = score; mejorIni = iniH; }
     }
     return mejorIni;
   };
 
-  // Ordenar empleados por rol y procesar en tandas
-  // Primero colocar a los que tienen más horas de contrato (mayor impacto)
-  const empOrdenados = [...disponibles].sort((a, b) => (b.horasContrato || 40) - (a.horasContrato || 40));
-
-  empOrdenados.forEach(emp => {
-    const dias = diasPorEmpleado[emp.id] || [];
-    const durH = duracionPorEmp[emp.id] || 0;
-    if (!durH) return;
-
-    // Ordenar los días del empleado por déficit actual (mayor déficit primero)
-    const grupo = esSala(emp) ? 'sala' : 'cocina';
-    const diasOrdenados = [...dias].sort((a, b) => deficitDia(b, grupo, cubierto) - deficitDia(a, grupo, cubierto));
-
-    diasOrdenados.forEach(dia => {
-      const di = DIAS.indexOf(dia);
-      if (!puedeTrabajarDia(emp, di)) return;
-      const iniH = posicionarBloque(emp, dia, durH);
-      if (iniH !== null) colocarBloque(emp, dia, iniH, durH);
-    });
-  });
-
-  // ── FASE D: Cobertura mínima garantizada ─────────────────────────────
-  // Verificar que cada día tenga al menos minSala y minCocina en franjas con demanda.
-  // Si no, añadir bloques extra a quien pueda (sin exceder contrato).
-  DIAS.forEach((dia, di) => {
-    ['sala', 'cocina'].forEach(grupo => {
-      const filtroRol = grupo === 'sala' ? esSala : esCocina;
-      const minNec = grupo === 'sala' ? (cfg.minSala || 2) : (cfg.minCocina || 1);
-
-      // Comprobar si hay franjas con demanda sin cobertura mínima
-      const faltaCobertura = franjas.some(f => {
-        const nec = demanda[dia][f.hStr][grupo] || 0;
-        const cub = cubierto[dia][f.hStr][grupo] || 0;
-        return nec > 0 && cub < minNec;
+  // ── BUCLE PRINCIPAL: cubrir el déficit más urgente en cada iteración ──
+  const MAX_ITER = 2000;
+  let iter = 0;
+  while (iter++ < MAX_ITER) {
+    // 1. Encontrar (día, franja, grupo) con mayor déficit sin cubrir
+    let peor = null, peorDeficit = 0;
+    DIAS.forEach((dia, di) => {
+      franjas.forEach(f => {
+        ['sala', 'cocina'].forEach(grupo => {
+          const nec = demanda[dia][f.hStr][grupo] || 0;
+          const cub = cubierto[dia][f.hStr][grupo] || 0;
+          const def = nec - cub;
+          if (def > peorDeficit) { peorDeficit = def; peor = { dia, di, franjaH: f.h, grupo }; }
+        });
       });
-      if (!faltaCobertura) return;
-
-      // Buscar empleados disponibles que puedan añadir un bloque extra
-      const candidatos = disponibles
-        .filter(e => filtroRol(e) && puedeTrabajarDia(e, di))
-        .filter(e => (horasAsig[e.id] || 0) < (e.horasContrato || 40) + TOLERANCIA)
-        .sort((a, b) => (horasAsig[a.id] || 0) - (horasAsig[b.id] || 0));
-
-      for (const emp of candidatos) {
-        // Intentar con bloque mínimo posicionado en el pico de demanda no cubierta
-        for (let dur = MIN_BLOQUE; dur <= Math.min(MAX_BLOQUE, (emp.horasContrato || 40) + TOLERANCIA - (horasAsig[emp.id] || 0)); dur += 0.5) {
-          const iniH = posicionarBloque(emp, dia, dur);
-          if (iniH !== null) {
-            const b = colocarBloque(emp, dia, iniH, dur);
-            if (b) break;
-          }
-        }
-        // Verificar si ya se cubrió
-        const aúnFalta = franjas.some(f => {
-          const nec = demanda[dia][f.hStr][grupo] || 0;
-          const cub = cubierto[dia][f.hStr][grupo] || 0;
-          return nec > 0 && cub < minNec;
-        });
-        if (!aúnFalta) break;
-      }
     });
-  });
 
-  // ── FASE E: Completar horas restantes ────────────────────────────────
-  // Empleados que aún tienen déficit > 0.5h: intentar añadir bloques adicionales
-  // o extender los existentes hasta alcanzar el contrato
+    if (!peor) break; // no queda déficit de demanda
+
+    const { dia, di, franjaH, grupo } = peor;
+    const filtroRol = grupo === 'sala' ? esSala : esCocina;
+
+    // 2. Candidatos: del rol correcto, disponibles ese día, con déficit de contrato,
+    //    ordenados por mayor déficit relativo de contrato (quien más necesita horas primero)
+    const candidatos = disponibles
+      .filter(e => filtroRol(e))
+      .filter(e => puedeTrabajarDia(e, di))
+      .filter(e => (horasAsig[e.id] || 0) < (e.horasContrato || 40) + TOLERANCIA)
+      .filter(e => turnoCompatible(e, franjaH)) // debe poder cubrir esta franja según su preferencia
+      .sort((a, b) => {
+        const pctA = (horasAsig[a.id] || 0) / (a.horasContrato || 40);
+        const pctB = (horasAsig[b.id] || 0) / (b.horasContrato || 40);
+        return pctA - pctB;
+      });
+
+    let colocado = false;
+    for (const emp of candidatos) {
+      const dur = duracionObjetivo(emp);
+      if (dur < MIN_BLOQUE) continue;
+      const iniH = mejorPosicionCercaDe(emp, dia, di, dur, franjaH, grupo);
+      if (iniH === null) continue;
+      const b = intentarColocar(emp, dia, di, iniH, dur);
+      if (b) { colocado = true; break; }
+    }
+
+    if (!colocado) {
+      // Nadie puede cubrir esta franja concreta con las reglas actuales.
+      // Marcarla como "resuelta" (con el déficit que tenía) para no bloquear
+      // el bucle indefinidamente; quedará reflejada en el diagnóstico final.
+      const key = franjas.find(f => f.h === franjaH).hStr;
+      cubierto[dia][key][grupo] = demanda[dia][key][grupo];
+    }
+  }
+
+  // ── FASE FINAL: completar horas restantes de quienes no llegaron a contrato ──
+  // (puede quedar margen si el bucle principal terminó por falta de déficit
+  //  pero algún empleado con turnoPref u horario fijo no agotó su contrato)
   disponibles.forEach(emp => {
-    const deficit = (emp.horasContrato || 40) - (horasAsig[emp.id] || 0);
-    if (deficit < 0.5) return;
-    const grupo = esSala(emp) ? 'sala' : 'cocina';
-
-    // Intentar añadir un bloque extra en el día con más déficit de demanda
-    // limitado a la duración del déficit restante
-    for (let di = 0; di < DIAS.length; di++) {
-      const dia = DIAS[di];
-      if (!puedeTrabajarDia(emp, di)) continue;
-      const key = `${emp.id}|${dia}`;
-      const existentes = bloquesEmpDia[key] || [];
-      const horasDia = existentes.reduce((s, b) => s + (b.finH - b.iniH), 0);
-      if (horasDia >= MAX_HORAS_DIA) continue;
-
-      const durExtra = Math.min(deficit, MAX_HORAS_DIA - horasDia, MAX_BLOQUE);
-      if (durExtra < MIN_BLOQUE) continue;
-
-      // Buscar posición con score positivo
-      let mejorIni = null, mejorScore = -Infinity;
-      for (let iniH = laboralIniH; iniH <= srvFinH - durExtra + 0.01; iniH += 0.5) {
-        const finH = iniH + durExtra;
-        let bloqueado = false;
-        for (const b of existentes) {
-          if (iniH < b.finH && finH > b.iniH) { bloqueado = true; break; }
-          const pausa = iniH >= b.finH ? iniH - b.finH : b.iniH - finH;
-          if (pausa > 0 && pausa < MIN_PAUSA_PARTIDO) { bloqueado = true; break; }
+    let intentos = 0;
+    while (intentos++ < 10) {
+      const deficit = (emp.horasContrato || 40) - (horasAsig[emp.id] || 0);
+      if (deficit < MIN_BLOQUE - 0.01) break;
+      const grupo = esSala(emp) ? 'sala' : 'cocina';
+      let mejorDia = null, mejorIni = null, mejorScore = -Infinity, mejorDur = 0;
+      DIAS.forEach((dia, di) => {
+        if (!puedeTrabajarDia(emp, di)) return;
+        const key = `${emp.id}|${dia}`;
+        const existentes = bloquesEmpDia[key] || [];
+        const horasDia = existentes.reduce((s, b) => s + (b.finH - b.iniH), 0);
+        const restanteDia = MAX_HORAS_DIA - horasDia;
+        if (restanteDia < MIN_BLOQUE) return;
+        const dur = Math.min(deficit, restanteDia, MAX_BLOQUE);
+        if (dur < MIN_BLOQUE) return;
+        for (let iniH = laboralIniH; iniH <= srvFinH - dur + 0.01; iniH += 0.5) {
+          if (!turnoCompatible(emp, iniH)) continue;
+          const finH = iniH + dur;
+          let bloqueado = false;
+          for (const b of existentes) {
+            if (iniH < b.finH && finH > b.iniH) { bloqueado = true; break; }
+            const pausa = iniH >= b.finH ? iniH - b.finH : b.iniH - finH;
+            if (pausa > 0 && pausa < MIN_PAUSA_PARTIDO) { bloqueado = true; break; }
+          }
+          if (bloqueado) continue;
+          let score = 0;
+          franjas.forEach(f => {
+            if (f.h < iniH || f.h >= finH) return;
+            const nec = demanda[dia][f.hStr][grupo] || 0;
+            const cub = cubierto[dia][f.hStr][grupo] || 0;
+            score += nec > cub ? (nec - cub) : -0.5;
+          });
+          if (score > mejorScore) { mejorScore = score; mejorIni = iniH; mejorDia = dia; mejorDur = dur; }
         }
-        if (bloqueado) continue;
-        let score = 0;
-        franjas.forEach(f => {
-          if (f.h < iniH || f.h >= finH) return;
-          const nec = demanda[dia][f.hStr][grupo] || 0;
-          const cub = cubierto[dia][f.hStr][grupo] || 0;
-          score += nec > cub ? (nec - cub) : -0.5;
-        });
-        if (score > mejorScore) { mejorScore = score; mejorIni = iniH; }
-      }
-      if (mejorIni !== null) {
-        colocarBloque(emp, dia, mejorIni, durExtra);
-        if ((emp.horasContrato || 40) - (horasAsig[emp.id] || 0) < 0.5) break;
-      }
+      });
+      if (mejorDia === null) break;
+      const di = DIAS.indexOf(mejorDia);
+      const b = intentarColocar(emp, mejorDia, di, mejorIni, mejorDur);
+      if (!b) break;
     }
   });
 
@@ -1980,8 +1919,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
     });
   });
 
-  const bloquesLimpios = bloques.map(b => ({ id: b.id, empId: b.empId, dia: b.dia, ini: b.ini, fin: b.fin, turno: b.turno }));
-  return { bloques: bloquesLimpios, diagnostico };
+  return { bloques, diagnostico };
 }
 
 
