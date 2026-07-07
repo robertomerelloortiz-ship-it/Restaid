@@ -1726,19 +1726,28 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
     const diasElegibles = DIAS.map((d, di) => ({ d, di }))
       .filter(({ di }) => puedeTrabajarDia(e, di));
 
-    // Puntuar cada día según déficit de demanda (más déficit = más urgente)
-    // Usamos la demanda total del día como proxy (aún no hay cobertura asignada)
+    // Puntuar cada día:
+    // - Score base: demanda del día
+    // - Bonus FDS
+    // - Penalización: cuántos empleados del mismo rol ya tienen ese día asignado
+    //   (para distribuir en lugar de concentrar)
     const diasPuntuados = diasElegibles.map(({ d, di }) => {
       const demandaDia = franjas.reduce((s, f) => s + (demanda[d][f.hStr][grupo] || 0), 0);
-      // Bonus para días de fin de semana (típicamente más demanda)
       const bonusFDS = (di === 5 || di === 6) ? 1.2 : 1;
-      return { d, di, score: demandaDia * bonusFDS };
+      // Cuántos del mismo rol ya tienen ese día → penalizar para distribuir
+      const yaAsignados = Object.keys(diasPorEmpleado).filter(empId => {
+        const empData = disponibles.find(x => x.id === empId);
+        if (!empData) return false;
+        const mismoGrupo = grupo === 'sala' ? esSala(empData) : esCocina(empData);
+        return mismoGrupo && diasPorEmpleado[empId].includes(d);
+      }).length;
+      const penalizacion = yaAsignados * 2; // penalizar días ya muy cubiertos
+      return { d, di, score: demandaDia * bonusFDS - penalizacion };
     }).sort((a, b) => b.score - a.score);
 
-    // Elegir entre diasMin y diasMax días, priorizando los de mayor demanda
-    // Objetivo: distribuir las horas lo más uniformemente posible
     const diasObjetivo = Math.min(diasMax, Math.max(diasMin, Math.ceil(contrato / 6)));
-    diasPorEmpleado[e.id] = diasPuntuados.slice(0, diasObjetivo).map(x => x.d);
+    diasSeleccionados = diasPuntuados.slice(0, diasObjetivo).map(x => x.d);
+    diasPorEmpleado[e.id] = diasSeleccionados;
   });
 
   // ── FASE B: Calcular duración por bloque ─────────────────────────────
@@ -1778,7 +1787,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
       }
       if (bloqueado) continue;
 
-      // Score = demanda no cubierta en este bloque / durH (eficiencia por hora)
+      // Score = demanda no cubierta / durH (eficiencia) + penalización por repetir posición
       let demandaNoCubierta = 0;
       franjas.forEach(f => {
         if (f.h < iniH || f.h >= finH) return;
@@ -1786,7 +1795,9 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
         const cub = cubierto[dia][f.hStr][grupo] || 0;
         if (nec > cub) demandaNoCubierta += (nec - cub);
       });
-      const score = demandaNoCubierta / durH;
+      // Penalizar si esta misma posición ya la usa el empleado otros días
+      const vecesUsada = bloques.filter(b => b.empId === emp.id && b.ini === toHHMM(iniH)).length;
+      const score = (demandaNoCubierta / durH) - vecesUsada * 0.5;
       if (score > mejorScore) { mejorScore = score; mejorIni = iniH; }
     }
     return mejorIni;
