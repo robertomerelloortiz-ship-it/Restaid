@@ -1562,14 +1562,27 @@ function calcularCuadranteV2(){
 // 4. Optimización de coste
 // 5. Preferencias
 // ═══════════════════════════════════════════════════════════════════════
+// Algoritmo de cuadrante v3
+// Prioridades:
+// 1. Restricciones legales/contractuales
+// 2. Cobertura de servicio (minSala/minCocina en franjas con demanda)
+// 3. Equilibrio de plantilla (todos llegan a contrato, repartido en semana)
+// 4. Optimización de coste
+// 5. Preferencias
+// ═══════════════════════════════════════════════════════════════════════
 
 const MIN_BLOQUE = 3;
 const MAX_BLOQUE = 10;
 const MAX_HORAS_DIA = 10;
 const MIN_PAUSA_PARTIDO = 2;
 const TOLERANCIA = 1;
-const toHHMM = h => { const hN=((h%24)+24)%24,hh=Math.floor(hN),mm=Math.round((hN-hh)*60); return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0'); };
 
+const toHHMM = h => {
+  const hN = ((h % 24) + 24) % 24;
+  const hh = Math.floor(hN);
+  const mm = Math.round((hN - hh) * 60);
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+};
 
 function generarFranjas(servicioIni, servicioFin) {
   let iH = parseHM(servicioIni);
@@ -1588,7 +1601,6 @@ function calcularDemandaFranjas(ventasDia, curvaDia, config, franjas) {
   const ratioCocina = config.ratioCocina || 30;
   const minSala = config.minSala || 2;
   const minCocina = config.minCocina || 1;
-  const umbralMin = config.umbralMinimo || 3; // comensales mínimos para aplicar mínimo de plantilla
 
   const demanda = {};
   franjas.forEach(f => {
@@ -1596,13 +1608,9 @@ function calcularDemandaFranjas(ventasDia, curvaDia, config, franjas) {
     const comensales = pct > 0 ? (ventasDia * pct) / ticketMed : 0;
     const necesarioSala = comensales > 0 ? Math.ceil(comensales * 2 / ratioSala) : 0;
     const necesarioCoc = comensales > 0 ? Math.ceil(comensales * 2 / ratioCocina) : 0;
-    // Aplicar mínimo completo solo si hay suficientes comensales; si no, mínimo 1 (apertura/cierre)
-    const minEfectivoSala = comensales >= umbralMin ? minSala : (comensales > 0 ? 1 : 0);
-    const minEfectivoCoc = comensales >= umbralMin ? minCocina : (comensales > 0 ? 1 : 0);
-    // Regla dura: durante el servicio siempre mínimo 1 sala y 1 cocina (alguien abre/cierra)
     demanda[f.hStr] = {
-      sala: Math.max(1, Math.max(minEfectivoSala, necesarioSala)),
-      cocina: Math.max(1, Math.max(minEfectivoCoc, necesarioCoc))
+      sala: Math.max(pct > 0 ? minSala : 0, necesarioSala),
+      cocina: Math.max(pct > 0 ? minCocina : 0, necesarioCoc)
     };
   });
   return demanda;
@@ -1735,25 +1743,22 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
     // Puntuar cada día:
     // - Score base: demanda del día
     // - Bonus FDS
-    // - Penalización: cuántos empleados del mismo rol ya tienen ese día asignado
-    //   (para distribuir en lugar de concentrar)
+    // - Penalización: cuántos empleados del mismo rol ya tienen ese día (distribuir)
     const diasPuntuados = diasElegibles.map(({ d, di }) => {
       const demandaDia = franjas.reduce((s, f) => s + (demanda[d][f.hStr][grupo] || 0), 0);
       const bonusFDS = (di === 5 || di === 6) ? 1.2 : 1;
-      // Cuántos del mismo rol ya tienen ese día → penalizar para distribuir
       const yaAsignados = Object.keys(diasPorEmpleado).filter(empId => {
         const empData = disponibles.find(x => x.id === empId);
         if (!empData) return false;
         const mismoGrupo = grupo === 'sala' ? esSala(empData) : esCocina(empData);
         return mismoGrupo && diasPorEmpleado[empId].includes(d);
       }).length;
-      const penalizacion = yaAsignados * 2; // penalizar días ya muy cubiertos
-      return { d, di, score: demandaDia * bonusFDS - penalizacion };
+      return { d, di, score: demandaDia * bonusFDS - yaAsignados * 2 };
     }).sort((a, b) => b.score - a.score);
 
-    const diasObjetivo = Math.min(diasMax, Math.max(diasMin, Math.ceil(contrato / 6)));
-    diasSeleccionados = diasPuntuados.slice(0, diasObjetivo).map(x => x.d);
-    diasPorEmpleado[e.id] = diasSeleccionados;
+    // Máximo 6 días (todo empleado tiene al menos 1 día libre)
+    const diasObjetivo = Math.min(6, Math.min(diasMax, Math.max(diasMin, Math.ceil(contrato / 6))));
+    diasPorEmpleado[e.id] = diasPuntuados.slice(0, diasObjetivo).map(x => x.d);
   });
 
   // ── FASE B: Calcular duración por bloque ─────────────────────────────
@@ -1793,17 +1798,17 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
       }
       if (bloqueado) continue;
 
-      // Score = demanda no cubierta / durH (eficiencia) + penalización por repetir posición
-      let demandaNoCubierta = 0;
+      // Score = demanda no cubierta en este bloque / durH (eficiencia por hora)
+      let demandaNoCubierta = 0, sobredotacion = 0;
       franjas.forEach(f => {
         if (f.h < iniH || f.h >= finH) return;
         const nec = demanda[dia][f.hStr][grupo] || 0;
         const cub = cubierto[dia][f.hStr][grupo] || 0;
         if (nec > cub) demandaNoCubierta += (nec - cub);
+        else sobredotacion += (cub - nec + 1);
       });
-      // Penalizar si esta misma posición ya la usa el empleado otros días
       const vecesUsada = bloques.filter(b => b.empId === emp.id && b.ini === toHHMM(iniH)).length;
-      const score = (demandaNoCubierta / durH) - vecesUsada * 0.5;
+      const score = (demandaNoCubierta / durH) - sobredotacion * 0.3 - vecesUsada * 0.5;
       if (score > mejorScore) { mejorScore = score; mejorIni = iniH; }
     }
     return mejorIni;
@@ -1870,6 +1875,54 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
         if (!aúnFalta) break;
       }
     });
+  });
+
+  // ── FASE E: Completar horas restantes ────────────────────────────────
+  // Empleados que aún tienen déficit > 0.5h: intentar añadir bloques adicionales
+  // o extender los existentes hasta alcanzar el contrato
+  disponibles.forEach(emp => {
+    const deficit = (emp.horasContrato || 40) - (horasAsig[emp.id] || 0);
+    if (deficit < 0.5) return;
+    const grupo = esSala(emp) ? 'sala' : 'cocina';
+
+    // Intentar añadir un bloque extra en el día con más déficit de demanda
+    // limitado a la duración del déficit restante
+    for (let di = 0; di < DIAS.length; di++) {
+      const dia = DIAS[di];
+      if (!puedeTrabajarDia(emp, di)) continue;
+      const key = `${emp.id}|${dia}`;
+      const existentes = bloquesEmpDia[key] || [];
+      const horasDia = existentes.reduce((s, b) => s + (b.finH - b.iniH), 0);
+      if (horasDia >= MAX_HORAS_DIA) continue;
+
+      const durExtra = Math.min(deficit, MAX_HORAS_DIA - horasDia, MAX_BLOQUE);
+      if (durExtra < MIN_BLOQUE) continue;
+
+      // Buscar posición con score positivo
+      let mejorIni = null, mejorScore = -Infinity;
+      for (let iniH = srvIniH; iniH <= srvFinH - durExtra + 0.01; iniH += 0.5) {
+        const finH = iniH + durExtra;
+        let bloqueado = false;
+        for (const b of existentes) {
+          if (iniH < b.finH && finH > b.iniH) { bloqueado = true; break; }
+          const pausa = iniH >= b.finH ? iniH - b.finH : b.iniH - finH;
+          if (pausa > 0 && pausa < MIN_PAUSA_PARTIDO) { bloqueado = true; break; }
+        }
+        if (bloqueado) continue;
+        let score = 0;
+        franjas.forEach(f => {
+          if (f.h < iniH || f.h >= finH) return;
+          const nec = demanda[dia][f.hStr][grupo] || 0;
+          const cub = cubierto[dia][f.hStr][grupo] || 0;
+          score += nec > cub ? (nec - cub) : -0.5;
+        });
+        if (score > mejorScore) { mejorScore = score; mejorIni = iniH; }
+      }
+      if (mejorIni !== null) {
+        colocarBloque(emp, dia, mejorIni, durExtra);
+        if ((emp.horasContrato || 40) - (horasAsig[emp.id] || 0) < 0.5) break;
+      }
+    }
   });
 
   // ── Diagnóstico ──────────────────────────────────────────────────────
