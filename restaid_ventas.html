@@ -857,10 +857,23 @@ function publishPub(g){
     }catch(e){}
     // Curva de media hora normalizada (para escalonamiento de horarios en RRHH)
     let halfHourCurva=null;
+    let halfHourCurvaPorDia=null;
     try{
       if(g.halfHour&&Object.keys(g.halfHour).length){
         const total=Object.values(g.halfHour).reduce((s,v)=>s+v,0);
         if(total>0){halfHourCurva={};Object.keys(g.halfHour).forEach(k=>{halfHourCurva[k]=Math.round(g.halfHour[k]/total*1000)/10;});} // % del total
+      }
+      // Curva por día de semana: {Lun:{'13:00':8.2,...}, Mar:{...}, ...}
+      if(g.halfHourPorDia&&Object.keys(g.halfHourPorDia).length){
+        halfHourCurvaPorDia={};
+        Object.keys(g.halfHourPorDia).forEach(dia=>{
+          const franjas=g.halfHourPorDia[dia]||{};
+          const totDia=Object.values(franjas).reduce((s,v)=>s+v,0);
+          if(totDia>0){
+            halfHourCurvaPorDia[dia]={};
+            Object.keys(franjas).forEach(k=>{halfHourCurvaPorDia[dia][k]=Math.round(franjas[k]/totDia*1000)/10;});
+          }
+        });
       }
     }catch(e){}
     pub.ventas={
@@ -886,6 +899,7 @@ function publishPub(g){
       ventasHoy,
       ventasRecientes,
       halfHourCurva,
+      halfHourCurvaPorDia,
       _ts:Date.now()
     };
     localStorage.setItem('restaid_pub_v1',JSON.stringify(pub));
@@ -1044,7 +1058,7 @@ async function runAnalysis(){
   const tickets=new Set(),dates=new Set();
   const byPE={},byPU={},byPC={},byCE={},byCU={};
   const byEE={},byEU={},byET={},byECom={},byECat={},byEDays={};
-  const byDay={},byTurno={},byDate={},byDayTurno={},halfHour={};
+  const byDay={},byTurno={},byDate={},byDayTurno={},halfHour={},halfHourPorDia={};
   const byDayDates={};
   const byMonth={},byPlatoMonthE={},byPlatoMonthU={}; // evolución mensual
   const comZT={},tickZT={};
@@ -1077,8 +1091,12 @@ async function runAnalysis(){
       byPlatoMonthU[pk]=(byPlatoMonthU[pk]||0)+qty;
     }
     byDayTurno[day+'|'+turno]=(byDayTurno[day+'|'+turno]||0)+tot;
-    // Curva media hora
-    if(dtp){const[h,min]=getHM(dt);if(h>=0){const hk=String(h).padStart(2,'0')+':'+(min<30?'00':'30');halfHour[hk]=(halfHour[hk]||0)+tot;}}
+    // Curva media hora (global)
+    if(dtp){const[h,min]=getHM(dt);if(h>=0){const hk=String(h).padStart(2,'0')+':'+(min<30?'00':'30');halfHour[hk]=(halfHour[hk]||0)+tot;
+      // Curva media hora por día de semana
+      if(!halfHourPorDia[day])halfHourPorDia[day]={};
+      halfHourPorDia[day][hk]=(halfHourPorDia[day][hk]||0)+tot;
+    }}
     // Primera línea por orden (para TTFO)
     if(dtp&&(!firstLineTime[ord]||dtp<firstLineTime[ord]))firstLineTime[ord]=dtp;
     // Bebidas por orden (para rondas)
@@ -1159,7 +1177,7 @@ async function runAnalysis(){
   const empArr=Object.keys(byEE).map(emp=>({emp,euros:byEE[emp],tickets:byET[emp]?byET[emp].size:0,com:byECom[emp]||1,dias:byEDays[emp]?byEDays[emp].size:0,conv:convEmp[emp]||{comida:0,bebida:0},cat:byECat[emp]||{coc:0,beb:0}})).filter(e=>e.tickets>2).sort((a,b)=>b.euros-a.euros);
 
   G={totVen,totDes,nT,nDays,allComs,tickMed,capGlob,pctCoc,pctBeb,pctD,totCocE,totBebE,periodStr,d0,d1,concentracion,durMed,rondasMed,
-    byPE,byPU,byPC,byCE,byCU,byDay,byTurno,byDate,byDayTurno,halfHour,byDayAvg,byDayCount,byMonth,byPlatoMonthE,byPlatoMonthU,
+    byPE,byPU,byPC,byCE,byCU,byDay,byTurno,byDate,byDayTurno,halfHour,halfHourPorDia,byDayAvg,byDayCount,byMonth,byPlatoMonthE,byPlatoMonthU,
     byEE,byEU,byET,byECom,byECat,zonaComMap,mesaComMap,
     visitStats,convEmp,postresN,cafesN,comidaN,depthMap,
     ttfoZona,rondasDist,nDiasTurno,eurosZT,comZT,tickZT,mesasPorZona,
