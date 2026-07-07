@@ -1777,7 +1777,9 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
         const mismoGrupo = grupo === 'sala' ? esSala(empData) : esCocina(empData);
         return mismoGrupo && diasPorEmpleado[empId].includes(d);
       }).length;
-      return { d, di, score: demandaDia * bonusFDS - yaAsignados * 2 };
+      const empsTotalesRol = disponibles.filter(e => grupo === 'sala' ? esSala(e) : esCocina(e)).length;
+      const penalizacion = yaAsignados > 0 ? Math.log(yaAsignados + 1) / Math.log(empsTotalesRol + 1) * 3 : 0;
+      return { d, di, score: demandaDia * bonusFDS - penalizacion };
     }).sort((a, b) => b.score - a.score);
 
     // Máximo 6 días (todo empleado tiene al menos 1 día libre)
