@@ -1668,6 +1668,13 @@ function calcularCuadranteAuto(){
   const dotActual={};
   const asignado={};disponibles.forEach(e=>{asignado[e.id]=new Set();});
 
+  // durEstimada: horas que trabajará este empleado en su próximo turno
+  // = horasContrato / (turnos ya asignados + 1), clamped al servicio
+  const durEstimada=e=>{
+    const nAsig=asignado[e.id]?asignado[e.id].size:0;
+    return Math.min(Math.round((e.horasContrato||40)/(nAsig+1)*2)/2,DUR_SERVICIO);
+  };
+
   const puedeTrabajar=(e,dia,di,turno,ignoraContrato)=>{
     if(e.bajaIT)return false;
     if(enVacaciones(e))return false;
@@ -1675,21 +1682,18 @@ function calcularCuadranteAuto(){
     if(bloqueDescanso[e.id]&&bloqueDescanso[e.id].has(`${dia}|${turno}`))return false;
     const tp=(e.horarioHabitual||{}).turnoPref;
     if(tp&&tp!=='Ambos'&&tp!==turno)return false;
-    const dur=DURACION[turno];
+    const dur=durEstimada(e);
     if(!ignoraContrato&&(horasAsig[e.id]||0)+dur>(e.horasContrato||40)+TOLERANCIA)return false;
     if((horasDia[e.id]&&horasDia[e.id][dia]||0)+dur>MAX_HORAS_DIA)return false;
     return true;
   };
 
   const asignaciones=[];
-  // doAsignar: usa el horario habitual del empleado si lo tiene, o el del turno (sin escalonar aún)
   const doAsignar=(emp,dia,turno,grupo)=>{
-    const dur=DURACION[turno];
+    const dur=durEstimada(emp);
     const hh=emp.horarioHabitual||{};
-    // Si el empleado tiene horario concreto definido, usarlo directamente
     const ini=(hh.horaIni&&hh.horaFin)?hh.horaIni:INI[turno];
     const fin=(hh.horaIni&&hh.horaFin)?hh.horaFin:FIN[turno];
-    const hContratoEmp=Math.min(hh.horaIni&&hh.horaFin?calcDur(hh.horaIni,hh.horaFin):dur,(emp.horasContrato||40));
     asignaciones.push({id:uid(),empId:emp.id,dia,turno,ini,fin,_sinEscalonar:!(hh.horaIni&&hh.horaFin)});
     horasAsig[emp.id]+=dur;
     horasDia[emp.id][dia]=(horasDia[emp.id][dia]||0)+dur;
@@ -1750,6 +1754,17 @@ function calcularCuadranteAuto(){
   // ── Paso 4: Escalonar horarios en el servicio corrido ─────────────────
   // Para cada día, re-calcular ini/fin de empleados sin horario fijo propio
   // usando la curva halfHour sobre el servicio completo (SRV_INI → SRV_FIN)
+
+  // Pre-calcular turnos asignados por empleado (para duración correcta por turno)
+  const turnosAsignadosPorEmp={};
+  disponibles.forEach(e=>{
+    turnosAsignadosPorEmp[e.id]=asignaciones.filter(a=>a.empId===e.id).length||1;
+  });
+  const horasPorTurnoReal=e=>{
+    const n=turnosAsignadosPorEmp[e.id]||1;
+    return Math.min(Math.round((e.horasContrato||40)/n*2)/2,DUR_SERVICIO);
+  };
+
   DIAS.forEach(dia=>{
     // Recoger todos los asignados sin horario fijo, sin importar turno
     const asigsDia=asignaciones.filter(a=>a.dia===dia&&a._sinEscalonar);
@@ -1764,7 +1779,7 @@ function calcularCuadranteAuto(){
       // Calcular horas individuales de cada empleado en este servicio
       const bloques=asigs.map(a=>{
         const e=disponibles.find(x=>x.id===a.empId);
-        const hEmp=e?horasPorTurno(e):DUR_SERVICIO/2;
+        const hEmp=e?horasPorTurnoReal(e):DUR_SERVICIO/2;
         return{a,hEmp};
       });
 
