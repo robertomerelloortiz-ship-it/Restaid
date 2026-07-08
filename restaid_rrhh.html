@@ -1743,6 +1743,10 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
   const MIN_PAUSA_PARTIDO_ = cfg.minPausaPartido != null && cfg.minPausaPartido >= 0 ? cfg.minPausaPartido : MIN_PAUSA_PARTIDO;
   const TOLERANCIA_ = cfg.tolerancia != null && cfg.tolerancia >= 0 ? cfg.tolerancia : TOLERANCIA;
   const MAX_DIAS_SEMANA_ = cfg.maxDiasSemana > 0 ? cfg.maxDiasSemana : MAX_DIAS_SEMANA;
+  // Peso del desempate "horario parecido para el mismo empleado" — pequeño a
+  // propósito: solo desempata entre opciones ya equivalentes en cobertura,
+  // nunca debe pesar más que cubrir un déficit real.
+  const PESO_CONSISTENCIA_HORARIO = cfg.pesoConsistenciaHorario != null && cfg.pesoConsistenciaHorario >= 0 ? cfg.pesoConsistenciaHorario : 0.05;
   const srvIni = cfg.servicioIni || '12:00';
   const srvFin = cfg.servicioFin || '01:00';
   const umbral = parseHM(cfg.umbralCena || '17:00');
@@ -1849,10 +1853,36 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
     return Math.min(maxBloqueEfectivo, Math.max(MIN_BLOQUE_, Math.round(dur * 2) / 2));
   };
 
+  // ── Puntuación de cobertura compartida (déficit cubierto vs sobredotación) ──
+  // Antes había dos fórmulas distintas (bucle principal vs fase final) que
+  // daban resultados inconsistentes. Ahora ambas usan esta misma función.
+  const scoreCobertura = (dia, iniH, finH, grupo) => {
+    let demandaNoCubierta = 0, sobredotacion = 0;
+    franjas.forEach(f => {
+      if (f.h < iniH || f.h >= finH) return;
+      const nec = demanda[dia][f.hStr][grupo] || 0;
+      const cub = cubierto[dia][f.hStr][grupo] || 0;
+      if (nec > cub) demandaNoCubierta += (nec - cub);
+      else sobredotacion += (cub - nec + 1);
+    });
+    return demandaNoCubierta - sobredotacion * 0.3;
+  };
+
+  // ── Hora de inicio "habitual" de un empleado esta semana (media de sus
+  //    bloques ya colocados) — para preferir, a igualdad de cobertura,
+  //    un horario parecido día a día en vez de uno errático. ──
+  const horaTipicaSemana = (empId) => {
+    const propios = bloques.filter(b => b.empId === empId);
+    if (!propios.length) return null;
+    const suma = propios.reduce((s, b) => s + parseHM(b.ini), 0);
+    return suma / propios.length;
+  };
+
   // ── Buscar mejor posición de inicio para un bloque de durH horas
   //    que cubra lo mejor posible la franja de déficit (anclaFranjaH) ────
   const mejorPosicionCercaDe = (emp, dia, di, durH, anclaFranjaH, grupo) => {
     let mejorIni = null, mejorScore = -Infinity;
+    const horaTipica = horaTipicaSemana(emp.id);
     for (let iniH = laboralIniH; iniH <= srvFinH - durH + 0.01; iniH += 0.5) {
       const finH = iniH + durH;
       // Debe cubrir la franja ancla para ser candidato relevante a esta llamada
@@ -1870,15 +1900,8 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
       }
       if (bloqueado) continue;
 
-      let demandaNoCubierta = 0, sobredotacion = 0;
-      franjas.forEach(f => {
-        if (f.h < iniH || f.h >= finH) return;
-        const nec = demanda[dia][f.hStr][grupo] || 0;
-        const cub = cubierto[dia][f.hStr][grupo] || 0;
-        if (nec > cub) demandaNoCubierta += (nec - cub);
-        else sobredotacion += (cub - nec + 1);
-      });
-      const score = demandaNoCubierta - sobredotacion * 0.3;
+      let score = scoreCobertura(dia, iniH, finH, grupo);
+      if (horaTipica != null) score -= PESO_CONSISTENCIA_HORARIO * Math.abs(iniH - horaTipica);
       if (score > mejorScore) { mejorScore = score; mejorIni = iniH; }
     }
     return mejorIni;
@@ -1947,6 +1970,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
       const deficit = (emp.horasContrato || 40) - (horasAsig[emp.id] || 0);
       if (deficit < MIN_BLOQUE_ - 0.01) break;
       const grupo = esSala(emp) ? 'sala' : 'cocina';
+      const horaTipica = horaTipicaSemana(emp.id);
       let mejorDia = null, mejorIni = null, mejorScore = -Infinity, mejorDur = 0;
       DIAS.forEach((dia, di) => {
         if (!puedeTrabajarDia(emp, di)) return;
@@ -1967,13 +1991,8 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
             if (pausa > 0 && pausa < MIN_PAUSA_PARTIDO_) { bloqueado = true; break; }
           }
           if (bloqueado) continue;
-          let score = 0;
-          franjas.forEach(f => {
-            if (f.h < iniH || f.h >= finH) return;
-            const nec = demanda[dia][f.hStr][grupo] || 0;
-            const cub = cubierto[dia][f.hStr][grupo] || 0;
-            score += nec > cub ? (nec - cub) : -0.5;
-          });
+          let score = scoreCobertura(dia, iniH, finH, grupo);
+          if (horaTipica != null) score -= PESO_CONSISTENCIA_HORARIO * Math.abs(iniH - horaTipica);
           if (score > mejorScore) { mejorScore = score; mejorIni = iniH; mejorDia = dia; mejorDur = dur; }
         }
       });
