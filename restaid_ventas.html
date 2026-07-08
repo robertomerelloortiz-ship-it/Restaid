@@ -855,6 +855,24 @@ function publishPub(g){
         fechas.forEach(f=>{ ventasRecientes[f]=Math.round(g.byDate[f]||0); });
       }
     }catch(e){}
+    // Permanencia real por día+turno (minutos que ocupa una mesa de media) — para
+    // que RRHH pueda calcular ocupación simultánea en vez de solo tasa de entrada.
+    // Umbral de muestra mínima (5) para no publicar medias poco fiables.
+    let permanenciaPorDiaTurno=null;
+    try{
+      if(g.durByDayTurno&&Object.keys(g.durByDayTurno).length){
+        permanenciaPorDiaTurno={};
+        Object.keys(g.durByDayTurno).forEach(k=>{
+          const s=g.durByDayTurno[k];
+          if(s&&s.n>=5){
+            const[dia,turno]=k.split('|');
+            if(!permanenciaPorDiaTurno[dia])permanenciaPorDiaTurno[dia]={};
+            permanenciaPorDiaTurno[dia][turno]=Math.round(s.sum/s.n);
+          }
+        });
+        if(!Object.keys(permanenciaPorDiaTurno).length)permanenciaPorDiaTurno=null;
+      }
+    }catch(e){}
     // Curva de media hora normalizada (para escalonamiento de horarios en RRHH)
     let halfHourCurva=null;
     let halfHourCurvaPorDia=null;
@@ -900,6 +918,7 @@ function publishPub(g){
       ventasRecientes,
       halfHourCurva,
       halfHourCurvaPorDia,
+      permanenciaPorDiaTurno,
       _ts:Date.now()
     };
     localStorage.setItem('restaid_pub_v1',JSON.stringify(pub));
@@ -1058,7 +1077,7 @@ async function runAnalysis(){
   const tickets=new Set(),dates=new Set();
   const byPE={},byPU={},byPC={},byCE={},byCU={};
   const byEE={},byEU={},byET={},byECom={},byECat={},byEDays={};
-  const byDay={},byTurno={},byDate={},byDayTurno={},halfHour={},halfHourPorDia={};
+  const byDay={},byTurno={},byDate={},byDayTurno={},halfHour={},halfHourPorDia={},durByDayTurno={};
   const byDayDates={};
   const byMonth={},byPlatoMonthE={},byPlatoMonthU={}; // evolución mensual
   const comZT={},tickZT={};
@@ -1120,7 +1139,10 @@ async function runAnalysis(){
   Object.values(ticketLines).forEach(t=>{
     const tipo=t.hasFood?'comida':'bebida',vs=visitStats[tipo];
     vs.tickets++;vs.total+=t.total;vs.com+=t.com;
-    if(t.dur>0&&t.dur<300){vs.durSum+=t.dur;vs.durN++;}
+    if(t.dur>0&&t.dur<300){vs.durSum+=t.dur;vs.durN++;
+      // Permanencia real por (día, turno) — para ocupación simultánea en RRHH
+      const kdt=t.day+'|'+t.turno;if(!durByDayTurno[kdt])durByDayTurno[kdt]={sum:0,n:0};durByDayTurno[kdt].sum+=t.dur;durByDayTurno[kdt].n++;
+    }
     vs.byTurno[t.turno]=(vs.byTurno[t.turno]||0)+t.total;vs.byDay[t.day]=(vs.byDay[t.day]||0)+t.total;
     if(!convEmp[t.emp])convEmp[t.emp]={comida:0,bebida:0};convEmp[t.emp][tipo]++;
     if(tipo==='comida'){comidaN++;const depth=new Set(t.lines.map(l=>l.cat)).size;if(!depthMap[depth])depthMap[depth]={n:0,totSum:0};depthMap[depth].n++;depthMap[depth].totSum+=t.total;if(t.lines.some(l=>l.cat.toLowerCase().includes('postre')))postresN++;if(t.lines.some(l=>l.cat.toLowerCase().match(/caf[eé]/)))cafesN++;}
@@ -1177,7 +1199,7 @@ async function runAnalysis(){
   const empArr=Object.keys(byEE).map(emp=>({emp,euros:byEE[emp],tickets:byET[emp]?byET[emp].size:0,com:byECom[emp]||1,dias:byEDays[emp]?byEDays[emp].size:0,conv:convEmp[emp]||{comida:0,bebida:0},cat:byECat[emp]||{coc:0,beb:0}})).filter(e=>e.tickets>2).sort((a,b)=>b.euros-a.euros);
 
   G={totVen,totDes,nT,nDays,allComs,tickMed,capGlob,pctCoc,pctBeb,pctD,totCocE,totBebE,periodStr,d0,d1,concentracion,durMed,rondasMed,
-    byPE,byPU,byPC,byCE,byCU,byDay,byTurno,byDate,byDayTurno,halfHour,halfHourPorDia,byDayAvg,byDayCount,byMonth,byPlatoMonthE,byPlatoMonthU,
+    byPE,byPU,byPC,byCE,byCU,byDay,byTurno,byDate,byDayTurno,durByDayTurno,halfHour,halfHourPorDia,byDayAvg,byDayCount,byMonth,byPlatoMonthE,byPlatoMonthU,
     byEE,byEU,byET,byECom,byECat,zonaComMap,mesaComMap,
     visitStats,convEmp,postresN,cafesN,comidaN,depthMap,
     ttfoZona,rondasDist,nDiasTurno,eurosZT,comZT,tickZT,mesasPorZona,
