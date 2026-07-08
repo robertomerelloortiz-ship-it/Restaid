@@ -2387,6 +2387,7 @@ function normalizarG(g){
   if(!g.mesasPorZona)g.mesasPorZona={};
   if(!g.tickHist)g.tickHist=null;  // datos antiguos: el panel de distribución simplemente no se muestra
   if(!g.zonaDiasN)g.zonaDiasN={};
+  if(!g.durByDayTurno)g.durByDayTurno={};
   // Mesas por zona: reconstruir el contador si falta (Sets perdidos al guardar; derivar de mesaComMap)
   if(!g.mesasZonaN||!Object.keys(g.mesasZonaN).length){
     g.mesasZonaN={};
