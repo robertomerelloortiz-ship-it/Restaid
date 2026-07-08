@@ -496,6 +496,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
         <button class="tb-copilot-btn mobile-hide" onclick="window.parent.postMessage({type:'restaid_open_copilot'},'*')"><div class="pulse-dot"></div>Copiloto</button>
 
         <button class="btn btn-tb btn-sm" onclick="openConfig()">⚙ Parámetros</button>
+        <button class="btn btn-tb btn-sm" onclick="openAjustesCuadrante()">🕓 Ajustes del cuadrante</button>
       </div>
     </div>
     <div id="tabbar">
@@ -1420,6 +1421,44 @@ function openConfig(){
 function saveConfig(){DB.config.targetPct=parseFloat($('cf-target').value)||30;DB.config.ssMult=parseFloat($('cf-ss').value)||1.32;DB.config.premiumExtra=parseFloat($('cf-prem').value)||1.5;const _tk=parseFloat($('cf-ticket').value)||18;if(_tk!==DB.config.ticketMedio)DB.config.ticketMedioManual=true;DB.config.ticketMedio=_tk;DB.config.ratioSala=parseInt($('cf-rsala').value)||25;DB.config.ratioCocina=parseInt($('cf-rcoc').value)||30;DB.config.minSala=Math.max(1,parseInt($('cf-minsala').value)||2);DB.config.minCocina=Math.max(1,parseInt($('cf-mincoc').value)||1);DB.config.umbralMinimo=Math.max(1,parseInt($('cf-umbral-min').value)||3);DB.config.llegadaAntes=Math.max(0,parseInt($('cf-llegada-antes').value)||60);DB.config.servicioIni=$('cf-srv-ini').value||'12:00';DB.config.servicioFin=$('cf-srv-fin').value||'01:00';DB.config.umbralCena=$('cf-umbral').value||'17:00';saveDB();closeModal();updateSidebar();showPage($$('.tab.active')[0]?.dataset.page||'resumen');toast('Parámetros guardados');}
 
 /* ═══════════════════════════════════════════════════════════════════
+   AJUSTES DEL CUADRANTE — parámetros de turnos y descansos, en lenguaje
+   sencillo. Antes eran constantes fijas en el algoritmo (MIN_BLOQUE,
+   MAX_BLOQUE, MAX_HORAS_DIA, MIN_PAUSA_PARTIDO, TOLERANCIA,
+   MAX_DIAS_SEMANA) — ahora se guardan en DB.config y el algoritmo las
+   usa directamente si están presentes, con los mismos valores de
+   siempre como respaldo si no se han tocado.
+═══════════════════════════════════════════════════════════════════ */
+function openAjustesCuadrante(){
+  const c=DB.config||{};
+  $('modal-host').innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()"><div class="modal">
+    <h3>Ajustes del cuadrante</h3>
+    <p class="modal-desc">Reglas de turnos y descansos que usa el generador automático de horarios. Cada campo lleva una explicación corta debajo — si no lo tocas, se queda en el valor recomendado.</p>
+    <div class="field-row">
+      <div class="field"><label>Duración mínima de un turno (horas)</label><input type="number" step="0.5" min="1" id="ac-minbloque" value="${c.minBloque||3}"><div class="field-hint">No tiene sentido llamar a alguien para menos horas que esto.</div></div>
+      <div class="field"><label>Duración máxima de un turno (horas)</label><input type="number" step="0.5" min="1" id="ac-maxbloque" value="${c.maxBloque||10}"><div class="field-hint">Ningún turno seguido será más largo que esto.</div></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Horas máximas trabajadas en un mismo día</label><input type="number" step="0.5" min="1" id="ac-maxhorasdia" value="${c.maxHorasDia||10}"><div class="field-hint">Suma de todos los turnos de un empleado ese día (aunque sea turno partido).</div></div>
+      <div class="field"><label>Descanso mínimo en turno partido (horas)</label><input type="number" step="0.5" min="0" id="ac-minpausa" value="${c.minPausaPartido||2}"><div class="field-hint">Si alguien libra entre comida y cena, cuánto tiempo real necesita para que cuente como descanso.</div></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Margen sobre las horas de contrato</label><input type="number" step="0.5" min="0" id="ac-tolerancia" value="${c.tolerancia!=null?c.tolerancia:1}"><div class="field-hint">Cuánto se puede pasar o quedar corto de sus horas semanales sin que sea un problema.</div></div>
+      <div class="field"><label>Máximo de días trabajados por semana</label><input type="number" step="1" min="1" max="7" id="ac-maxdias" value="${c.maxDiasSemana||6}"><div class="field-hint">Garantiza al menos un día de descanso a la semana para cada empleado.</div></div>
+    </div>
+    <div class="modal-actions"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-amber btn-sm" onclick="saveAjustesCuadrante()">Guardar</button></div>
+  </div></div>`;
+}
+function saveAjustesCuadrante(){
+  DB.config.minBloque=Math.max(0.5,parseFloat($('ac-minbloque').value)||3);
+  DB.config.maxBloque=Math.max(DB.config.minBloque,parseFloat($('ac-maxbloque').value)||10);
+  DB.config.maxHorasDia=Math.max(1,parseFloat($('ac-maxhorasdia').value)||10);
+  DB.config.minPausaPartido=Math.max(0,parseFloat($('ac-minpausa').value)||2);
+  DB.config.tolerancia=Math.max(0,parseFloat($('ac-tolerancia').value)||1);
+  DB.config.maxDiasSemana=Math.min(7,Math.max(1,parseInt($('ac-maxdias').value)||6));
+  saveDB();closeModal();updateSidebar();showPage($$('.tab.active')[0]?.dataset.page||'resumen');toast('Ajustes del cuadrante guardados');
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    GENERACIÓN DE CUADRANTE CON IA — guiado con prefs y conflictos
 ═══════════════════════════════════════════════════════════════════ */
 function openCuadAI(){
@@ -1609,6 +1648,7 @@ const MAX_BLOQUE = 10;
 const MAX_HORAS_DIA = 10;
 const MIN_PAUSA_PARTIDO = 2;
 const TOLERANCIA = 1;
+const MAX_DIAS_SEMANA = 6;
 
 const toHHMM = h => {
   const hN = ((h % 24) + 24) % 24;
@@ -1695,6 +1735,14 @@ function staffNeededUnificado(demandaDia, franjas, config, turno, rol) {
  */
 function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, semanaMonday }) {
   const cfg = config || {};
+  // Parámetros configurables por el usuario (pestaña "Ajustes del cuadrante").
+  // Si no vienen en cfg, se usan los valores por defecto de siempre.
+  const MIN_BLOQUE_ = cfg.minBloque > 0 ? cfg.minBloque : MIN_BLOQUE;
+  const MAX_BLOQUE_ = cfg.maxBloque > 0 ? cfg.maxBloque : MAX_BLOQUE;
+  const MAX_HORAS_DIA_ = cfg.maxHorasDia > 0 ? cfg.maxHorasDia : MAX_HORAS_DIA;
+  const MIN_PAUSA_PARTIDO_ = cfg.minPausaPartido != null && cfg.minPausaPartido >= 0 ? cfg.minPausaPartido : MIN_PAUSA_PARTIDO;
+  const TOLERANCIA_ = cfg.tolerancia != null && cfg.tolerancia >= 0 ? cfg.tolerancia : TOLERANCIA;
+  const MAX_DIAS_SEMANA_ = cfg.maxDiasSemana > 0 ? cfg.maxDiasSemana : MAX_DIAS_SEMANA;
   const srvIni = cfg.servicioIni || '12:00';
   const srvFin = cfg.servicioFin || '01:00';
   const umbral = parseHM(cfg.umbralCena || '17:00');
@@ -1750,17 +1798,21 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
     if (iniH < laboralIniH || finH > srvFinH) return null;
     if (!puedeTrabajarDia(emp, di)) return null;
     if (!turnoCompatible(emp, iniH)) return null;
-    if ((horasAsig[emp.id] || 0) + durH > (emp.horasContrato || 40) + TOLERANCIA) return null;
+    if ((horasAsig[emp.id] || 0) + durH > (emp.horasContrato || 40) + TOLERANCIA_) return null;
+
+    // Regla dura: nunca más de MAX_DIAS_SEMANA_ días distintos trabajados
+    const diasTrabajadosSet = new Set(bloques.filter(b => b.empId === emp.id).map(b => b.dia));
+    if (!diasTrabajadosSet.has(dia) && diasTrabajadosSet.size >= MAX_DIAS_SEMANA_) return null;
 
     const key = `${emp.id}|${dia}`;
     const existentes = bloquesEmpDia[key] || [];
     const horasDia = existentes.reduce((s, b) => s + (b.finH - b.iniH), 0);
-    if (horasDia + durH > MAX_HORAS_DIA) return null;
+    if (horasDia + durH > MAX_HORAS_DIA_) return null;
 
     for (const b of existentes) {
       if (iniH < b.finH && finH > b.iniH) return null;
       const pausa = iniH >= b.finH ? iniH - b.finH : b.iniH - finH;
-      if (pausa > 0 && pausa < MIN_PAUSA_PARTIDO) return null;
+      if (pausa > 0 && pausa < MIN_PAUSA_PARTIDO_) return null;
     }
 
     const turno = iniH < umbral ? 'Comida' : 'Cena';
@@ -1782,19 +1834,19 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
     const tp = (emp.horarioHabitual || {}).turnoPref;
     const durServicio = srvFinH - srvIniH;
     const maxBloqueEfectivo = (tp === 'Comida' || tp === 'Cena')
-      ? Math.min(MAX_BLOQUE, durServicio / 2)
-      : MAX_BLOQUE;
+      ? Math.min(MAX_BLOQUE_, durServicio / 2)
+      : MAX_BLOQUE_;
     // Si tiene horario fijo, usar esa duración directamente
     if (emp.horarioHabitual && emp.horarioHabitual.horaIni && emp.horarioHabitual.horaFin) {
       let i = parseHM(emp.horarioHabitual.horaIni), f = parseHM(emp.horarioHabitual.horaFin);
       if (f <= i) f += 24;
-      return Math.min(MAX_BLOQUE, f - i);
+      return Math.min(MAX_BLOQUE_, f - i);
     }
-    // Estimar cuántos días le quedan por trabajar (máx 6 total, menos los ya usados)
+    // Estimar cuántos días le quedan por trabajar (máx MAX_DIAS_SEMANA_, menos los ya usados)
     const diasYaTrabajados = new Set(bloques.filter(b => b.empId === emp.id).map(b => b.dia)).size;
-    const diasRestantesEstimados = Math.max(1, 6 - diasYaTrabajados);
+    const diasRestantesEstimados = Math.max(1, MAX_DIAS_SEMANA_ - diasYaTrabajados);
     const dur = restante / diasRestantesEstimados;
-    return Math.min(maxBloqueEfectivo, Math.max(MIN_BLOQUE, Math.round(dur * 2) / 2));
+    return Math.min(maxBloqueEfectivo, Math.max(MIN_BLOQUE_, Math.round(dur * 2) / 2));
   };
 
   // ── Buscar mejor posición de inicio para un bloque de durH horas
@@ -1809,12 +1861,12 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
       const key = `${emp.id}|${dia}`;
       const existentes = bloquesEmpDia[key] || [];
       const horasDia = existentes.reduce((s, b) => s + (b.finH - b.iniH), 0);
-      if (horasDia + durH > MAX_HORAS_DIA) continue;
+      if (horasDia + durH > MAX_HORAS_DIA_) continue;
       let bloqueado = false;
       for (const b of existentes) {
         if (iniH < b.finH && finH > b.iniH) { bloqueado = true; break; }
         const pausa = iniH >= b.finH ? iniH - b.finH : b.iniH - finH;
-        if (pausa > 0 && pausa < MIN_PAUSA_PARTIDO) { bloqueado = true; break; }
+        if (pausa > 0 && pausa < MIN_PAUSA_PARTIDO_) { bloqueado = true; break; }
       }
       if (bloqueado) continue;
 
@@ -1859,7 +1911,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
     const candidatos = disponibles
       .filter(e => filtroRol(e))
       .filter(e => puedeTrabajarDia(e, di))
-      .filter(e => (horasAsig[e.id] || 0) < (e.horasContrato || 40) + TOLERANCIA)
+      .filter(e => (horasAsig[e.id] || 0) < (e.horasContrato || 40) + TOLERANCIA_)
       .filter(e => turnoCompatible(e, franjaH)) // debe poder cubrir esta franja según su preferencia
       .sort((a, b) => {
         const pctA = (horasAsig[a.id] || 0) / (a.horasContrato || 40);
@@ -1870,7 +1922,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
     let colocado = false;
     for (const emp of candidatos) {
       const dur = duracionObjetivo(emp);
-      if (dur < MIN_BLOQUE) continue;
+      if (dur < MIN_BLOQUE_) continue;
       const iniH = mejorPosicionCercaDe(emp, dia, di, dur, franjaH, grupo);
       if (iniH === null) continue;
       const b = intentarColocar(emp, dia, di, iniH, dur);
@@ -1893,7 +1945,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
     let intentos = 0;
     while (intentos++ < 10) {
       const deficit = (emp.horasContrato || 40) - (horasAsig[emp.id] || 0);
-      if (deficit < MIN_BLOQUE - 0.01) break;
+      if (deficit < MIN_BLOQUE_ - 0.01) break;
       const grupo = esSala(emp) ? 'sala' : 'cocina';
       let mejorDia = null, mejorIni = null, mejorScore = -Infinity, mejorDur = 0;
       DIAS.forEach((dia, di) => {
@@ -1901,10 +1953,10 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
         const key = `${emp.id}|${dia}`;
         const existentes = bloquesEmpDia[key] || [];
         const horasDia = existentes.reduce((s, b) => s + (b.finH - b.iniH), 0);
-        const restanteDia = MAX_HORAS_DIA - horasDia;
-        if (restanteDia < MIN_BLOQUE) return;
-        const dur = Math.min(deficit, restanteDia, MAX_BLOQUE);
-        if (dur < MIN_BLOQUE) return;
+        const restanteDia = MAX_HORAS_DIA_ - horasDia;
+        if (restanteDia < MIN_BLOQUE_) return;
+        const dur = Math.min(deficit, restanteDia, MAX_BLOQUE_);
+        if (dur < MIN_BLOQUE_) return;
         for (let iniH = laboralIniH; iniH <= srvFinH - dur + 0.01; iniH += 0.5) {
           if (!turnoCompatible(emp, iniH)) continue;
           const finH = iniH + dur;
@@ -1912,7 +1964,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
           for (const b of existentes) {
             if (iniH < b.finH && finH > b.iniH) { bloqueado = true; break; }
             const pausa = iniH >= b.finH ? iniH - b.finH : b.iniH - finH;
-            if (pausa > 0 && pausa < MIN_PAUSA_PARTIDO) { bloqueado = true; break; }
+            if (pausa > 0 && pausa < MIN_PAUSA_PARTIDO_) { bloqueado = true; break; }
           }
           if (bloqueado) continue;
           let score = 0;
@@ -1937,7 +1989,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
   disponibles.forEach(e => {
     const h = horasAsig[e.id] || 0;
     const c = e.horasContrato || 40;
-    if (h < c - TOLERANCIA) diagnostico.infracontrato.push({ empId: e.id, horas: Math.round(h * 10) / 10, contrato: c, deficit: Math.round((c - h) * 10) / 10 });
+    if (h < c - TOLERANCIA_) diagnostico.infracontrato.push({ empId: e.id, horas: Math.round(h * 10) / 10, contrato: c, deficit: Math.round((c - h) * 10) / 10 });
   });
   DIAS.forEach(d => {
     franjas.forEach(f => {
