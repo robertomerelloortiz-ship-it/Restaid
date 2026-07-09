@@ -1563,11 +1563,13 @@ function calcularCuadranteV2(){
     // Primero: ventas manuales (suma Comida+Cena si las hay)
     const vMan=w.ventas[d]||{};
     if(vMan.Comida||vMan.Cena){ventasPorDia[d]=(vMan.Comida||0)+(vMan.Cena||0);return;}
-    // Segundo: histórico año anterior
+    // Segundo: histórico año anterior — mediana de 3 semanas equivalentes
+    // (día equivalente ± 7 días), robusta ante un día atípico
     if(bdPrev){
       const fecha=new Date(lunesPrevAjust);fecha.setUTCDate(fecha.getUTCDate()+i);
       const fISO=fecha.toISOString().slice(0,10);
-      if(bdPrev[fISO]!=null){ventasPorDia[d]=Math.round(bdPrev[fISO]*factor);return;}
+      const est=estimarVentaFecha(bdPrev,fISO);
+      if(est!=null){ventasPorDia[d]=Math.round(est*factor);return;}
     }
     // Fallback: media del prevSemana
     const ps=vPub.prevSemana&&vPub.prevSemana[d];
@@ -1610,38 +1612,6 @@ function calcularCuadranteV2(){
 // 4. Optimización de coste
 // 5. Preferencias
 // ═══════════════════════════════════════════════════════════════════════
-// Algoritmo de cuadrante v3
-// Prioridades:
-// 1. Restricciones legales/contractuales
-// 2. Cobertura de servicio (minSala/minCocina en franjas con demanda)
-// 3. Equilibrio de plantilla (todos llegan a contrato, repartido en semana)
-// 4. Optimización de coste
-// 5. Preferencias
-// ═══════════════════════════════════════════════════════════════════════
-// Algoritmo de cuadrante v3
-// Prioridades:
-// 1. Restricciones legales/contractuales
-// 2. Cobertura de servicio (minSala/minCocina en franjas con demanda)
-// 3. Equilibrio de plantilla (todos llegan a contrato, repartido en semana)
-// 4. Optimización de coste
-// 5. Preferencias
-// ═══════════════════════════════════════════════════════════════════════
-// Algoritmo de cuadrante v3
-// Prioridades:
-// 1. Restricciones legales/contractuales
-// 2. Cobertura de servicio (minSala/minCocina en franjas con demanda)
-// 3. Equilibrio de plantilla (todos llegan a contrato, repartido en semana)
-// 4. Optimización de coste
-// 5. Preferencias
-// ═══════════════════════════════════════════════════════════════════════
-// Algoritmo de cuadrante v3
-// Prioridades:
-// 1. Restricciones legales/contractuales
-// 2. Cobertura de servicio (minSala/minCocina en franjas con demanda)
-// 3. Equilibrio de plantilla (todos llegan a contrato, repartido en semana)
-// 4. Optimización de coste
-// 5. Preferencias
-// ═══════════════════════════════════════════════════════════════════════
 
 const MIN_BLOQUE = 3;
 const MAX_BLOQUE = 10;
@@ -1649,6 +1619,46 @@ const MAX_HORAS_DIA = 10;
 const MIN_PAUSA_PARTIDO = 2;
 const TOLERANCIA = 1;
 const MAX_DIAS_SEMANA = 6;
+
+// ── Estimación robusta de venta para una fecha, a partir del histórico
+//    byDate del año anterior: mira el día equivalente y el mismo día de
+//    la semana anterior y posterior (3 muestras) y devuelve la mediana —
+//    así un único día atípico (lluvia, avería, festivo raro) no contamina
+//    la previsión. Con 2 muestras devuelve la media; con 1, ese valor;
+//    con 0, null (el llamador pasa a su siguiente fallback). ──────────
+function estimarVentaFecha(byDate, fechaISO) {
+  if (!byDate) return null;
+  const base = new Date(fechaISO + 'T00:00:00Z');
+  if (isNaN(base)) return null;
+  const vals = [];
+  [-7, 0, 7].forEach(off => {
+    const d = new Date(base);
+    d.setUTCDate(d.getUTCDate() + off);
+    const v = byDate[d.toISOString().slice(0, 10)];
+    if (typeof v === 'number' && v > 0) vals.push(v);
+  });
+  if (!vals.length) return null;
+  vals.sort((a, b) => a - b);
+  if (vals.length === 3) return vals[1];            // mediana
+  if (vals.length === 2) return (vals[0] + vals[1]) / 2; // media
+  return vals[0];
+}
+
+// ── Hora de inicio "típica" de un conjunto de bloques (media), tratando
+//    las horas de madrugada (antes del inicio laboral) como continuación de
+//    la noche anterior: 00:00 con inicio laboral a las 11:00 cuenta como 24,
+//    no como 0 — evita medias absurdas tipo "9:30 de la mañana" para alguien
+//    que trabaja de 19:00 a 01:00. ──────────────────────────────────────
+function horaTipicaDeBloques(bloquesEmp, refIniH) {
+  if (!bloquesEmp || !bloquesEmp.length) return null;
+  const suma = bloquesEmp.reduce((s, b) => {
+    let h = parseHM(b.ini);
+    if (h < refIniH) h += 24; // madrugada del mismo servicio
+    return s + h;
+  }, 0);
+  return suma / bloquesEmp.length;
+}
+
 
 const toHHMM = h => {
   const hN = ((h % 24) + 24) % 24;
@@ -1758,11 +1768,24 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
 
   // ── Preparación ──────────────────────────────────────────────────────
   const lunesISO = semanaMonday.toISOString().slice(0, 10);
-  const domingo = new Date(semanaMonday);
-  domingo.setUTCDate(domingo.getUTCDate() + 6);
-  const domISO = domingo.toISOString().slice(0, 10);
-  const enVacaciones = e => (e.vacaciones || []).some(v => v.inicio <= domISO && v.fin >= lunesISO);
-  const disponibles = empleados.filter(e => !e.bajaIT && !enVacaciones(e));
+  // Fecha ISO de cada día de la semana (Lun..Dom) para comprobar vacaciones día a día
+  const fechasISO = DIAS.map((_, di) => {
+    const d = new Date(semanaMonday);
+    d.setUTCDate(d.getUTCDate() + di);
+    return d.toISOString().slice(0, 10);
+  });
+  // Vacaciones POR DÍA: solo bloquea los días concretos dentro del rango,
+  // no la semana entera (antes, tocar un solo día excluía los 7).
+  const enVacacionesDia = (e, di) => (e.vacaciones || []).some(v => v.inicio <= fechasISO[di] && v.fin >= fechasISO[di]);
+  const diasVacSemana = e => DIAS.reduce((n, _, di) => n + (enVacacionesDia(e, di) ? 1 : 0), 0);
+  const disponibles = empleados.filter(e => !e.bajaIT && diasVacSemana(e) < 7);
+  // Horas objetivo prorrateadas: las vacaciones son pagadas — quien libra
+  // 2 días no debe "recuperar" sus 40h en los 5 restantes.
+  const horasObjetivo = {};
+  disponibles.forEach(e => {
+    const nVac = diasVacSemana(e);
+    horasObjetivo[e.id] = Math.round((e.horasContrato || 40) * (7 - nVac) / 7 * 2) / 2;
+  });
   const esSala = e => ['Sala', 'Barra'].includes(e.rol);
   const esCocina = e => ['Cocina', 'Office'].includes(e.rol);
 
@@ -1786,7 +1809,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
   });
   const bloquesEmpDia = {}; // "empId|dia" -> [{iniH, finH}]
 
-  const puedeTrabajarDia = (e, di) => !(e.diaDescanso && DIAS_FULL[di] === e.diaDescanso);
+  const puedeTrabajarDia = (e, di) => !(e.diaDescanso && DIAS_FULL[di] === e.diaDescanso) && !enVacacionesDia(e, di);
 
   const turnoCompatible = (e, iniH) => {
     const tp = (e.horarioHabitual || {}).turnoPref;
@@ -1802,7 +1825,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
     if (iniH < laboralIniH || finH > srvFinH) return null;
     if (!puedeTrabajarDia(emp, di)) return null;
     if (!turnoCompatible(emp, iniH)) return null;
-    if ((horasAsig[emp.id] || 0) + durH > (emp.horasContrato || 40) + TOLERANCIA_) return null;
+    if ((horasAsig[emp.id] || 0) + durH > horasObjetivo[emp.id] + TOLERANCIA_) return null;
 
     // Regla dura: nunca más de MAX_DIAS_SEMANA_ días distintos trabajados
     const diasTrabajadosSet = new Set(bloques.filter(b => b.empId === emp.id).map(b => b.dia));
@@ -1833,7 +1856,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
   // ── Duración objetivo para un empleado dado su déficit de contrato ───
   // Se calcula dinámicamente: cuántos días le quedan "razonables" y reparte
   const duracionObjetivo = (emp) => {
-    const restante = (emp.horasContrato || 40) - (horasAsig[emp.id] || 0);
+    const restante = horasObjetivo[emp.id] - (horasAsig[emp.id] || 0);
     if (restante <= 0) return 0;
     const tp = (emp.horarioHabitual || {}).turnoPref;
     const durServicio = srvFinH - srvIniH;
@@ -1871,12 +1894,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
   // ── Hora de inicio "habitual" de un empleado esta semana (media de sus
   //    bloques ya colocados) — para preferir, a igualdad de cobertura,
   //    un horario parecido día a día en vez de uno errático. ──
-  const horaTipicaSemana = (empId) => {
-    const propios = bloques.filter(b => b.empId === empId);
-    if (!propios.length) return null;
-    const suma = propios.reduce((s, b) => s + parseHM(b.ini), 0);
-    return suma / propios.length;
-  };
+  const horaTipicaSemana = (empId) => horaTipicaDeBloques(bloques.filter(b => b.empId === empId), laboralIniH);
 
   // ── Buscar mejor posición de inicio para un bloque de durH horas
   //    que cubra lo mejor posible la franja de déficit (anclaFranjaH) ────
@@ -1910,16 +1928,29 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
   // ── BUCLE PRINCIPAL: cubrir el déficit más urgente en cada iteración ──
   const MAX_ITER = 2000;
   let iter = 0;
+  // Franjas donde ya se intentó colocar a alguien y nadie pudo — se saltan
+  // en la búsqueda del peor déficit (para no repetir intentos inútiles),
+  // pero la contabilidad real de "cubierto" NO se toca: así el déficit
+  // aparece en el diagnóstico final y, si algún bloque posterior las pisa
+  // de rebote, cuenta como cobertura real y no como sobredotación.
+  const irresolubles = new Set(); // "dia|hStr|grupo"
   while (iter++ < MAX_ITER) {
-    // 1. Encontrar (día, franja, grupo) con mayor déficit sin cubrir
-    let peor = null, peorDeficit = 0;
+    // 1. Encontrar (día, franja, grupo) con mayor déficit sin cubrir.
+    //    A igualdad de déficit, gana el día de MÁS venta: si las horas de
+    //    plantilla no llegan para toda la semana, el hueco inevitable debe
+    //    caer en los días flojos, nunca en sábado/domingo.
+    let peor = null, peorDeficit = 0, peorVentas = -1;
     DIAS.forEach((dia, di) => {
+      const ventasDia = ventasPorDia[dia] || 0;
       franjas.forEach(f => {
         ['sala', 'cocina'].forEach(grupo => {
+          if (irresolubles.has(`${dia}|${f.hStr}|${grupo}`)) return;
           const nec = demanda[dia][f.hStr][grupo] || 0;
           const cub = cubierto[dia][f.hStr][grupo] || 0;
           const def = nec - cub;
-          if (def > peorDeficit) { peorDeficit = def; peor = { dia, di, franjaH: f.h, grupo }; }
+          if (def > peorDeficit || (def === peorDeficit && def > 0 && ventasDia > peorVentas)) {
+            peorDeficit = def; peorVentas = ventasDia; peor = { dia, di, franjaH: f.h, grupo };
+          }
         });
       });
     });
@@ -1934,11 +1965,11 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
     const candidatos = disponibles
       .filter(e => filtroRol(e))
       .filter(e => puedeTrabajarDia(e, di))
-      .filter(e => (horasAsig[e.id] || 0) < (e.horasContrato || 40) + TOLERANCIA_)
+      .filter(e => (horasAsig[e.id] || 0) < horasObjetivo[e.id] + TOLERANCIA_)
       .filter(e => turnoCompatible(e, franjaH)) // debe poder cubrir esta franja según su preferencia
       .sort((a, b) => {
-        const pctA = (horasAsig[a.id] || 0) / (a.horasContrato || 40);
-        const pctB = (horasAsig[b.id] || 0) / (b.horasContrato || 40);
+        const pctA = (horasAsig[a.id] || 0) / (horasObjetivo[a.id] || 40);
+        const pctB = (horasAsig[b.id] || 0) / (horasObjetivo[b.id] || 40);
         return pctA - pctB;
       });
 
@@ -1954,10 +1985,11 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
 
     if (!colocado) {
       // Nadie puede cubrir esta franja concreta con las reglas actuales.
-      // Marcarla como "resuelta" (con el déficit que tenía) para no bloquear
-      // el bucle indefinidamente; quedará reflejada en el diagnóstico final.
+      // Se marca como irresoluble para no reintentarla (evita bucle infinito),
+      // pero la cobertura real queda intacta: el déficit se verá en el
+      // diagnóstico final tal y como es.
       const key = franjas.find(f => f.h === franjaH).hStr;
-      cubierto[dia][key][grupo] = demanda[dia][key][grupo];
+      irresolubles.add(`${dia}|${key}|${grupo}`);
     }
   }
 
@@ -1967,7 +1999,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
   disponibles.forEach(emp => {
     let intentos = 0;
     while (intentos++ < 10) {
-      const deficit = (emp.horasContrato || 40) - (horasAsig[emp.id] || 0);
+      const deficit = horasObjetivo[emp.id] - (horasAsig[emp.id] || 0);
       if (deficit < MIN_BLOQUE_ - 0.01) break;
       const grupo = esSala(emp) ? 'sala' : 'cocina';
       const horaTipica = horaTipicaSemana(emp.id);
@@ -2007,7 +2039,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
   const diagnostico = { infracontrato: [], infrademanda: [] };
   disponibles.forEach(e => {
     const h = horasAsig[e.id] || 0;
-    const c = e.horasContrato || 40;
+    const c = horasObjetivo[e.id];
     if (h < c - TOLERANCIA_) diagnostico.infracontrato.push({ empId: e.id, horas: Math.round(h * 10) / 10, contrato: c, deficit: Math.round((c - h) * 10) / 10 });
   });
   DIAS.forEach(d => {
