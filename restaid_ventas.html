@@ -919,6 +919,7 @@ function publishPub(g){
       halfHourCurva,
       halfHourCurvaPorDia,
       permanenciaPorDiaTurno,
+      aforo:(g.totalAsientos>0?g.totalAsientos:null),
       _ts:Date.now()
     };
     localStorage.setItem('restaid_pub_v1',JSON.stringify(pub));

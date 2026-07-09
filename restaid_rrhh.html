@@ -712,13 +712,16 @@ function pctClass(pct){if(pct==null||!isFinite(pct))return'none';const t=DB.conf
 function staffCount(w,dia,turno,rol){return w.asignaciones.filter(a=>a.dia===dia&&a.turno===turno&&(()=>{const e=emp(a.empId);return e&&e.rol===rol;})()).length;}
 function _curvaDiaUI(dia){let pub={};try{pub=JSON.parse(localStorage.getItem('restaid_pub_v1')||'{}')||{};}catch(e){}const vPub=pub.ventas||{};return(vPub.halfHourCurvaPorDia&&vPub.halfHourCurvaPorDia[dia])||vPub.halfHourCurva||null;}
 function _permanenciaDiaUI(dia){let pub={};try{pub=JSON.parse(localStorage.getItem('restaid_pub_v1')||'{}')||{};}catch(e){}const vPub=pub.ventas||{};return(vPub.permanenciaPorDiaTurno&&vPub.permanenciaPorDiaTurno[dia])||null;}
+function _aforoUI(){let pub={};try{pub=JSON.parse(localStorage.getItem('restaid_pub_v1')||'{}')||{};}catch(e){}const vPub=pub.ventas||{};return vPub.aforo>0?vPub.aforo:null;}
 function staffNeeded(w,dia,turno,rol){
   const vd=ventasDia(w,dia);
   if(vd<=0)return 0;
   const cfg=DB.config||{};
+  const aforo=_aforoUI();
+  const cfgUI=aforo?{...cfg,aforo}:cfg;
   const franjas=generarFranjas(cfg.servicioIni||'12:00',cfg.servicioFin||'01:00');
-  const demanda=calcularDemandaFranjas(vd,_curvaDiaUI(dia),cfg,franjas,_permanenciaDiaUI(dia));
-  return staffNeededUnificado(demanda,franjas,cfg,turno,rol);
+  const demanda=calcularDemandaFranjas(vd,_curvaDiaUI(dia),cfgUI,franjas,_permanenciaDiaUI(dia));
+  return staffNeededUnificado(demanda,franjas,cfgUI,turno,rol);
 }
 
 /* ── Publicar al core para otros módulos ───────────── */
@@ -1448,6 +1451,7 @@ function openAjustesCuadrante(){
     </div>
     <div class="field-row">
       <div class="field"><label>Tiempo medio de mesa (minutos)</label><input type="number" step="5" min="30" max="240" id="ac-permanencia" value="${c.permanenciaMin||90}"><div class="field-hint">Cuánto ocupa una mesa un cliente de media. Determina cuánta gente hay sentada a la vez y, con ello, el personal necesario. Se afina solo con datos reales de Revo cuando el módulo de Ventas los publica.</div></div>
+      <div class="field"><label>Minutos extra por mesa (invisible al software)</label><input type="number" step="5" min="0" max="60" id="ac-margen" value="${c.margenMesaMin!=null?c.margenMesaMin:25}"><div class="field-hint">El TPV mide de apertura a cierre del ticket, pero el cliente se sienta antes de pedir y se levanta después de pagar. Estos minutos se suman al tiempo medido para reflejar la ocupación real de la silla.</div></div>
     </div>
     <div class="modal-actions"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-amber btn-sm" onclick="saveAjustesCuadrante()">Guardar</button></div>
   </div></div>`;
@@ -1460,6 +1464,7 @@ function saveAjustesCuadrante(){
   DB.config.tolerancia=Math.max(0,parseFloat($('ac-tolerancia').value)||1);
   DB.config.maxDiasSemana=Math.min(7,Math.max(1,parseInt($('ac-maxdias').value)||6));
   DB.config.permanenciaMin=Math.min(240,Math.max(30,parseInt($('ac-permanencia').value)||90));
+  DB.config.margenMesaMin=(function(){const v=parseInt($('ac-margen').value);return Math.min(60,Math.max(0,isNaN(v)?25:v));})();
   saveDB();closeModal();updateSidebar();showPage($$('.tab.active')[0]?.dataset.page||'resumen');toast('Ajustes del cuadrante guardados');
 }
 
@@ -1533,6 +1538,9 @@ function calcularCuadranteV2(){
   // si existe, la fórmula de demanda calcula ocupación con datos reales;
   // si no, usa el valor por defecto configurable (90 min).
   if(vPub.permanenciaPorDiaTurno)cfg.permanenciaPorDia=vPub.permanenciaPorDiaTurno;
+  // Aforo total (sillas del local) publicado desde Ventas: techo físico de
+  // la ocupación — nunca puede haber más gente sentada que sillas.
+  if(vPub.aforo>0)cfg.aforo=vPub.aforo;
 
   // ── Curvas por día ──────────────────────────────────────────────────
   const curvasPorDia={};
@@ -1701,9 +1709,16 @@ function calcularDemandaFranjas(ventasDia, curvaDia, config, franjas, permanenci
   // (permanenciaPorDiaTurno publicado desde Ventas), si no el valor
   // configurable, si no 90 min por defecto.
   const permDefecto = config.permanenciaMin > 0 ? config.permanenciaMin : 90;
+  // Margen de mesa: el tiempo medido por el software va de apertura a cierre
+  // DEL TICKET — el cliente se sienta antes de pedir y se levanta después de
+  // pagar. Ese tiempo es invisible para el software pero ocupa silla igual.
+  const margenMesa = config.margenMesaMin != null && config.margenMesaMin >= 0 ? config.margenMesaMin : 25;
+  // Techo físico: nunca puede haber más gente sentada que sillas (aforo
+  // publicado desde Ventas, suma de asientos de todas las zonas)
+  const aforo = config.aforo > 0 ? config.aforo : Infinity;
   const permDe = turno => {
     const p = permanenciaTurnos && permanenciaTurnos[turno];
-    return p > 0 ? p : permDefecto;
+    return (p > 0 ? p : permDefecto) + margenMesa;
   };
 
   // 1. Entradas de comensales por franja (flujo)
@@ -1733,6 +1748,7 @@ function calcularDemandaFranjas(ventasDia, curvaDia, config, franjas, permanenci
       if (!g || g.h < srvIniH) break;
       sentados += entradas[g.hStr];
     }
+    if (sentados > aforo) sentados = aforo; // no caben más que sillas hay
     const necesarioSala = sentados > 0 ? Math.ceil(sentados / ratioSala) : 0;
     const necesarioCoc = sentados > 0 ? Math.ceil(sentados / ratioCocina) : 0;
     const minEfectivoSala = sentados >= umbralMin ? minSala : (sentados > 0 ? 1 : 0);
