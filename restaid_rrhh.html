@@ -226,6 +226,17 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
 .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:1.5rem;flex-wrap:wrap}
 /* Cuadrante grid */
 .cuad-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:1.1rem;flex-wrap:wrap}
+.dim-panel{background:var(--card,#fff);border:1px solid var(--bdr,#e5e0d8);border-radius:10px;padding:12px 16px;margin-bottom:1.1rem}
+.dim-titulo{font-size:12px;font-weight:700;color:var(--tx2,#666);margin-bottom:8px}
+.dim-sub{font-weight:400;color:var(--tx3,#999)}
+.dim-grupo{display:flex;align-items:center;gap:12px;padding:4px 0;font-size:13px;flex-wrap:wrap}
+.dim-nombre{font-weight:600;min-width:60px}
+.dim-datos{color:var(--tx2,#666)}
+.dim-veredicto{font-weight:600;padding:2px 10px;border-radius:12px;font-size:12px}
+.dim-ok{background:#e6f4ea;color:#1e7e34}
+.dim-falta{background:#fdecea;color:#c62828}
+.dim-sobra{background:#e8f0fe;color:#1a56db}
+.dim-hint{font-size:11px;color:var(--tx3,#999);margin-top:6px}
 .cuad-week{display:flex;align-items:center;gap:8px;background:var(--surf);border:1px solid var(--bdr);border-radius:7px;padding:5px 8px}
 .cuad-week button{background:transparent;border:none;cursor:pointer;font-size:16px;color:var(--tx2);padding:2px 7px;border-radius:5px}
 .cuad-week button:hover{background:var(--bg)}
@@ -1055,6 +1066,39 @@ function delEmp(id){
    CUADRANTE — secciones Sala y Cocina + dotación
 ═══════════════════════════════════════════════════════════════════ */
 let CUAD_AI_OPEN=false;
+/* ── Dimensionamiento de plantilla: horas necesarias (mismo modelo del
+   cuadrante) vs contratadas, por grupo, con veredicto en lenguaje llano.
+   Responde: ¿está bien dimensionada la plantilla, falta gente o sobra? ── */
+function dimensionamientoHTML(w,salaEmps,cocEmps){
+  const cfg=DB.config||{};
+  const aforo=_aforoUI();
+  const cfgUI=aforo?{...cfg,aforo}:cfg;
+  // Ventas previstas por día (mismas que usa la fila Dotación)
+  const ventasPorDia={};let hayVentas=false;
+  DIAS.forEach(d=>{const v=ventasDia(w,d);ventasPorDia[d]=v;if(v>0)hayVentas=true;});
+  if(!hayVentas)return '';// sin previsión aún: no inventar un veredicto
+  let pub={};try{pub=JSON.parse(localStorage.getItem('restaid_pub_v1')||'{}')||{};}catch(e){}
+  const vPub=pub.ventas||{};
+  const curvas={};DIAS.forEach(d=>{curvas[d]=(vPub.halfHourCurvaPorDia&&vPub.halfHourCurvaPorDia[d])||vPub.halfHourCurva||null;});
+  const nec=horasNecesariasSemana(ventasPorDia,curvas,cfgUI,vPub.permanenciaPorDiaTurno||null);
+  const conSala=salaEmps.reduce((s,e)=>s+(e.horasContrato||0),0);
+  const conCoc=cocEmps.reduce((s,e)=>s+(e.horasContrato||0),0);
+  const linea=(nombre,necH,conH)=>{
+    const dif=Math.round((conH-necH)*10)/10;
+    let cls,txt;
+    if(dif<-1){cls='dim-falta';txt=`faltan ${fc(-dif,0)} h`;}
+    else if(dif>necH*0.2){cls='dim-sobra';txt=`sobran ~${fc(dif,0)} h`;}
+    else{cls='dim-ok';txt='equilibrado';}
+    return `<div class="dim-grupo"><span class="dim-nombre">${nombre}</span><span class="dim-datos">${fc(necH,0)} h necesarias · ${fc(conH,0)} h contratadas</span><span class="dim-veredicto ${cls}">${txt}</span></div>`;
+  };
+  return `<div class="dim-panel">
+    <div class="dim-titulo">⚖ Dimensionamiento de plantilla <span class="dim-sub">(semana prevista, mismas reglas que la fila Dotación)</span></div>
+    ${linea('Sala',nec.sala,conSala)}
+    ${linea('Cocina',nec.cocina,conCoc)}
+    <div class="dim-hint">Las horas necesarias son el mínimo teórico franja a franja; en la práctica conviene un colchón del 10-15% porque los turnos no encajan perfectos (duración mínima, descansos, máximo de días).</div>
+  </div>`;
+}
+
 function renderCuadrante(){
   const pg=$('pg-cuadrante');
   if(!DB.empleados.length){pg.innerHTML=`<div class="page-hd"><h2>Cuadrante</h2></div><div class="empty"><div class="empty-icon">📅</div><h3>Primero, tu equipo</h3><p>Necesitas empleados dados de alta para montar el cuadrante.</p><button class="btn btn-amber" onclick="showPage('empleados')">Añadir empleados →</button></div>`;return;}
@@ -1074,6 +1118,7 @@ function renderCuadrante(){
     ${w.asignaciones.length?`<button class="btn btn-danger btn-sm" onclick="clearCuad()">Vaciar</button>`:''}
   </div>
   <div id="cuad-ai-panel"></div>
+  ${dimensionamientoHTML(w,salaEmps,cocEmps)}
   ${isCurWeek?renderCuadNow():''}
   <div class="cuad-scroll"><table class="cuad-table">
     <colgroup><col style="width:160px">${DIAS.map(()=>'<col>').join('')}<col style="width:100px"></colgroup>
@@ -1829,6 +1874,33 @@ function staffCubiertoUnificado(bloquesDia, demandaDia, franjas, config, turno, 
   };
   return Math.max(...franjasPico.map(f => presencia(f.hStr)));
 }
+
+// ── Dimensionamiento de plantilla: horas-persona por semana que exige la
+//    dotación calculada (mismo modelo del cuadrante: ocupación simultánea,
+//    mínimos, llegada antes de abrir), sumadas franja a franja por grupo.
+//    Comparar contra las horas contratadas responde: ¿la plantilla está
+//    bien dimensionada, falta gente o sobra? ──────────────────────────
+function horasNecesariasSemana(ventasPorDia, curvasPorDia, config, permanenciaPorDia) {
+  const cfg = config || {};
+  const srvIniH = parseHM(cfg.servicioIni || '12:00');
+  const laboralIniH = srvIniH - (cfg.llegadaAntes > 0 ? cfg.llegadaAntes / 60 : 0);
+  const franjas = generarFranjas(toHHMM(laboralIniH), cfg.servicioFin || '01:00');
+  let sala = 0, cocina = 0;
+  DIAS.forEach(d => {
+    const dem = calcularDemandaFranjas(
+      (ventasPorDia && ventasPorDia[d]) || 0,
+      (curvasPorDia && curvasPorDia[d]) || null,
+      cfg, franjas,
+      (permanenciaPorDia && permanenciaPorDia[d]) || null
+    );
+    franjas.forEach(f => {
+      sala += (dem[f.hStr].sala || 0) * 0.5;
+      cocina += (dem[f.hStr].cocina || 0) * 0.5;
+    });
+  });
+  return { sala: Math.round(sala * 10) / 10, cocina: Math.round(cocina * 10) / 10 };
+}
+
 
 
 /**
