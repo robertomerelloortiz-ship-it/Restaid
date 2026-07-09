@@ -708,8 +708,19 @@ function costeSemana(w){return w.asignaciones.reduce((s,a)=>s+asignCoste(a),0);}
 function costeDia(w,d){return w.asignaciones.filter(a=>a.dia===d).reduce((s,a)=>s+asignCoste(a),0);}
 function horasEmpSemana(w,empId){return w.asignaciones.filter(a=>a.empId===empId).reduce((s,a)=>s+asignHoras(a),0);}
 function pctClass(pct){if(pct==null||!isFinite(pct))return'none';const t=DB.config.targetPct||30;if(pct<=t-2)return'ok';if(pct<=t+5)return'warn';return'bad';}
-/* Dotación: ¿cuántas personas del rol hay asignadas en día+turno? */
-function staffCount(w,dia,turno,rol){return w.asignaciones.filter(a=>a.dia===dia&&a.turno===turno&&(()=>{const e=emp(a.empId);return e&&e.rol===rol;})()).length;}
+/* Dotación: presencia SIMULTÁNEA del rol en el pico de demanda del día+turno.
+   Misma vara que staffNeeded (antes contaba bloques por etiqueta de inicio:
+   un 17:30-00:00 cubría toda la cena pero contaba 0 en "Cena"). */
+function staffCount(w,dia,turno,rol){
+  const cfg=DB.config||{};
+  const aforo=_aforoUI();
+  const cfgUI=aforo?{...cfg,aforo}:cfg;
+  const franjas=generarFranjas(cfg.servicioIni||'12:00',cfg.servicioFin||'01:00');
+  const vd=ventasDia(w,dia);
+  const demanda=calcularDemandaFranjas(vd,_curvaDiaUI(dia),cfgUI,franjas,_permanenciaDiaUI(dia));
+  const bloquesRol=w.asignaciones.filter(a=>a.dia===dia&&(()=>{const e=emp(a.empId);return e&&e.rol===rol;})());
+  return staffCubiertoUnificado(bloquesRol,demanda,franjas,cfgUI,turno);
+}
 function _curvaDiaUI(dia){let pub={};try{pub=JSON.parse(localStorage.getItem('restaid_pub_v1')||'{}')||{};}catch(e){}const vPub=pub.ventas||{};return(vPub.halfHourCurvaPorDia&&vPub.halfHourCurvaPorDia[dia])||vPub.halfHourCurva||null;}
 function _permanenciaDiaUI(dia){let pub={};try{pub=JSON.parse(localStorage.getItem('restaid_pub_v1')||'{}')||{};}catch(e){}const vPub=pub.ventas||{};return(vPub.permanenciaPorDiaTurno&&vPub.permanenciaPorDiaTurno[dia])||null;}
 function _aforoUI(){let pub={};try{pub=JSON.parse(localStorage.getItem('restaid_pub_v1')||'{}')||{};}catch(e){}const vPub=pub.ventas||{};return vPub.aforo>0?vPub.aforo:null;}
@@ -920,7 +931,7 @@ function renderEmpleados(){
 }
 function empCard(e,w){
   const hSem=horasEmpSemana(w,e.id),sH=calcSalarioHora(e),pasivo=calcPasivoLaboral(e);
-  const over=e.horasContrato&&hSem>e.horasContrato;
+  const over=e.horasContrato&&hSem>e.horasContrato+(DB.config.tolerancia!=null?DB.config.tolerancia:1)+0.01;
   const esBaja=!!e.bajaIT;
   const costeBaja=esBaja?(Number(e.costeITMes)||0):0;
   return `<div class="emp-card${esBaja?' baja-it':''}">
@@ -1117,7 +1128,7 @@ function renderCuadRows(label,emps,rolKey,w,isCurWeek,todayDow){
   let html=`<tr><td colspan="${cols}" class="cuad-section-hd">${esc(label)}<span class="count-badge">${emps.length}</span></td></tr>`;
   emps.forEach(e=>{
     const hSem=horasEmpSemana(w,e.id),cSem=w.asignaciones.filter(a=>a.empId===e.id).reduce((s,a)=>s+asignCoste(a),0);
-    const over=e.horasContrato&&hSem>e.horasContrato;
+    const over=e.horasContrato&&hSem>e.horasContrato+(DB.config.tolerancia!=null?DB.config.tolerancia:1)+0.01;
     const isDescanso=d=>e.diaDescanso&&DIAS_FULL[DIAS.indexOf(d)]===e.diaDescanso;
     const hReal=horasFichadasSemana(e.id,DB.semanaActual);
     const hCerr=horasCerradasSemana(e.id,DB.semanaActual);
@@ -1783,6 +1794,45 @@ function staffNeededUnificado(demandaDia, franjas, config, turno, rol) {
   return max;
 }
 
+// ── Cobertura unificada: cuántas personas están presentes SIMULTÁNEAMENTE
+//    en las franjas donde la demanda del turno hace pico — la misma vara
+//    que staffNeededUnificado usa para el necesario. Antes la UI contaba
+//    bloques por su etiqueta de turno (según hora de inicio): un bloque
+//    17:30-00:00 cubría toda la cena pero contaba 0 en "Cena". Si varias
+//    franjas empatan en el pico, se devuelve la cobertura mínima entre
+//    ellas (conservador: mejor avisar de menos que ocultar un hueco).
+//    bloquesDia: bloques del día YA filtrados por rol ({ini, fin}). ──
+function staffCubiertoUnificado(bloquesDia, demandaDia, franjas, config, turno) {
+  const umbral = parseHM(config.umbralCena || '17:00');
+  const fsTurno = franjas.filter(f => turno === 'Comida' ? f.h < umbral : f.h >= umbral);
+  if (!fsTurno.length || !bloquesDia.length) return 0;
+  // Franja(s) donde la demanda del turno hace pico (sala y cocina comparten
+  // curva, así que el pico temporal coincide; usamos el máximo de ambos)
+  let picoVal = -1;
+  fsTurno.forEach(f => {
+    const d = demandaDia[f.hStr] || {};
+    const v = Math.max(d.sala || 0, d.cocina || 0);
+    if (v > picoVal) picoVal = v;
+  });
+  const franjasPico = fsTurno.filter(f => {
+    const d = demandaDia[f.hStr] || {};
+    return Math.max(d.sala || 0, d.cocina || 0) === picoVal;
+  });
+  // Presencia simultánea en cada franja pico; devolver la mínima
+  const presencia = fStr => {
+    const fH = parseHM(fStr);
+    const fAdj = fH < 11 ? fH + 24 : fH; // madrugada = continuación de la noche
+    return bloquesDia.filter(b => {
+      let i = parseHM(b.ini), fin = parseHM(b.fin);
+      if (i < 11) i += 24;
+      if (fin <= i) fin += 24;
+      return fAdj >= i && fAdj < fin;
+    }).length;
+  };
+  return Math.min(...franjasPico.map(f => presencia(f.hStr)));
+}
+
+
 /**
  * generarCuadrante v3
  */
@@ -2022,6 +2072,18 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
       .sort((a, b) => {
         const pctA = (horasAsig[a.id] || 0) / (horasObjetivo[a.id] || 40);
         const pctB = (horasAsig[b.id] || 0) / (horasObjetivo[b.id] || 40);
+        // Afinidad de horario (prioridad baja, λ pequeño a propósito):
+        // a igualdad aproximada de % de contrato, preferir al candidato
+        // cuya hora habitual de esta semana esté más cerca del hueco —
+        // así cada empleado tiende a repetir franja día a día en vez de
+        // saltar de comidas a cenas erráticamente.
+        const LAMBDA = (typeof cfg.lambdaAfinidad === 'number') ? cfg.lambdaAfinidad : 0.01;
+        if (LAMBDA > 0) {
+          const tA = horaTipicaSemana(a.id), tB = horaTipicaSemana(b.id);
+          const dA = tA != null ? Math.abs(tA - franjaH) : 0;
+          const dB = tB != null ? Math.abs(tB - franjaH) : 0;
+          return (pctA + LAMBDA * dA) - (pctB + LAMBDA * dB);
+        }
         return pctA - pctB;
       });
 
