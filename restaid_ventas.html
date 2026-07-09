@@ -1140,8 +1140,10 @@ async function runAnalysis(){
     const tipo=t.hasFood?'comida':'bebida',vs=visitStats[tipo];
     vs.tickets++;vs.total+=t.total;vs.com+=t.com;
     if(t.dur>0&&t.dur<300){vs.durSum+=t.dur;vs.durN++;
-      // Permanencia real por (día, turno) — para ocupación simultánea en RRHH
-      const kdt=t.day+'|'+t.turno;if(!durByDayTurno[kdt])durByDayTurno[kdt]={sum:0,n:0};durByDayTurno[kdt].sum+=t.dur;durByDayTurno[kdt].n++;
+      // Permanencia real por (día, turno) — para ocupación simultánea en RRHH.
+      // Solo tickets CON COMIDA: las visitas de solo bebida (café, copa) son
+      // cortas y hundirían la media que dimensiona el personal de sala/cocina.
+      if(t.hasFood){const kdt=t.day+'|'+t.turno;if(!durByDayTurno[kdt])durByDayTurno[kdt]={sum:0,n:0};durByDayTurno[kdt].sum+=t.dur;durByDayTurno[kdt].n++;}
     }
     vs.byTurno[t.turno]=(vs.byTurno[t.turno]||0)+t.total;vs.byDay[t.day]=(vs.byDay[t.day]||0)+t.total;
     if(!convEmp[t.emp])convEmp[t.emp]={comida:0,bebida:0};convEmp[t.emp][tipo]++;
