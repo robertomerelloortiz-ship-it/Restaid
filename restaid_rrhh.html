@@ -1922,6 +1922,25 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
   };
 
   // ── Colocar un bloque, con todas las verificaciones ──────────────────
+  // ¿Cabe un bloque [iniH, finH) en el día, respetando solapes, pausas y
+  // que ningún turno CONTINUO resultante (bloques pegados) supere el máximo?
+  const cabeEnDia = (existentes, iniH, finH) => {
+    for (const b of existentes) {
+      if (iniH < b.finH && finH > b.iniH) return false; // solape
+      const pausa = iniH >= b.finH ? iniH - b.finH : b.iniH - finH;
+      if (pausa > 0 && pausa < MIN_PAUSA_PARTIDO_) return false; // pausa corta
+    }
+    // Turnos continuos: unir el candidato con los adyacentes y medir
+    const tramos = existentes.map(b => [b.iniH, b.finH]).concat([[iniH, finH]]).sort((a, b) => a[0] - b[0]);
+    let runIni = tramos[0][0], runFin = tramos[0][1];
+    for (let t = 1; t < tramos.length; t++) {
+      if (Math.abs(tramos[t][0] - runFin) < 0.01) { runFin = tramos[t][1]; }
+      else { if (runFin - runIni > MAX_BLOQUE_ + 0.01) return false; runIni = tramos[t][0]; runFin = tramos[t][1]; }
+    }
+    if (runFin - runIni > MAX_BLOQUE_ + 0.01) return false;
+    return true;
+  };
+
   const intentarColocar = (emp, dia, di, iniH, durH) => {
     const finH = iniH + durH;
     if (iniH < laboralIniH || finH > srvFinH) return null;
@@ -1938,11 +1957,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
     const horasDia = existentes.reduce((s, b) => s + (b.finH - b.iniH), 0);
     if (horasDia + durH > MAX_HORAS_DIA_) return null;
 
-    for (const b of existentes) {
-      if (iniH < b.finH && finH > b.iniH) return null;
-      const pausa = iniH >= b.finH ? iniH - b.finH : b.iniH - finH;
-      if (pausa > 0 && pausa < MIN_PAUSA_PARTIDO_) return null;
-    }
+    if (!cabeEnDia(existentes, iniH, finH)) return null;
 
     const turno = iniH < umbral ? 'Comida' : 'Cena';
     const bloque = { id: uid(), empId: emp.id, dia, ini: toHHMM(iniH), fin: toHHMM(finH), turno };
@@ -2012,13 +2027,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
       const existentes = bloquesEmpDia[key] || [];
       const horasDia = existentes.reduce((s, b) => s + (b.finH - b.iniH), 0);
       if (horasDia + durH > MAX_HORAS_DIA_) continue;
-      let bloqueado = false;
-      for (const b of existentes) {
-        if (iniH < b.finH && finH > b.iniH) { bloqueado = true; break; }
-        const pausa = iniH >= b.finH ? iniH - b.finH : b.iniH - finH;
-        if (pausa > 0 && pausa < MIN_PAUSA_PARTIDO_) { bloqueado = true; break; }
-      }
-      if (bloqueado) continue;
+      if (!cabeEnDia(existentes, iniH, finH)) continue;
 
       let score = scoreCobertura(dia, iniH, finH, grupo);
       if (horaTipica != null) score -= PESO_CONSISTENCIA_HORARIO * Math.abs(iniH - horaTipica);
@@ -2130,13 +2139,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
         for (let iniH = laboralIniH; iniH <= srvFinH - dur + 0.01; iniH += 0.5) {
           if (!turnoCompatible(emp, iniH)) continue;
           const finH = iniH + dur;
-          let bloqueado = false;
-          for (const b of existentes) {
-            if (iniH < b.finH && finH > b.iniH) { bloqueado = true; break; }
-            const pausa = iniH >= b.finH ? iniH - b.finH : b.iniH - finH;
-            if (pausa > 0 && pausa < MIN_PAUSA_PARTIDO_) { bloqueado = true; break; }
-          }
-          if (bloqueado) continue;
+          if (!cabeEnDia(existentes, iniH, finH)) continue;
           let score = scoreCobertura(dia, iniH, finH, grupo);
           if (horaTipica != null) score -= PESO_CONSISTENCIA_HORARIO * Math.abs(iniH - horaTipica);
           if (score > mejorScore) { mejorScore = score; mejorIni = iniH; mejorDia = dia; mejorDur = dur; }
@@ -2147,6 +2150,31 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
       const b = intentarColocar(emp, mejorDia, di, mejorIni, mejorDur);
       if (!b) break;
     }
+  });
+
+  // ── Fusión de bloques adyacentes ─────────────────────────────────────
+  // El bucle incremental puede dejar bloques contiguos (fin de uno ==
+  // inicio del siguiente) del mismo empleado y día: en realidad son un
+  // único turno seguido y se muestran/gestionan como uno solo.
+  const _norm = s => { let h = parseHM(s); return h < laboralIniH ? h + 24 : h; };
+  DIAS.forEach(dia => {
+    disponibles.forEach(e => {
+      const propios = bloques
+        .filter(b => b.empId === e.id && b.dia === dia)
+        .sort((a, b) => _norm(a.ini) - _norm(b.ini));
+      for (let j = 1; j < propios.length; j++) {
+        const prev = propios[j - 1], act = propios[j];
+        let finPrev = _norm(prev.fin); if (finPrev <= _norm(prev.ini)) finPrev += 24;
+        if (Math.abs(finPrev - _norm(act.ini)) < 0.01) {
+          // Fusionar: el anterior absorbe al actual
+          prev.fin = act.fin;
+          const idx = bloques.indexOf(act);
+          if (idx !== -1) bloques.splice(idx, 1);
+          propios.splice(j, 1);
+          j--; // reevaluar por si hay una tercera pieza contigua
+        }
+      }
+    });
   });
 
   // ── Diagnóstico ──────────────────────────────────────────────────────
