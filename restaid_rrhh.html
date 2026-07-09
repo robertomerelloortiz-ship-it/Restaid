@@ -711,12 +711,13 @@ function pctClass(pct){if(pct==null||!isFinite(pct))return'none';const t=DB.conf
 /* Dotación: ¿cuántas personas del rol hay asignadas en día+turno? */
 function staffCount(w,dia,turno,rol){return w.asignaciones.filter(a=>a.dia===dia&&a.turno===turno&&(()=>{const e=emp(a.empId);return e&&e.rol===rol;})()).length;}
 function _curvaDiaUI(dia){let pub={};try{pub=JSON.parse(localStorage.getItem('restaid_pub_v1')||'{}')||{};}catch(e){}const vPub=pub.ventas||{};return(vPub.halfHourCurvaPorDia&&vPub.halfHourCurvaPorDia[dia])||vPub.halfHourCurva||null;}
+function _permanenciaDiaUI(dia){let pub={};try{pub=JSON.parse(localStorage.getItem('restaid_pub_v1')||'{}')||{};}catch(e){}const vPub=pub.ventas||{};return(vPub.permanenciaPorDiaTurno&&vPub.permanenciaPorDiaTurno[dia])||null;}
 function staffNeeded(w,dia,turno,rol){
   const vd=ventasDia(w,dia);
   if(vd<=0)return 0;
   const cfg=DB.config||{};
   const franjas=generarFranjas(cfg.servicioIni||'12:00',cfg.servicioFin||'01:00');
-  const demanda=calcularDemandaFranjas(vd,_curvaDiaUI(dia),cfg,franjas);
+  const demanda=calcularDemandaFranjas(vd,_curvaDiaUI(dia),cfg,franjas,_permanenciaDiaUI(dia));
   return staffNeededUnificado(demanda,franjas,cfg,turno,rol);
 }
 
@@ -1445,6 +1446,9 @@ function openAjustesCuadrante(){
       <div class="field"><label>Margen sobre las horas de contrato</label><input type="number" step="0.5" min="0" id="ac-tolerancia" value="${c.tolerancia!=null?c.tolerancia:1}"><div class="field-hint">Cuánto se puede pasar o quedar corto de sus horas semanales sin que sea un problema.</div></div>
       <div class="field"><label>Máximo de días trabajados por semana</label><input type="number" step="1" min="1" max="7" id="ac-maxdias" value="${c.maxDiasSemana||6}"><div class="field-hint">Garantiza al menos un día de descanso a la semana para cada empleado.</div></div>
     </div>
+    <div class="field-row">
+      <div class="field"><label>Tiempo medio de mesa (minutos)</label><input type="number" step="5" min="30" max="240" id="ac-permanencia" value="${c.permanenciaMin||90}"><div class="field-hint">Cuánto ocupa una mesa un cliente de media. Determina cuánta gente hay sentada a la vez y, con ello, el personal necesario. Se afina solo con datos reales de Revo cuando el módulo de Ventas los publica.</div></div>
+    </div>
     <div class="modal-actions"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-amber btn-sm" onclick="saveAjustesCuadrante()">Guardar</button></div>
   </div></div>`;
 }
@@ -1455,6 +1459,7 @@ function saveAjustesCuadrante(){
   DB.config.minPausaPartido=Math.max(0,parseFloat($('ac-minpausa').value)||2);
   DB.config.tolerancia=Math.max(0,parseFloat($('ac-tolerancia').value)||1);
   DB.config.maxDiasSemana=Math.min(7,Math.max(1,parseInt($('ac-maxdias').value)||6));
+  DB.config.permanenciaMin=Math.min(240,Math.max(30,parseInt($('ac-permanencia').value)||90));
   saveDB();closeModal();updateSidebar();showPage($$('.tab.active')[0]?.dataset.page||'resumen');toast('Ajustes del cuadrante guardados');
 }
 
@@ -1524,6 +1529,10 @@ function calcularCuadranteV2(){
   const vPub=pub.ventas||{};
   const halfHourCurvaPorDia=vPub.halfHourCurvaPorDia||null;
   const halfHourCurvaGlobal=vPub.halfHourCurva||null;
+  // Permanencia real por día+turno (minutos de mesa) publicada desde Ventas:
+  // si existe, la fórmula de demanda calcula ocupación con datos reales;
+  // si no, usa el valor por defecto configurable (90 min).
+  if(vPub.permanenciaPorDiaTurno)cfg.permanenciaPorDia=vPub.permanenciaPorDiaTurno;
 
   // ── Curvas por día ──────────────────────────────────────────────────
   const curvasPorDia={};
@@ -1678,7 +1687,7 @@ function generarFranjas(servicioIni, servicioFin) {
   return franjas;
 }
 
-function calcularDemandaFranjas(ventasDia, curvaDia, config, franjas) {
+function calcularDemandaFranjas(ventasDia, curvaDia, config, franjas, permanenciaTurnos) {
   const ticketMed = config.ticketMedio || 25;
   const ratioSala = config.ratioSala || 25;
   const ratioCocina = config.ratioCocina || 30;
@@ -1687,20 +1696,47 @@ function calcularDemandaFranjas(ventasDia, curvaDia, config, franjas) {
   const umbralMin = config.umbralMinimo || 3;
   // Hora real de apertura al público (para demanda)
   const srvIniH = parseHM(config.servicioIni || '12:00');
+  const umbralCenaH = parseHM(config.umbralCena || '17:00');
+  // Permanencia media de mesa en minutos: por turno si hay datos reales
+  // (permanenciaPorDiaTurno publicado desde Ventas), si no el valor
+  // configurable, si no 90 min por defecto.
+  const permDefecto = config.permanenciaMin > 0 ? config.permanenciaMin : 90;
+  const permDe = turno => {
+    const p = permanenciaTurnos && permanenciaTurnos[turno];
+    return p > 0 ? p : permDefecto;
+  };
 
-  const demanda = {};
+  // 1. Entradas de comensales por franja (flujo)
+  const entradas = {};
   franjas.forEach(f => {
+    if (f.h < srvIniH) { entradas[f.hStr] = 0; return; }
+    const pct = (curvaDia && curvaDia[f.hStr]) ? curvaDia[f.hStr] / 100 : 0;
+    entradas[f.hStr] = pct > 0 ? (ventasDia * pct) / ticketMed : 0;
+  });
+
+  // 2. Ocupación simultánea: los sentados en una franja son los que han
+  //    entrado en las últimas K franjas (K = permanencia / 30 min).
+  //    Esto es lo que determina cuánto personal hace falta — no el flujo
+  //    de entrada, que ignoraba que una mesa se ocupa 60-90 minutos.
+  const demanda = {};
+  franjas.forEach((f, idx) => {
     // Franja previa a apertura al público: solo 1 persona (quien abre/prepara)
     if (f.h < srvIniH) {
       demanda[f.hStr] = { sala: 1, cocina: 1 };
       return;
     }
-    const pct = (curvaDia && curvaDia[f.hStr]) ? curvaDia[f.hStr] / 100 : 0;
-    const comensales = pct > 0 ? (ventasDia * pct) / ticketMed : 0;
-    const necesarioSala = comensales > 0 ? Math.ceil(comensales * 2 / ratioSala) : 0;
-    const necesarioCoc = comensales > 0 ? Math.ceil(comensales * 2 / ratioCocina) : 0;
-    const minEfectivoSala = comensales >= umbralMin ? minSala : (comensales > 0 ? 1 : 0);
-    const minEfectivoCoc = comensales >= umbralMin ? minCocina : (comensales > 0 ? 1 : 0);
+    const turno = f.h >= umbralCenaH ? 'Cena' : 'Comida';
+    const K = Math.max(1, Math.round(permDe(turno) / 30));
+    let sentados = 0;
+    for (let k = 0; k < K; k++) {
+      const g = franjas[idx - k];
+      if (!g || g.h < srvIniH) break;
+      sentados += entradas[g.hStr];
+    }
+    const necesarioSala = sentados > 0 ? Math.ceil(sentados / ratioSala) : 0;
+    const necesarioCoc = sentados > 0 ? Math.ceil(sentados / ratioCocina) : 0;
+    const minEfectivoSala = sentados >= umbralMin ? minSala : (sentados > 0 ? 1 : 0);
+    const minEfectivoCoc = sentados >= umbralMin ? minCocina : (sentados > 0 ? 1 : 0);
     // Regla dura: durante el servicio siempre mínimo 1
     demanda[f.hStr] = {
       sala: Math.max(1, Math.max(minEfectivoSala, necesarioSala)),
@@ -1795,7 +1831,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
   // ── Demanda por (día, franja, grupo) ────────────────────────────────
   const demanda = {};
   DIAS.forEach(d => {
-    demanda[d] = calcularDemandaFranjas(ventasPorDia[d] || 0, curvasPorDia[d] || null, cfg, franjas);
+    demanda[d] = calcularDemandaFranjas(ventasPorDia[d] || 0, curvasPorDia[d] || null, cfg, franjas, (cfg.permanenciaPorDia && cfg.permanenciaPorDia[d]) || null);
   });
 
   // ── Estado ────────────────────────────────────────────────────────────
