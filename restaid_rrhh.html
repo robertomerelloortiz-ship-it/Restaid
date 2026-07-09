@@ -719,7 +719,7 @@ function staffCount(w,dia,turno,rol){
   const vd=ventasDia(w,dia);
   const demanda=calcularDemandaFranjas(vd,_curvaDiaUI(dia),cfgUI,franjas,_permanenciaDiaUI(dia));
   const bloquesRol=w.asignaciones.filter(a=>a.dia===dia&&(()=>{const e=emp(a.empId);return e&&e.rol===rol;})());
-  return staffCubiertoUnificado(bloquesRol,demanda,franjas,cfgUI,turno);
+  return staffCubiertoUnificado(bloquesRol,demanda,franjas,cfgUI,turno,rol);
 }
 function _curvaDiaUI(dia){let pub={};try{pub=JSON.parse(localStorage.getItem('restaid_pub_v1')||'{}')||{};}catch(e){}const vPub=pub.ventas||{};return(vPub.halfHourCurvaPorDia&&vPub.halfHourCurvaPorDia[dia])||vPub.halfHourCurva||null;}
 function _permanenciaDiaUI(dia){let pub={};try{pub=JSON.parse(localStorage.getItem('restaid_pub_v1')||'{}')||{};}catch(e){}const vPub=pub.ventas||{};return(vPub.permanenciaPorDiaTurno&&vPub.permanenciaPorDiaTurno[dia])||null;}
@@ -1794,31 +1794,29 @@ function staffNeededUnificado(demandaDia, franjas, config, turno, rol) {
   return max;
 }
 
-// ── Cobertura unificada: cuántas personas están presentes SIMULTÁNEAMENTE
-//    en las franjas donde la demanda del turno hace pico — la misma vara
-//    que staffNeededUnificado usa para el necesario. Antes la UI contaba
-//    bloques por su etiqueta de turno (según hora de inicio): un bloque
-//    17:30-00:00 cubría toda la cena pero contaba 0 en "Cena". Si varias
-//    franjas empatan en el pico, se devuelve la cobertura mínima entre
-//    ellas (conservador: mejor avisar de menos que ocultar un hueco).
+// ── Cobertura unificada: cuántas personas del grupo consultado están
+//    presentes en el MOMENTO del pico de demanda de ese grupo en el turno —
+//    la misma vara que staffNeededUnificado usa para el necesario.
+//    Dos lecciones de bugs reales incorporadas aquí:
+//    1. El pico se localiza por el grupo consultado (sala o cocina), no
+//       por el máximo conjunto: cada grupo tiene su propio momento punta.
+//    2. Cuando los mínimos aplanan la demanda (muchas franjas empatadas al
+//       mismo valor), se toma la MÁXIMA presencia entre las empatadas: la
+//       fila Dotación responde "¿cuánta gente hay en la hora punta?", y los
+//       huecos puntuales (ej. la última media hora del cierre) se reportan
+//       franja a franja en el diagnóstico, no aquí.
 //    bloquesDia: bloques del día YA filtrados por rol ({ini, fin}). ──
-function staffCubiertoUnificado(bloquesDia, demandaDia, franjas, config, turno) {
+function staffCubiertoUnificado(bloquesDia, demandaDia, franjas, config, turno, rol) {
   const umbral = parseHM(config.umbralCena || '17:00');
+  const campo = rol === 'Sala' ? 'sala' : 'cocina';
   const fsTurno = franjas.filter(f => turno === 'Comida' ? f.h < umbral : f.h >= umbral);
   if (!fsTurno.length || !bloquesDia.length) return 0;
-  // Franja(s) donde la demanda del turno hace pico (sala y cocina comparten
-  // curva, así que el pico temporal coincide; usamos el máximo de ambos)
   let picoVal = -1;
   fsTurno.forEach(f => {
-    const d = demandaDia[f.hStr] || {};
-    const v = Math.max(d.sala || 0, d.cocina || 0);
+    const v = (demandaDia[f.hStr] && demandaDia[f.hStr][campo]) || 0;
     if (v > picoVal) picoVal = v;
   });
-  const franjasPico = fsTurno.filter(f => {
-    const d = demandaDia[f.hStr] || {};
-    return Math.max(d.sala || 0, d.cocina || 0) === picoVal;
-  });
-  // Presencia simultánea en cada franja pico; devolver la mínima
+  const franjasPico = fsTurno.filter(f => ((demandaDia[f.hStr] && demandaDia[f.hStr][campo]) || 0) === picoVal);
   const presencia = fStr => {
     const fH = parseHM(fStr);
     const fAdj = fH < 11 ? fH + 24 : fH; // madrugada = continuación de la noche
@@ -1829,7 +1827,7 @@ function staffCubiertoUnificado(bloquesDia, demandaDia, franjas, config, turno) 
       return fAdj >= i && fAdj < fin;
     }).length;
   };
-  return Math.min(...franjasPico.map(f => presencia(f.hStr)));
+  return Math.max(...franjasPico.map(f => presencia(f.hStr)));
 }
 
 
