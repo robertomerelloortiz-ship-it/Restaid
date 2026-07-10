@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RESTAID · Marketing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+:root{
+  --navy:#1A2B3C;--navy-mid:#243547;--navy-lt:#2E4259;
+  --amber:#E8914A;--amber-dk:#C8712A;--amber-lt:#F5C49A;
+  --bg:#F5F4F0;--surf:#FFFFFF;--surf-alt:#FAFAF8;
+  --bdr:#E6E4DF;--bdr-strong:#CCC9C0;
+  --tx:#1C2428;--tx2:#596570;--tx3:#98A3AC;
+  --green:#1D7A4A;--green-bg:#E6F5EE;
+  --red:#C03020;--red-bg:#FAECEA;
+  --ylw:#B07010;--ylw-bg:#FBF5E0;
+  --blue:#1A4A8A;--blue-bg:#EEF3FB;
+  --star:#E8B84A;
+  --r:8px;--rsm:5px;--rlg:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{font-size:14px}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+#main{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}
+
+/* ── Topbar ─────────────────────────────────────────── */
+#topbar{background:var(--navy);padding:0;display:flex;flex-direction:column;flex-shrink:0}
+.tb-row1{display:flex;align-items:center;gap:12px;padding:0 20px;height:44px;border-bottom:1px solid rgba(255,255,255,.08)}
+.tb-logo{font-family:'DM Serif Display';font-size:16px;color:var(--amber);letter-spacing:.01em}
+.tb-module{font-size:11px;color:rgba(255,255,255,.35);text-transform:uppercase;letter-spacing:.08em}
+.tb-period{font-size:11px;color:rgba(255,255,255,.45);margin-left:auto}
+.tb-actions{display:flex;gap:6px;margin-left:12px}
+#tabbar{display:flex;align-items:flex-end;padding:0 12px;height:38px;gap:2px;overflow-x:auto;scrollbar-width:none}
+#tabbar::-webkit-scrollbar{display:none}
+.tab{display:flex;align-items:center;gap:6px;padding:0 14px;height:32px;border-radius:8px 8px 0 0;font-size:12.5px;font-weight:500;color:rgba(255,255,255,.45);cursor:pointer;transition:all .15s;white-space:nowrap;flex-shrink:0;user-select:none;border:1px solid transparent;border-bottom:none}
+.tab:hover{color:rgba(255,255,255,.75);background:rgba(255,255,255,.06)}
+.tab.active{background:var(--bg);color:var(--tx);border-color:rgba(255,255,255,.1);font-weight:600}
+.tab.soon{opacity:.55;cursor:default}
+.tab.soon:hover{background:transparent;color:rgba(255,255,255,.45)}
+.tab .soon-tag{font-size:8.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:rgba(255,255,255,.12);color:rgba(255,255,255,.6);padding:1px 5px;border-radius:8px}
+
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer;border:none;transition:all .15s;font-family:'DM Sans',sans-serif;white-space:nowrap}
+.btn-amber{background:var(--amber);color:#fff}.btn-amber:hover{background:var(--amber-dk)}
+.btn-ghost{background:transparent;color:var(--tx2);border:1px solid var(--bdr-strong)}.btn-ghost:hover{background:var(--bg)}
+.btn-sm{padding:5px 10px;font-size:11.5px}
+.tb-row1 .btn-ghost{color:rgba(255,255,255,.85);border-color:rgba(255,255,255,.25)}
+.tb-row1 .btn-ghost:hover{background:rgba(255,255,255,.1)}
+
+#content{flex:1;overflow-y:auto;padding:28px}
+.page{display:none;animation:pgIn .25s ease}
+.page.active{display:block}
+@keyframes pgIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.page-hd{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:1.5rem;padding-bottom:1.25rem;border-bottom:1px solid var(--bdr);flex-wrap:wrap;gap:8px}
+.page-hd h2{font-family:'DM Serif Display';font-size:22px;font-weight:400}
+.page-hd p{font-size:11px;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em}
+
+/* ── KPIs ───────────────────────────────────────────── */
+.kpi-row{display:grid;gap:1px;background:var(--bdr);border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden;margin-bottom:1.25rem}
+.kpi-row-4{grid-template-columns:repeat(4,1fr)}
+.kpi{background:var(--surf);padding:1.125rem}
+.kpi-lbl{font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--tx3);margin-bottom:7px}
+.kpi-val{font-family:'DM Serif Display';font-size:26px;color:var(--tx);line-height:1;margin-bottom:4px}
+.kpi-sub{font-size:11px;color:var(--tx3)}
+.kpi-val .star{color:var(--star);font-size:18px;vertical-align:2px}
+.kpi-val small{font-size:14px;color:var(--tx3);font-family:'DM Sans',sans-serif}
+
+/* ── Panels ─────────────────────────────────────────── */
+.panel{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--r);padding:1.125rem 1.25rem;margin-bottom:1.25rem}
+.panel-title{font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--tx3);margin-bottom:.35rem}
+.panel-desc{font-size:11.5px;color:var(--tx3);margin-bottom:1rem;line-height:1.5;font-style:italic}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem}
+
+/* ── Objetivo + progreso ────────────────────────────── */
+.goal-big{display:flex;align-items:baseline;gap:10px;margin:.25rem 0 .5rem}
+.goal-num{font-family:'DM Serif Display';font-size:44px;line-height:1;color:var(--amber-dk)}
+.goal-txt{font-size:13px;color:var(--tx2);line-height:1.5;max-width:260px}
+.goal-txt b{color:var(--tx)}
+.prog-track{height:10px;border-radius:5px;background:var(--bg);border:1px solid var(--bdr);overflow:hidden;margin:.85rem 0 .4rem}
+.prog-fill{height:100%;border-radius:5px;background:linear-gradient(90deg,var(--amber-lt),var(--amber));transition:width .6s ease}
+.prog-ends{display:flex;justify-content:space-between;font-size:11px;color:var(--tx3);font-weight:600}
+.prog-pct{font-family:'DM Serif Display';font-size:28px;color:var(--tx);margin-top:.35rem}
+
+/* ── Desglose de estrellas ──────────────────────────── */
+.dist-row{display:flex;align-items:center;gap:10px;margin-bottom:7px}
+.dist-lbl{width:30px;font-size:12px;font-weight:600;color:var(--tx2);text-align:right}
+.dist-lbl span{color:var(--star)}
+.dist-track{flex:1;height:9px;border-radius:4px;background:var(--bg);border:1px solid var(--bdr);overflow:hidden}
+.dist-fill{height:100%;background:var(--star);border-radius:4px}
+.dist-n{width:52px;font-size:11.5px;color:var(--tx3);font-variant-numeric:tabular-nums}
+
+/* ── Gráfica ────────────────────────────────────────── */
+.gran-tabs{display:inline-flex;gap:4px;background:var(--bg);border:1px solid var(--bdr);border-radius:7px;padding:3px}
+.gran-tab{padding:4px 12px;border-radius:5px;font-size:11.5px;font-weight:600;color:var(--tx3);cursor:pointer;border:none;background:transparent;font-family:'DM Sans',sans-serif;transition:all .15s}
+.gran-tab.active{background:var(--surf);color:var(--navy);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.chart-wrap{position:relative;height:240px;margin-top:.75rem}
+
+/* ── Empty state ────────────────────────────────────── */
+#empty-google{min-height:60vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:2rem}
+#empty-google .up-icon{font-size:34px;margin-bottom:1rem;opacity:.7}
+#empty-google h2{font-family:'DM Serif Display';font-size:26px;font-weight:400;margin-bottom:.6rem}
+#empty-google p{font-size:13px;color:var(--tx2);max-width:460px;line-height:1.7;margin-bottom:1.4rem}
+
+/* ── Modal de entrada de datos ──────────────────────── */
+#modal-dist{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.55);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;padding:1.5rem}
+#modal-dist.open{display:flex}
+.modal-card{background:var(--surf);border-radius:var(--rlg);padding:1.75rem;max-width:440px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,.18);position:relative}
+.modal-card h3{font-family:'DM Serif Display';font-size:20px;font-weight:400;margin-bottom:.4rem}
+.modal-card>p{font-size:12px;color:var(--tx2);line-height:1.6;margin-bottom:1.1rem}
+.modal-close{position:absolute;top:.7rem;right:.7rem;background:none;border:none;font-size:17px;cursor:pointer;color:var(--tx3);padding:4px 8px;border-radius:6px}
+.modal-close:hover{background:var(--bg);color:var(--tx)}
+.dist-inputs{display:flex;flex-direction:column;gap:8px;margin-bottom:1rem}
+.di-row{display:flex;align-items:center;gap:10px}
+.di-row label{width:38px;font-size:13px;font-weight:600;color:var(--tx2);text-align:right}
+.di-row label span{color:var(--star)}
+.di-row input{flex:1;padding:8px 11px;border:1px solid var(--bdr-strong);border-radius:7px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--tx);background:var(--surf)}
+.di-row input:focus{outline:none;border-color:var(--amber)}
+.modal-hint{font-size:11px;color:var(--tx3);line-height:1.6;background:var(--surf-alt);border:1px solid var(--bdr);border-radius:7px;padding:.6rem .8rem;margin-bottom:1rem}
+.modal-err{display:none;font-size:11.5px;color:var(--red);background:var(--red-bg);border-radius:6px;padding:.5rem .8rem;margin-bottom:.85rem}
+.modal-err.show{display:block}
+.modal-live{font-size:12px;color:var(--tx2);margin-bottom:1rem;min-height:16px}
+.modal-live b{color:var(--tx)}
+.modal-actions{display:flex;justify-content:flex-end;gap:8px}
+
+/* ── Placeholder pestañas futuras ───────────────────── */
+.soon-page{min-height:50vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:var(--tx3)}
+.soon-page .ic{font-size:30px;margin-bottom:.8rem;opacity:.6}
+.soon-page h3{font-family:'DM Serif Display';font-size:20px;font-weight:400;color:var(--tx2);margin-bottom:.4rem}
+.soon-page p{font-size:12.5px;max-width:380px;line-height:1.6}
+
+@media(max-width:760px){
+  #content{padding:16px}
+  .kpi-row-4{grid-template-columns:repeat(2,1fr)}
+  .g2{grid-template-columns:1fr}
+  .goal-num{font-size:36px}
+}
+</style>
+</head>
+<body>
+
+<div id="main">
+  <header id="topbar">
+    <div class="tb-row1">
+      <div class="tb-logo">RESTAID</div>
+      <div class="tb-module">Marketing</div>
+      <div class="tb-period" id="tbSub"></div>
+      <div class="tb-actions">
+        <button class="btn btn-ghost btn-sm" id="btnUpdate" style="display:none" onclick="openModal()">✏️ Actualizar datos</button>
+      </div>
+    </div>
+    <div id="tabbar">
+      <div class="tab active" data-page="google">Google Maps</div>
+      <div class="tab soon" title="Próximamente">TripAdvisor · TheFork <span class="soon-tag">Pronto</span></div>
+      <div class="tab soon" title="Próximamente">Redes sociales <span class="soon-tag">Pronto</span></div>
+      <div class="tab soon" title="Próximamente">Competencia <span class="soon-tag">Pronto</span></div>
+    </div>
+  </header>
+
+  <div id="content">
+
+    <!-- ═══ PESTAÑA GOOGLE MAPS ═══ -->
+    <div class="page active" id="page-google">
+
+      <!-- Empty state -->
+      <div id="empty-google">
+        <span class="up-icon">⭐</span>
+        <h2>Reputación en Google Maps</h2>
+        <p>Introduce el desglose de reseñas de tu ficha de Google (cuántas de 5★, 4★, 3★…) y RESTAID calculará tu <b>puntuación real</b> con tres decimales, cuántas reseñas de 5★ te faltan para subir de nota visible, y guardará el histórico para ver la tendencia.</p>
+        <button class="btn btn-amber" onclick="openModal()">Introducir datos de Google</button>
+      </div>
+
+      <!-- Vista con datos -->
+      <div id="data-google" style="display:none">
+        <div class="page-hd">
+          <h2>Google Maps</h2>
+          <p id="hd-updated"></p>
+        </div>
+
+        <div class="kpi-row kpi-row-4">
+          <div class="kpi">
+            <div class="kpi-lbl">Puntuación real</div>
+            <div class="kpi-val" id="kpi-real">—</div>
+            <div class="kpi-sub">media exacta de todas las reseñas</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-lbl">Nota visible en Google</div>
+            <div class="kpi-val" id="kpi-visible">— <span class="star">★</span></div>
+            <div class="kpi-sub">redondeada a un decimal</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-lbl">Reseñas totales</div>
+            <div class="kpi-val" id="kpi-total">—</div>
+            <div class="kpi-sub" id="kpi-total-sub"></div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-lbl">% de reseñas de 5★</div>
+            <div class="kpi-val" id="kpi-pct5">—<small>%</small></div>
+            <div class="kpi-sub">sobre el total histórico</div>
+          </div>
+        </div>
+
+        <div class="g2">
+          <div class="panel">
+            <div class="panel-title">Objetivo · siguiente nota visible</div>
+            <div class="panel-desc" id="goal-desc"></div>
+            <div class="goal-big">
+              <div class="goal-num" id="goal-num">—</div>
+              <div class="goal-txt" id="goal-txt"></div>
+            </div>
+            <div class="prog-track"><div class="prog-fill" id="prog-fill" style="width:0%"></div></div>
+            <div class="prog-ends"><span id="prog-lo">—</span><span id="prog-hi">—</span></div>
+            <div class="prog-pct" id="prog-pct">—%</div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-title">Desglose de reseñas</div>
+            <div class="panel-desc">Distribución por estrellas del último dato introducido.</div>
+            <div id="dist-bars"></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:.25rem">
+            <div>
+              <div class="panel-title">Tendencia de la puntuación real</div>
+              <div class="panel-desc" style="margin-bottom:0">Cada actualización guarda una foto del día. La línea muestra el último dato de cada periodo.</div>
+            </div>
+            <div class="gran-tabs">
+              <button class="gran-tab" data-g="dia">Día</button>
+              <button class="gran-tab active" data-g="mes">Mes</button>
+              <button class="gran-tab" data-g="año">Año</button>
+            </div>
+          </div>
+          <div class="chart-wrap"><canvas id="chart-trend"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL: introducir desglose ═══ -->
+<div id="modal-dist">
+  <div class="modal-card">
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <h3>Datos de tu ficha de Google</h3>
+    <p>Copia el desglose de reseñas por estrellas. Lo encuentras en tu ficha de Google Maps, junto a la nota, pulsando sobre las barras de reseñas.</p>
+    <div class="dist-inputs" id="dist-inputs">
+      <div class="di-row"><label>5 <span>★</span></label><input type="number" min="0" step="1" id="in-5" placeholder="p. ej. 655"></div>
+      <div class="di-row"><label>4 <span>★</span></label><input type="number" min="0" step="1" id="in-4" placeholder="p. ej. 330"></div>
+      <div class="di-row"><label>3 <span>★</span></label><input type="number" min="0" step="1" id="in-3" placeholder="p. ej. 105"></div>
+      <div class="di-row"><label>2 <span>★</span></label><input type="number" min="0" step="1" id="in-2" placeholder="p. ej. 30"></div>
+      <div class="di-row"><label>1 <span>★</span></label><input type="number" min="0" step="1" id="in-1" placeholder="p. ej. 54"></div>
+    </div>
+    <div class="modal-live" id="modal-live"></div>
+    <div class="modal-err" id="modal-err"></div>
+    <div class="modal-hint">💡 En Google Maps · tu ficha · «Reseñas»: al lado de la nota hay 5 barras, una por estrella. Pasa el cursor (o mantén pulsado en el móvil) sobre cada barra para ver el número exacto.</div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-amber" onclick="saveDist()">Guardar dato de hoy</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════
+   MARKETING CORE — copiado tal cual del módulo testeado
+   (marketing_core.js · 23 tests en verde)
+═══════════════════════════════════════════════════════════ */
+(function (root, factory) {
+  if (typeof module !== 'undefined' && module.exports) module.exports = factory();
+  else root.MarketingCore = factory();
+})(typeof self !== 'undefined' ? self : this, function () {
+
+  const ESTRELLAS = [1, 2, 3, 4, 5];
+
+  function totalResenas(dist) {
+    if (!dist) return 0;
+    return ESTRELLAS.reduce((s, e) => s + (Number(dist[e]) || 0), 0);
+  }
+
+  function sumaEstrellas(dist) {
+    return ESTRELLAS.reduce((s, e) => s + e * (Number(dist[e]) || 0), 0);
+  }
+
+  function mediaReal(dist) {
+    const n = totalResenas(dist);
+    if (!n) return null;
+    return sumaEstrellas(dist) / n;
+  }
+
+  function notaVisible(media) {
+    return Math.round(media * 10) / 10;
+  }
+
+  function umbralReal(visible) {
+    return visible - 0.05;
+  }
+
+  function siguienteEscalon(media) {
+    const visible = notaVisible(media);
+    if (visible >= 5) return null;
+    return Math.round((visible + 0.1) * 10) / 10;
+  }
+
+  function resenasNecesarias(dist, objetivoVisible) {
+    const n = totalResenas(dist);
+    if (!n) return null;
+    const umbral = umbralReal(objetivoVisible);
+    if (umbral >= 5) return null;
+    const suma = sumaEstrellas(dist);
+    if (suma / n >= umbral) return 0;
+    return Math.ceil((umbral * n - suma) / (5 - umbral));
+  }
+
+  function progresoEscalon(media) {
+    const sig = siguienteEscalon(media);
+    if (sig === null) return 100;
+    const bajo = umbralReal(notaVisible(media));
+    const alto = umbralReal(sig);
+    const p = (media - bajo) / (alto - bajo) * 100;
+    return Math.max(0, Math.min(100, Math.round(p)));
+  }
+
+  function anadirSnapshot(snapshots, nuevo) {
+    const lista = (snapshots || []).filter(s => s.fecha !== nuevo.fecha);
+    lista.push(nuevo);
+    lista.sort((a, b) => a.fecha.localeCompare(b.fecha));
+    return lista;
+  }
+
+  function serieTendencia(snapshots, granularidad) {
+    const corte = granularidad === 'año' ? 4 : granularidad === 'mes' ? 7 : 10;
+    const porPeriodo = {};
+    (snapshots || [])
+      .slice()
+      .sort((a, b) => a.fecha.localeCompare(b.fecha))
+      .forEach(s => { porPeriodo[s.fecha.slice(0, corte)] = s; });
+    return Object.keys(porPeriodo).sort().map(k => ({
+      etiqueta: k,
+      media: mediaReal(porPeriodo[k].dist),
+      total: totalResenas(porPeriodo[k].dist)
+    }));
+  }
+
+  function validarDist(dist) {
+    if (!dist) return { ok: false, error: 'Introduce al menos un número de reseñas.' };
+    let alguna = false;
+    for (const e of ESTRELLAS) {
+      if (dist[e] === undefined || dist[e] === '' || dist[e] === null) continue;
+      const v = Number(dist[e]);
+      if (!Number.isFinite(v) || v < 0 || !Number.isInteger(v)) {
+        return { ok: false, error: 'El valor de ' + e + '★ debe ser un número entero ≥ 0.' };
+      }
+      if (v > 0) alguna = true;
+    }
+    if (!alguna) return { ok: false, error: 'Introduce al menos un número de reseñas.' };
+    return { ok: true };
+  }
+
+  return { totalResenas, mediaReal, notaVisible, umbralReal, siguienteEscalon,
+           resenasNecesarias, progresoEscalon, anadirSnapshot, serieTendencia, validarDist };
+});
+
+/* ═══════════════════════════════════════════════════════════
+   ESTADO + PERSISTENCIA
+   · localStorage: restaid_marketing_v1 (fuente inmediata)
+   · Supabase vía /api/db: tabla marketing_google (misma
+     convención dbCall que ventas: op get/upsert)
+   · Publica resumen en restaid_pub_v1 (clave: reputacionGoogle)
+═══════════════════════════════════════════════════════════ */
+const MC = MarketingCore;
+const STORE = 'restaid_marketing_v1';
+const $ = id => document.getElementById(id);
+let DB = { snapshots: [] };   // [{fecha:'YYYY-MM-DD', dist:{1..5}}]
+let GRAN = 'mes';
+let chart = null;
+
+function loadLocal(){ try{ DB = JSON.parse(localStorage.getItem(STORE)||'{"snapshots":[]}')||{snapshots:[]}; }catch(e){ DB={snapshots:[]}; } if(!Array.isArray(DB.snapshots)) DB.snapshots=[]; }
+function saveLocal(){ try{ localStorage.setItem(STORE, JSON.stringify(DB)); }catch(e){} }
+
+async function dbCall(payload){
+  const r = await fetch('/api/db',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','x-restaid-pass':localStorage.getItem('restaid_pass')||''},
+    body:JSON.stringify(payload)
+  });
+  const d = await r.json().catch(()=>({ok:false,error:'respuesta no válida'}));
+  if(!r.ok||!d.ok) throw new Error(d.error||('HTTP '+r.status));
+  return d;
+}
+async function sbLoad(){
+  try{
+    const d = await dbCall({op:'get',table:'marketing_google',select:'datos',limit:1});
+    const cloud = d.rows && d.rows[0] ? d.rows[0].datos : null;
+    if(cloud && Array.isArray(cloud.snapshots) && cloud.snapshots.length){
+      // La nube manda; snapshots solo-locales se conservan por fecha y se resuben
+      const fechasCloud = new Set(cloud.snapshots.map(s=>s.fecha));
+      const soloLocales = DB.snapshots.filter(s=>!fechasCloud.has(s.fecha));
+      DB.snapshots = cloud.snapshots.concat(soloLocales).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+      saveLocal();
+      if(soloLocales.length) sbSave();
+    } else if(DB.snapshots.length){
+      sbSave(); // nube vacía, hay locales: subir
+    }
+  }catch(e){ console.warn('[Marketing] Supabase no disponible, usando local:', e.message||e); }
+}
+async function sbSave(){
+  try{
+    await dbCall({op:'upsert',table:'marketing_google',periodo:null,datos:{snapshots:DB.snapshots}});
+    console.log('[Marketing] guardado en Supabase:', DB.snapshots.length, 'snapshots');
+  }catch(e){ console.warn('[Marketing] error guardando en Supabase:', e.message||e); }
+}
+
+/* Publicación cross-módulo para el copiloto / dashboard */
+function publish(){
+  const last = DB.snapshots[DB.snapshots.length-1];
+  if(!last) return;
+  const media = MC.mediaReal(last.dist);
+  const resumen = {
+    fecha: last.fecha,
+    mediaReal: Math.round(media*1000)/1000,
+    notaVisible: MC.notaVisible(media),
+    totalResenas: MC.totalResenas(last.dist),
+    siguienteEscalon: MC.siguienteEscalon(media),
+    resenas5Necesarias: MC.siguienteEscalon(media)!==null ? MC.resenasNecesarias(last.dist, MC.siguienteEscalon(media)) : 0,
+    progresoPct: MC.progresoEscalon(media)
+  };
+  try{
+    let pub={}; try{ pub=JSON.parse(localStorage.getItem('restaid_pub_v1')||'{}')||{}; }catch(e){}
+    pub.reputacionGoogle = resumen;
+    localStorage.setItem('restaid_pub_v1', JSON.stringify(pub));
+    try{ window.parent.postMessage({type:'restaid_pub',key:'restaid_pub_v1',value:JSON.stringify(pub)},'*'); }catch(e){}
+  }catch(e){}
+}
+
+/* ═══════════════════════════════════════════════════════════
+   RENDER
+═══════════════════════════════════════════════════════════ */
+const fmt3 = x => x.toLocaleString('es-ES',{minimumFractionDigits:3,maximumFractionDigits:3});
+const fmt1 = x => x.toLocaleString('es-ES',{minimumFractionDigits:1,maximumFractionDigits:1});
+const fmtN = x => x.toLocaleString('es-ES');
+
+function render(){
+  const has = DB.snapshots.length>0;
+  $('empty-google').style.display = has?'none':'flex';
+  $('data-google').style.display  = has?'block':'none';
+  $('btnUpdate').style.display    = has?'inline-flex':'none';
+  if(!has){ $('tbSub').textContent=''; return; }
+
+  const last = DB.snapshots[DB.snapshots.length-1];
+  const media = MC.mediaReal(last.dist);
+  const visible = MC.notaVisible(media);
+  const total = MC.totalResenas(last.dist);
+  const sig = MC.siguienteEscalon(media);
+  const pct5 = Math.round((Number(last.dist[5])||0)/total*100);
+
+  const f = new Date(last.fecha+'T12:00:00');
+  const fechaTxt = f.toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'});
+  $('tbSub').textContent = 'Último dato: '+fechaTxt;
+  $('hd-updated').textContent = 'Actualizado el '+fechaTxt;
+
+  $('kpi-real').textContent = fmt3(media);
+  $('kpi-visible').innerHTML = fmt1(visible)+' <span class="star">★</span>';
+  $('kpi-total').textContent = fmtN(total);
+  $('kpi-pct5').innerHTML = pct5+'<small>%</small>';
+
+  // Crecimiento de reseñas respecto al snapshot anterior
+  const prev = DB.snapshots[DB.snapshots.length-2];
+  $('kpi-total-sub').textContent = prev
+    ? '+'+fmtN(Math.max(0,total-MC.totalResenas(prev.dist)))+' desde el dato anterior'
+    : 'primer dato registrado';
+
+  // Objetivo
+  if(sig===null){
+    $('goal-desc').textContent='Tu nota visible ya es 5,0. Enhorabuena: ahora toca mantenerla.';
+    $('goal-num').textContent='✓';
+    $('goal-txt').innerHTML='Nota máxima alcanzada.';
+    $('prog-fill').style.width='100%';
+    $('prog-lo').textContent=''; $('prog-hi').textContent='';
+    $('prog-pct').textContent='100%';
+  }else{
+    const nec = MC.resenasNecesarias(last.dist, sig);
+    const prog = MC.progresoEscalon(media);
+    $('goal-desc').textContent='Reseñas de 5★ seguidas que necesitas para que Google muestre '+fmt1(sig)+'.';
+    $('goal-num').textContent=fmtN(nec);
+    $('goal-txt').innerHTML='reseñas de <b>5★</b> para pasar de <b>'+fmt1(visible)+'</b> a <b>'+fmt1(sig)+'</b> en tu ficha';
+    $('prog-fill').style.width=prog+'%';
+    $('prog-lo').textContent=fmt1(visible);
+    $('prog-hi').textContent=fmt1(sig);
+    $('prog-pct').textContent=prog+'%';
+  }
+
+  // Desglose
+  const max = Math.max(...[5,4,3,2,1].map(e=>Number(last.dist[e])||0), 1);
+  $('dist-bars').innerHTML = [5,4,3,2,1].map(e=>{
+    const n = Number(last.dist[e])||0;
+    return '<div class="dist-row"><div class="dist-lbl">'+e+' <span>★</span></div>'+
+      '<div class="dist-track"><div class="dist-fill" style="width:'+(n/max*100)+'%"></div></div>'+
+      '<div class="dist-n">'+fmtN(n)+'</div></div>';
+  }).join('');
+
+  renderChart();
+}
+
+function renderChart(){
+  const serie = MC.serieTendencia(DB.snapshots, GRAN);
+  const labels = serie.map(p=>{
+    if(GRAN==='año') return p.etiqueta;
+    if(GRAN==='mes'){ const [y,m]=p.etiqueta.split('-'); return ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'][+m-1]+' '+y.slice(2); }
+    const d=new Date(p.etiqueta+'T12:00:00'); return d.toLocaleDateString('es-ES',{day:'numeric',month:'short'});
+  });
+  const data = serie.map(p=>Math.round(p.media*1000)/1000);
+  const min = Math.min(...data), max = Math.max(...data);
+  const pad = Math.max((max-min)*0.3, 0.01);
+
+  if(chart) chart.destroy();
+  chart = new Chart($('chart-trend'),{
+    type:'line',
+    data:{ labels, datasets:[{
+      data, borderColor:'#E8914A', backgroundColor:'rgba(232,145,74,.10)',
+      fill:true, tension:.3, pointRadius:4, pointBackgroundColor:'#E8914A',
+      pointBorderColor:'#fff', pointBorderWidth:1.5
+    }]},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false},
+        tooltip:{ callbacks:{ label:(c)=>' Puntuación real: '+fmt3(c.parsed.y)+'  ·  '+fmtN(serie[c.dataIndex].total)+' reseñas' } } },
+      scales:{
+        y:{ min:Math.floor((min-pad)*100)/100, max:Math.ceil((max+pad)*100)/100,
+            ticks:{ callback:v=>fmt3(v), font:{family:'DM Sans',size:10}, color:'#98A3AC' },
+            grid:{ color:'#EFEDE8' } },
+        x:{ ticks:{ font:{family:'DM Sans',size:10}, color:'#98A3AC' }, grid:{ display:false } }
+      }
+    }
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MODAL
+═══════════════════════════════════════════════════════════ */
+function openModal(){
+  const last = DB.snapshots[DB.snapshots.length-1];
+  [5,4,3,2,1].forEach(e=>{ $('in-'+e).value = last ? (last.dist[e]??'') : ''; });
+  $('modal-err').classList.remove('show');
+  updateLive();
+  $('modal-dist').classList.add('open');
+  $('in-5').focus();
+}
+function closeModal(){ $('modal-dist').classList.remove('open'); }
+
+function readInputs(){
+  const dist={};
+  [5,4,3,2,1].forEach(e=>{ const v=$('in-'+e).value; if(v!=='') dist[e]=Number(v); });
+  return dist;
+}
+function updateLive(){
+  const dist=readInputs();
+  const media=MC.mediaReal(dist);
+  $('modal-live').innerHTML = media!==null
+    ? 'Puntuación real: <b>'+fmt3(media)+'</b> · '+fmtN(MC.totalResenas(dist))+' reseñas · nota visible <b>'+fmt1(MC.notaVisible(media))+' ★</b>'
+    : '';
+}
+[5,4,3,2,1].forEach(e=>$('in-'+e).addEventListener('input',updateLive));
+
+function saveDist(){
+  const dist=readInputs();
+  const val=MC.validarDist(dist);
+  if(!val.ok){ const el=$('modal-err'); el.textContent=val.error; el.classList.add('show'); return; }
+  const hoy=new Date(); const fecha=hoy.getFullYear()+'-'+String(hoy.getMonth()+1).padStart(2,'0')+'-'+String(hoy.getDate()).padStart(2,'0');
+  DB.snapshots = MC.anadirSnapshot(DB.snapshots, {fecha, dist});
+  saveLocal(); sbSave(); publish();
+  closeModal(); render();
+}
+
+/* ═══════════════════════════════════════════════════════════
+   NAVEGACIÓN + ARRANQUE
+═══════════════════════════════════════════════════════════ */
+document.querySelectorAll('.gran-tab').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.gran-tab').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active'); GRAN=b.dataset.g; renderChart();
+}));
+document.querySelectorAll('.tab.soon').forEach(t=>t.addEventListener('click',()=>{ /* placeholder */ }));
+$('modal-dist').addEventListener('click',e=>{ if(e.target.id==='modal-dist') closeModal(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeModal(); });
+
+(async function init(){
+  loadLocal();
+  render();          // pinta al instante con lo local
+  await sbLoad();    // sincroniza con la nube
+  publish();
+  render();
+})();
+</script>
+</body>
+</html>

@@ -980,6 +980,12 @@ nav {
       </svg>
       APPCC
     </div>
+    <div class="nav-item" data-module="marketing" onclick="loadModule('marketing', this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+      </svg>
+      Marketing
+    </div>
 
   </nav>
 
@@ -1024,6 +1030,7 @@ nav {
     <iframe id="frame-rrhh"       class="module-frame" src="" title="Personal"></iframe>
     <iframe id="frame-inventario" class="module-frame" src="" title="Inventario"></iframe>
     <iframe id="frame-appcc"      class="module-frame" src="" title="APPCC"></iframe>
+    <iframe id="frame-marketing"  class="module-frame" src="" title="Marketing"></iframe>
 
 <!-- ══ COPILOTO PANTALLA COMPLETA ══ -->
 <div id="copilot-overlay">
@@ -1106,14 +1113,16 @@ const MODULE_FILES = {
   ventas:     'restaid_ventas.html',
   rrhh:       'restaid_rrhh.html',
   inventario: 'restaid_inventario.html',
-  appcc:      'restaid_appcc.html'
+  appcc:      'restaid_appcc.html',
+  marketing:  'restaid_marketing.html'
 };
 
 const MODULE_LABELS = {
   ventas: 'Ventas',
   rrhh: 'Personal',
   inventario: 'Inventario',
-  appcc: 'APPCC'
+  appcc: 'APPCC',
+  marketing: 'Marketing'
 };
 
 const loadedModules = new Set();
@@ -2021,7 +2030,8 @@ function readAllData() {
     rrhh:       parse('restaid_rrhh_v1'),
     escandallo: parse('restaid_escandallo_int_v1'),
     appcc:      parse('restaid_appcc_v1'),
-    ventas:     pub.ventas || null
+    ventas:     pub.ventas || null,
+    reputacionGoogle: pub.reputacionGoogle || null
   };
 }
 
@@ -2040,21 +2050,25 @@ function flushIframes() {
   });
 }
 
-/* Escribe a Supabase desde el shell vía proxy /api/db (la clave vive en el
-   servidor). El upsert PATCH→INSERT lo resuelve el propio proxy. */
+/* Escribe directamente a Supabase desde el shell, sin depender del iframe.
+   Misma lógica que sbSetInv/sbWriteNow en los módulos. */
 async function sbWriteFromShell(tabla, datos) {
+  const SB_URL_S = 'https://gtdsqvebuhdndfaiqoyj.supabase.co';
+  const SB_KEY_S = 'sb_publishable_cu53L_4O6Rz-RlGurDI3Kg_CJHqaa8U';
+  const SB_REST  = 'default';
   const TABLE_MAP = { inventario: 'inventario', rrhh: 'rrhh' };
   const sbTable = TABLE_MAP[tabla]; if (!sbTable) return;
   try {
-    const r = await fetch('/api/db', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-restaid-pass': localStorage.getItem('restaid_pass') || '' },
-      body: JSON.stringify({ op: 'upsert', table: sbTable, datos })
-    });
-    const d = await r.json().catch(() => ({ ok: false }));
-    if (!r.ok || !d.ok) throw new Error(d.error || ('HTTP ' + r.status));
+    const body = JSON.stringify({ datos });
+    const headers = { 'apikey': SB_KEY_S, 'Authorization': 'Bearer ' + SB_KEY_S, 'Content-Type': 'application/json', 'Prefer': 'return=representation' };
+    const rPatch = await fetch(`${SB_URL_S}/rest/v1/${sbTable}?restaurante=eq.${SB_REST}`, { method: 'PATCH', headers, body });
+    const txt = await rPatch.text().catch(() => '');
+    let patched = []; try { patched = JSON.parse(txt); } catch(e) {}
+    if (Array.isArray(patched) && patched.length === 0) {
+      await fetch(`${SB_URL_S}/rest/v1/${sbTable}`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=minimal' }, body: JSON.stringify({ restaurante: SB_REST, datos }) });
+    }
     console.log('[SHELL] Supabase write OK:', tabla);
-  } catch(e) { console.warn('[SHELL] Supabase write error:', tabla, e.message || e); }
+  } catch(e) { console.warn('[SHELL] Supabase write error:', tabla, e); }
 }
 
 /* ── Resumen compacto de datos para el system prompt ── */
