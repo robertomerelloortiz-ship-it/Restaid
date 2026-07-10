@@ -54,7 +54,10 @@ function verificarFirma(rawBody, firmaHeader, secret) {
 function parsearEvento(rawBody, contentType) {
   if (!rawBody) return null;
   let obj = null;
-  if ((contentType || '').includes('json')) {
+  // Revo declara x-www-form-urlencoded pero envía JSON: decidimos por el
+  // contenido real (primer carácter), no por la cabecera.
+  const pareceJson = rawBody.trim().startsWith('{');
+  if (pareceJson || (contentType || '').includes('json')) {
     try { obj = JSON.parse(rawBody); } catch (_) { return null; }
   } else {
     const params = new URLSearchParams(rawBody);
