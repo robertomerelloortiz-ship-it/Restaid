@@ -104,6 +104,8 @@ module.exports = async (req, res) => {
   const evento = parsearEvento(rawBody, req.headers['content-type'] || '');
   if (!evento) {
     // Firma válida pero cuerpo raro: 200 para no forzar reintentos inútiles.
+    console.log('[revo_webhook] cuerpo sin evento. content-type:', req.headers['content-type'],
+      '| primeros 500 chars:', rawBody.slice(0, 500));
     res.status(200).json({ ok: true, ignorado: 'cuerpo sin evento' });
     return;
   }
@@ -111,6 +113,7 @@ module.exports = async (req, res) => {
   if (!eventoAceptado(evento.event)) {
     // Evento que aún no procesamos: 200 para que Revo no reintente
     // ni acabe desactivando el webhook.
+    console.log('[revo_webhook] evento ignorado:', evento.event, '| tenant:', evento.tenant);
     res.status(200).json({ ok: true, ignorado: evento.event });
     return;
   }
@@ -144,6 +147,7 @@ module.exports = async (req, res) => {
       res.status(500).json({ ok: false, error: 'Fallo al guardar', detalle: detalle.slice(0, 200) });
       return;
     }
+    console.log('[revo_webhook] guardado:', evento.event, '| tenant:', evento.tenant);
     res.status(200).json({ ok: true });
   } catch (e) {
     res.status(500).json({ ok: false, error: 'Excepción al guardar', detalle: String(e).slice(0, 200) });
