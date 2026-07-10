@@ -1970,6 +1970,24 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
     demanda[d] = calcularDemandaFranjas(ventasPorDia[d] || 0, curvasPorDia[d] || null, cfg, franjas, (cfg.permanenciaPorDia && cfg.permanenciaPorDia[d]) || null);
   });
 
+  // Demanda BÁSICA: los mínimos de servicio de cada franja (sin refuerzo de
+  // picos). Se cubre PRIMERO en todos los días, para que nadie gaste sus 6
+  // días máximos en los días fuertes antes de que los flojos tengan su base
+  // (el choque del "día 7": todos libraban el miércoles a la vez).
+  const demandaBase = {};
+  DIAS.forEach(d => {
+    demandaBase[d] = {};
+    franjas.forEach(f => {
+      const dd = demanda[d][f.hStr];
+      demandaBase[d][f.hStr] = {
+        sala: Math.min(dd.sala, Math.max(1, cfg.minSala || 2)),
+        cocina: Math.min(dd.cocina, Math.max(1, cfg.minCocina || 1))
+      };
+    });
+  });
+  // Objetivo de la fase en curso (base primero, luego demanda completa)
+  let demandaActiva = demanda;
+
   // ── Estado ────────────────────────────────────────────────────────────
   const bloques = [];
   const horasAsig = {}; disponibles.forEach(e => { horasAsig[e.id] = 0; });
@@ -2070,7 +2088,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
     let demandaNoCubierta = 0, sobredotacion = 0;
     franjas.forEach(f => {
       if (f.h < iniH || f.h >= finH) return;
-      const nec = demanda[dia][f.hStr][grupo] || 0;
+      const nec = demandaActiva[dia][f.hStr][grupo] || 0;
       const cub = cubierto[dia][f.hStr][grupo] || 0;
       if (nec > cub) demandaNoCubierta += (nec - cub);
       else sobredotacion += (cub - nec + 1);
@@ -2106,8 +2124,12 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
     return mejorIni;
   };
 
-  // ── BUCLE PRINCIPAL: cubrir el déficit más urgente en cada iteración ──
+  // ── BUCLE PRINCIPAL: cubrir el déficit más urgente en cada iteración.
+  //    Se ejecuta en DOS FASES: primero la demanda básica de TODOS los
+  //    días (mínimos de servicio), después la demanda completa reforzando
+  //    picos por orden de ventas. ──
   const MAX_ITER = 2000;
+  const cubrirDemandaActiva = () => {
   let iter = 0;
   // Franjas donde ya se intentó colocar a alguien y nadie pudo — se saltan
   // en la búsqueda del peor déficit (para no repetir intentos inútiles),
@@ -2126,7 +2148,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
       franjas.forEach(f => {
         ['sala', 'cocina'].forEach(grupo => {
           if (irresolubles.has(`${dia}|${f.hStr}|${grupo}`)) return;
-          const nec = demanda[dia][f.hStr][grupo] || 0;
+          const nec = demandaActiva[dia][f.hStr][grupo] || 0;
           const cub = cubierto[dia][f.hStr][grupo] || 0;
           const def = nec - cub;
           if (def > peorDeficit || (def === peorDeficit && def > 0 && ventasDia > peorVentas)) {
@@ -2186,6 +2208,14 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
     }
   }
 
+  };
+  // Fase 1: base de todos los días (nadie se queda sin poder abrir)
+  demandaActiva = demandaBase;
+  cubrirDemandaActiva();
+  // Fase 2: refuerzo de picos, días de más venta primero
+  demandaActiva = demanda;
+  cubrirDemandaActiva();
+
   // ── FASE FINAL: completar horas restantes de quienes no llegaron a contrato ──
   // (puede quedar margen si el bucle principal terminó por falta de déficit
   //  pero algún empleado con turnoPref u horario fijo no agotó su contrato)
@@ -2227,25 +2257,146 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
   // inicio del siguiente) del mismo empleado y día: en realidad son un
   // único turno seguido y se muestran/gestionan como uno solo.
   const _norm = s => { let h = parseHM(s); return h < laboralIniH ? h + 24 : h; };
-  DIAS.forEach(dia => {
-    disponibles.forEach(e => {
-      const propios = bloques
-        .filter(b => b.empId === e.id && b.dia === dia)
-        .sort((a, b) => _norm(a.ini) - _norm(b.ini));
-      for (let j = 1; j < propios.length; j++) {
-        const prev = propios[j - 1], act = propios[j];
-        let finPrev = _norm(prev.fin); if (finPrev <= _norm(prev.ini)) finPrev += 24;
-        if (Math.abs(finPrev - _norm(act.ini)) < 0.01) {
-          // Fusionar: el anterior absorbe al actual
-          prev.fin = act.fin;
-          const idx = bloques.indexOf(act);
-          if (idx !== -1) bloques.splice(idx, 1);
-          propios.splice(j, 1);
-          j--; // reevaluar por si hay una tercera pieza contigua
+  const fusionarAdyacentes = () => {
+    DIAS.forEach(dia => {
+      disponibles.forEach(e => {
+        const propios = bloques
+          .filter(b => b.empId === e.id && b.dia === dia)
+          .sort((a, b) => _norm(a.ini) - _norm(b.ini));
+        for (let j = 1; j < propios.length; j++) {
+          const prev = propios[j - 1], act = propios[j];
+          let finPrev = _norm(prev.fin); if (finPrev <= _norm(prev.ini)) finPrev += 24;
+          if (Math.abs(finPrev - _norm(act.ini)) < 0.01) {
+            // Fusionar: el anterior absorbe al actual
+            prev.fin = act.fin;
+            const idx = bloques.indexOf(act);
+            if (idx !== -1) bloques.splice(idx, 1);
+            propios.splice(j, 1);
+            j--; // reevaluar por si hay una tercera pieza contigua
+          }
+        }
+      });
+    });
+  };
+  fusionarAdyacentes();
+
+
+  // ── REPARACIÓN: recolocar horas ya asignadas para cubrir picos ────────
+  // Motivo (caso real): puede sobrar personal en total y aun así quedar
+  // picos sin cubrir, porque el reparto voraz coloca bloques sin volver
+  // atrás. Dos operaciones que no cambian las horas de nadie:
+  //   DESPLAZAR: mover la hora de inicio de un bloque dentro de su día.
+  //   MOVER: llevar un bloque entero de un día sobrado a un día corto
+  //          (no añade un 7º día: libera el día de origen).
+  // Solo se acepta un cambio si reduce el déficit total ponderado por
+  // ventas, y siempre respetando todas las reglas duras.
+  if (!cfg.skipReparacion) {
+    const empMap = {}; disponibles.forEach(e => { empMap[e.id] = e; });
+    const _normB = s => { let h = parseHM(s); return h < laboralIniH ? h + 24 : h; };
+    const grupoDe = empId => esSala(empMap[empId]) ? 'sala' : 'cocina';
+    const pesoDia = {}; DIAS.forEach(d => { pesoDia[d] = 1 + ((ventasPorDia[d] || 0) / 10000); });
+    const cubre = (b, fH) => { const i = _normB(b.ini); let f = _normB(b.fin); if (f <= i) f += 24; return fH >= i && fH < f; };
+    const presEn = (dia, fH, grupo, excluir) => bloques.filter(b =>
+      b !== excluir && b.dia === dia && grupoDe(b.empId) === grupo && cubre(b, fH)).length;
+    const defDiaGrupo = (dia, grupo, excluir, extra) => {
+      // déficit ponderado del día para un grupo; 'extra' = bloque tentativo {dia, iniH, finH}
+      let s = 0;
+      franjas.forEach(f => {
+        const nec = demanda[dia][f.hStr][grupo] || 0;
+        if (!nec) return;
+        let pres = presEn(dia, f.h, grupo, excluir);
+        if (extra && extra.dia === dia && f.h >= extra.iniH && f.h < extra.finH) pres++;
+        if (nec > pres) s += (nec - pres);
+      });
+      return s * pesoDia[dia];
+    };
+    const bloquesEmpEnDia = (empId, dia, excluir) => bloques
+      .filter(b => b !== excluir && b.empId === empId && b.dia === dia)
+      .map(b => { const i = _normB(b.ini); let f = _normB(b.fin); if (f <= i) f += 24; return { iniH: i, finH: f }; });
+    const esMovible = emp => !(emp.horarioHabitual && emp.horarioHabitual.horaIni && emp.horarioHabitual.horaFin);
+    const posicionValida = (emp, dia, di, iniH, durH, excluir) => {
+      const finH = iniH + durH;
+      if (iniH < laboralIniH || finH > srvFinH) return false;
+      if (!puedeTrabajarDia(emp, di)) return false;
+      if (!turnoCompatible(emp, iniH)) return false;
+      const otros = bloquesEmpEnDia(emp.id, dia, excluir);
+      const horasDia = otros.reduce((s, b) => s + (b.finH - b.iniH), 0);
+      if (horasDia + durH > MAX_HORAS_DIA_ + 0.01) return false;
+      return cabeEnDia(otros, iniH, finH);
+    };
+    let mejoras = 0;
+    for (let iter = 0; iter < 80; iter++) {
+      // Déficits actuales, los de más venta primero
+      const deficits = [];
+      DIAS.forEach((dia, di) => {
+        ['sala', 'cocina'].forEach(grupo => {
+          franjas.forEach(f => {
+            const nec = demanda[dia][f.hStr][grupo] || 0;
+            const pres = presEn(dia, f.h, grupo, null);
+            if (nec > pres) deficits.push({ dia, di, grupo, fH: f.h, def: nec - pres });
+          });
+        });
+      });
+      if (!deficits.length) break;
+      deficits.sort((a, b) => (pesoDia[b.dia] * b.def) - (pesoDia[a.dia] * a.def));
+
+      let aplicado = false;
+      for (const d of deficits) {
+        let mejor = null; // {tipo, bloque, nuevoDia, nuevoDi, nuevoIniH, delta}
+        // Candidatos: bloques del grupo (mismo día = desplazar; otro día = mover)
+        for (const b of bloques) {
+          if (grupoDe(b.empId) !== d.grupo) continue;
+          const emp = empMap[b.empId];
+          if (!emp || !esMovible(emp)) continue;
+          const iB = _normB(b.ini); let fB = _normB(b.fin); if (fB <= iB) fB += 24;
+          const dur = fB - iB;
+          const esMismoDia = b.dia === d.dia;
+          // Si es mover a otro día: comprobar tope de días tras el movimiento
+          if (!esMismoDia) {
+            const diasDespues = new Set(bloques.filter(x => x !== b && x.empId === b.empId).map(x => x.dia));
+            diasDespues.add(d.dia);
+            if (diasDespues.size > MAX_DIAS_SEMANA_) continue;
+          }
+          // Coste actual de los días afectados
+          const costeOrigenAntes = defDiaGrupo(b.dia, d.grupo, null, null);
+          const costeAntes = costeOrigenAntes +
+            (esMismoDia ? 0 : defDiaGrupo(d.dia, d.grupo, null, null));
+          // Regla de no-robo: si es mover a otro día, quitar el bloque no
+          // puede crear déficit nuevo en su día de origen (solo se mueve
+          // excedente puro; jamás se desviste un santo para vestir otro)
+          if (!esMismoDia) {
+            const costeOrigenSinB = defDiaGrupo(b.dia, d.grupo, b, null);
+            if (costeOrigenSinB > costeOrigenAntes + 0.001) continue;
+          }
+          // Probar posiciones que cubran la franja del déficit
+          for (let iniH = Math.max(laboralIniH, d.fH - dur + 0.5); iniH <= Math.min(d.fH, srvFinH - dur) + 0.01; iniH += 0.5) {
+            if (!posicionValida(empMap[b.empId], d.dia, d.di, iniH, dur, b)) continue;
+            const tent = { dia: d.dia, iniH, finH: iniH + dur };
+            const costeDespues = defDiaGrupo(b.dia, d.grupo, b, esMismoDia ? tent : null) +
+              (esMismoDia ? 0 : defDiaGrupo(d.dia, d.grupo, b, tent));
+            const delta = costeAntes - costeDespues;
+            if (delta > 0.01 && (!mejor || delta > mejor.delta)) {
+              mejor = { bloque: b, nuevoDia: d.dia, nuevoIniH: iniH, dur, delta };
+            }
+          }
+        }
+        if (mejor) {
+          const b = mejor.bloque;
+          b.dia = mejor.nuevoDia;
+          b.ini = toHHMM(mejor.nuevoIniH % 24);
+          b.fin = toHHMM((mejor.nuevoIniH + mejor.dur) % 24);
+          b.turno = mejor.nuevoIniH >= umbral ? 'Cena' : 'Comida';
+          aplicado = true; mejoras++;
+          break; // recalcular déficits desde cero
         }
       }
-    });
-  });
+      if (!aplicado) break; // ningún movimiento mejora: fin
+    }
+    if (mejoras > 0) fusionarAdyacentes();
+    // La contabilidad de cobertura debe reflejar los movimientos para que
+    // el diagnóstico final diga la verdad
+    DIAS.forEach(dia => { franjas.forEach(f => { cubierto[dia][f.hStr].sala = presEn(dia, f.h, 'sala', null); cubierto[dia][f.hStr].cocina = presEn(dia, f.h, 'cocina', null); }); });
+  }
 
   // ── Diagnóstico ──────────────────────────────────────────────────────
   const diagnostico = { infracontrato: [], infrademanda: [] };
