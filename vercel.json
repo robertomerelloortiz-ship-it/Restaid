@@ -1,8 +1,19 @@
 {
   "functions": {
-    "api/claude.js": { "maxDuration": 60 },
-    "api/login.js": { "maxDuration": 30 },
-    "api/db.js": { "maxDuration": 30 },
-    "api/revo.js": { "maxDuration": 30 }
+    "api/claude.js": {
+      "maxDuration": 60
+    },
+    "api/login.js": {
+      "maxDuration": 30
+    },
+    "api/db.js": {
+      "maxDuration": 30
+    },
+    "api/revo.js": {
+      "maxDuration": 30
+    },
+    "api/revo_webhook.js": {
+      "maxDuration": 30
+    }
   }
 }
