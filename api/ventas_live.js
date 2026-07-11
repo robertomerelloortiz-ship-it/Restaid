@@ -139,19 +139,30 @@ module.exports = async (req, res) => {
     // 1. Poner el piso 2 al día
     const traductor = await procesarPendientes(URL_SB, KEY_SB);
 
-    // 2. Devolver las filas desde la fecha de corte
+    // 2. Devolver las filas desde la fecha de corte + el mapa de categorías
+    //    del catálogo (fuente de verdad para clasificar cocina/bebida)
     const desde = (req.query && req.query.desde) || '';
     const filtro = /^\d{4}-\d{2}-\d{2}$/.test(desde) ? `&fecha=gt.${desde}` : '';
     const cols = 'select=*';
-    const [rO, rL] = await Promise.all([
+    const [rO, rL, rC] = await Promise.all([
       fetch(`${URL_SB}/rest/v1/ventas_ordenes?${cols}${filtro}&order=fecha.asc&limit=20000`, { headers: sbHeaders(KEY_SB) }),
       fetch(`${URL_SB}/rest/v1/ventas_lineas?${cols}${filtro}&order=fecha.asc&limit=100000`, { headers: sbHeaders(KEY_SB) }),
+      fetch(`${URL_SB}/rest/v1/revo_catalogo?select=producto,categoria&limit=10000`, { headers: sbHeaders(KEY_SB) }),
     ]);
     if (!rO.ok || !rL.ok) throw new Error('leyendo piso 2: HTTP ' + rO.status + '/' + rL.status);
     const ordenes = await rO.json();
     const lineas = await rL.json();
-    console.log(`[ventas_live] traductor=${JSON.stringify(traductor)} ordenes=${ordenes.length} lineas=${lineas.length} desde=${desde || '(todo)'}`);
-    res.status(200).json({ ok: true, ordenes, lineas, traductor });
+    // El catálogo es opcional: si la tabla no existe aún, seguimos sin él
+    let categorias = {};
+    if (rC.ok) {
+      try {
+        for (const c of await rC.json()) {
+          if (c.producto && c.categoria) categorias[c.producto] = c.categoria;
+        }
+      } catch (_) { categorias = {}; }
+    }
+    console.log(`[ventas_live] traductor=${JSON.stringify(traductor)} ordenes=${ordenes.length} lineas=${lineas.length} categorias=${Object.keys(categorias).length} desde=${desde || '(todo)'}`);
+    res.status(200).json({ ok: true, ordenes, lineas, categorias, traductor });
   } catch (e) {
     console.error('[ventas_live] fallo:', e.message || e);
     res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) });
