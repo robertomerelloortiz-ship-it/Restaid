@@ -1229,6 +1229,7 @@ async function runAnalysis(){
   const _añoAnalisis=G.d0?G.d0.slice(0,4):String(new Date().getFullYear());
   console.log('[RESTAID] Año del análisis:',_añoAnalisis,'. Leyendo Supabase para merge…');
   (async()=>{
+    if(LIVE_SYNC){console.log('[RESTAID live] análisis en modo live: merge/guardado/publicación omitidos (los hace la sincronización)');return;}
     try{
       // Leer el registro actual de Supabase para este año
       const _periodoKey='ag-'+_añoAnalisis;
@@ -2327,6 +2328,114 @@ function detectPeriodo(rows){
 }
 
 let AÑOS_DISPONIBLES={};  // { '2025': datos_G, '2024': datos_G, ... }
+let LIVE_SYNC=false;      // true mientras runAnalysis procesa datos del webhook (era live)
+
+/* ═══════════════════════════════════════════════════════════════════
+   VENTAS EN VIVO (webhook Revo → piso 2 → fusión con el año)
+   - filasAPseudoCSV: filas limpias → columnas de CSV Revo (reutiliza
+     runAnalysis SIN duplicar fórmulas).
+   - fusionarG: fusión ADITIVA era-CSV + era-webhook (rangos de fechas
+     disjuntos ⇒ sumar es exacto). Testeado en test_fusion_core.js.
+   - sincronizarVentasLive: se ejecuta al cargar; procesa pendientes en el
+     servidor, trae lo nuevo, lo analiza y lo fusiona. NUNCA persiste el
+     fusionado en ventas_productos: el blob guarda solo la era CSV y lo
+     vivo se recalcula desde el piso 2 en cada carga (idempotente).
+═══════════════════════════════════════════════════════════════════ */
+function _isoT(s){return s?String(s).replace(' ','T'):null;}
+function filasAPseudoCSV(ordenes,lineas,byPC){
+  byPC=byPC||{};const nombrePorId={},cierrePorOrden={},empleadoPorOrden={};
+  const ORD=(ordenes||[]).map(o=>{
+    if(o.empleado_id!=null&&o.empleado)nombrePorId[o.empleado_id]=o.empleado;
+    cierrePorOrden[o.orden_id]=_isoT(o.cerrado);empleadoPorOrden[o.orden_id]=o.empleado||'?';
+    return{ID:String(o.orden_id),Comensales:o.comensales||1,Abierto:_isoT(o.abierto),Cerrado:_isoT(o.cerrado),Mesa:o.mesa||'',Total:o.total||0};
+  });
+  const PROD=(lineas||[]).map(l=>({
+    Producto:l.producto||'?','Categoría':byPC[l.producto]||'Sin cat',
+    Cantidad:l.cantidad||1,Total:l.total||0,Descuento:l.descuento||0,Mesa:'',
+    Empleado:(l.empleado_id!=null&&nombrePorId[l.empleado_id])||empleadoPorOrden[l.orden_id]||'?',
+    Fecha:_isoT(l.marcado)||cierrePorOrden[l.orden_id]||null,Orden:String(l.orden_id)
+  }));
+  return{PROD,ORD};
+}
+const _fAsArr=v=>Array.isArray(v)?v:(v instanceof Set?[...v]:(v?[v]:[]));
+function _fSumaMapa(a,b){const r=Object.assign({},a);Object.keys(b||{}).forEach(k=>{r[k]=(r[k]||0)+(b[k]||0);});return r;}
+function _fRellena(a,b){const r=Object.assign({},b,a);Object.keys(a||{}).forEach(k=>{if(a[k]==='Sin cat'&&b&&b[k]&&b[k]!=='Sin cat')r[k]=b[k];});return r;}
+function _fUne(a,b){const r={},ks=new Set([...Object.keys(a||{}),...Object.keys(b||{})]);ks.forEach(k=>{r[k]=[...new Set([..._fAsArr(a&&a[k]),..._fAsArr(b&&b[k])])];});return r;}
+function _fSumaCampos(a,b,cs){const r={},ks=new Set([...Object.keys(a||{}),...Object.keys(b||{})]);ks.forEach(k=>{r[k]={};cs.forEach(c=>{r[k][c]=((a&&a[k]&&a[k][c])||0)+((b&&b[k]&&b[k][c])||0);});});return r;}
+function _fSumaAnid(a,b){const r={},ks=new Set([...Object.keys(a||{}),...Object.keys(b||{})]);ks.forEach(k=>{r[k]=_fSumaMapa((a&&a[k])||{},(b&&b[k])||{});});return r;}
+function fusionarG(base,live,opts){
+  opts=opts||{};if(!live)return base;
+  if(!base)return JSON.parse(JSON.stringify(live,(_,v)=>v instanceof Set?[...v]:v));
+  const B=base,L=live,F={};
+  ['totVen','totDes','totCocE','totBebE','nT','nDays','allComs','postresN','cafesN','comidaN'].forEach(k=>{F[k]=(B[k]||0)+(L[k]||0);});
+  ['byPE','byPU','byCE','byCU','byEE','byEU','byECom','byDay','byDayCount','byTurno','byDate','byMonth','byDayTurno','halfHour','byPlatoMonthE','byPlatoMonthU','eurosZT','comZT','tickZT','nDiasTurno','zonaDiasN','rondasDist'].forEach(k=>{F[k]=_fSumaMapa(B[k]||{},L[k]||{});});
+  F.byPC=_fRellena(B.byPC||{},L.byPC||{});
+  F.byET=_fUne(B.byET,L.byET);
+  F.mesasPorZona=_fUne(B.mesasPorZona,L.mesasPorZona);
+  F.mesasZonaN={};Object.keys(F.mesasPorZona).forEach(z=>F.mesasZonaN[z]=F.mesasPorZona[z].length);
+  F.halfHourPorDia=_fSumaAnid(B.halfHourPorDia,L.halfHourPorDia);
+  F.durByDayTurno=_fSumaCampos(B.durByDayTurno,L.durByDayTurno,['sum','n']);
+  F.ttfoZona=_fSumaCampos(B.ttfoZona,L.ttfoZona,['sum','n']);
+  F.depthMap=_fSumaCampos(B.depthMap,L.depthMap,['n','totSum']);
+  F.byECat=_fSumaCampos(B.byECat,L.byECat,['coc','beb']);
+  F.convEmp=_fSumaCampos(B.convEmp,L.convEmp,['comida','bebida']);
+  F.zonaComMap=_fSumaCampos(B.zonaComMap,L.zonaComMap,['euros','com','tickets','durSum','durN']);
+  F.mesaComMap=_fSumaCampos(B.mesaComMap,L.mesaComMap,['euros','com','tickets']);
+  F.visitStats={};['comida','bebida'].forEach(t=>{const a=(B.visitStats&&B.visitStats[t])||{},b=(L.visitStats&&L.visitStats[t])||{};F.visitStats[t]={tickets:(a.tickets||0)+(b.tickets||0),total:(a.total||0)+(b.total||0),com:(a.com||0)+(b.com||0),durSum:(a.durSum||0)+(b.durSum||0),durN:(a.durN||0)+(b.durN||0),byTurno:_fSumaMapa(a.byTurno||{},b.byTurno||{}),byDay:_fSumaMapa(a.byDay||{},b.byDay||{})};});
+  if(B.tickHist||L.tickHist){const idx={};(B.tickHist||[]).concat(L.tickHist||[]).forEach(t=>{if(!idx[t.lbl])idx[t.lbl]={lbl:t.lbl,n:0,euros:0};idx[t.lbl].n+=t.n||0;idx[t.lbl].euros+=t.euros||0;});const ord=(B.tickHist&&B.tickHist.length?B.tickHist:L.tickHist).map(t=>t.lbl);F.tickHist=ord.map(l=>idx[l]);}else F.tickHist=null;
+  {const idx={};(B.empArr||[]).concat(L.empArr||[]).forEach(e=>{if(!idx[e.emp])idx[e.emp]={emp:e.emp,euros:0,tickets:0,com:0,dias:0,conv:{comida:0,bebida:0},cat:{coc:0,beb:0}};const x=idx[e.emp];x.euros+=e.euros||0;x.tickets+=e.tickets||0;x.com+=e.com||0;x.dias+=e.dias||0;x.conv.comida+=(e.conv&&e.conv.comida)||0;x.conv.bebida+=(e.conv&&e.conv.bebida)||0;x.cat.coc+=(e.cat&&e.cat.coc)||0;x.cat.beb+=(e.cat&&e.cat.beb)||0;});F.empArr=Object.values(idx).sort((a,b)=>b.euros-a.euros);}
+  F.tickMed=F.nT>0?F.totVen/F.nT:0;
+  F.capGlob=F.allComs>0?F.totVen/F.allComs:F.tickMed;
+  F.pctCoc=F.totVen>0?F.totCocE/F.totVen*100:0;
+  F.pctBeb=F.totVen>0?F.totBebE/F.totVen*100:0;
+  F.pctD=F.totVen>0?F.totDes/F.totVen*100:0;
+  const _fechas=Object.keys(F.byDate).sort();
+  F.d0=_fechas[0]||B.d0||L.d0||'';F.d1=_fechas[_fechas.length-1]||L.d1||B.d1||'';
+  const _fmt=s=>s?s.split('-').reverse().join('/'):'';
+  F.periodStr=F.d0===F.d1?_fmt(F.d0):_fmt(F.d0)+' – '+_fmt(F.d1);
+  const _top10=Object.keys(F.byPE).sort((a,b)=>F.byPE[b]-F.byPE[a]).slice(0,10).reduce((s,p)=>s+F.byPE[p],0);
+  F.concentracion=F.totVen>0?_top10/F.totVen*100:0;
+  const _dN=Object.values(F.zonaComMap).reduce((s,z)=>s+(z.durN||0),0),_dS=Object.values(F.zonaComMap).reduce((s,z)=>s+(z.durSum||0),0);
+  F.durMed=_dN>0?Math.round(_dS/_dN):0;
+  const _rN=Object.values(F.rondasDist).reduce((s,n)=>s+n,0),_rS=Object.keys(F.rondasDist).reduce((s,r)=>s+Number(r)*F.rondasDist[r],0);
+  F.rondasMed=_rN>0?_rS/_rN:0;
+  F.byDayAvg={};['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].forEach(d=>{const n=F.byDayCount[d]||0;if(n>0)F.byDayAvg[d]=(F.byDay[d]||0)/n;});
+  F.umbralMuerta=Math.max(2,Math.ceil(F.nDays/30));
+  F.topEuros=Object.keys(F.byPE).sort((a,b)=>F.byPE[b]-F.byPE[a]);
+  const _isBev=opts.isBev||(()=>false),_isExcl=opts.isExcl||(()=>false);
+  F.cartaMuerta=Object.keys(F.byPU).filter(p=>!_isBev(F.byPC[p])&&!_isExcl(p)&&F.byPU[p]<F.umbralMuerta).map(p=>({prod:p,units:F.byPU[p],euros:F.byPE[p]||0}));
+  F.totalAsientos=B.totalAsientos||L.totalAsientos||1;
+  F.ocupGlobal=B.ocupGlobal||L.ocupGlobal||0;
+  return F;
+}
+async function sincronizarVentasLive(){
+  const hoyAño=String(new Date().getFullYear());
+  const base=AÑOS_DISPONIBLES[hoyAño]||null;
+  const corte=base?(base.d1||''):'';
+  let d;
+  try{
+    const r=await fetch('/api/ventas_live?desde='+encodeURIComponent(corte));
+    d=await r.json();
+  }catch(e){console.warn('[RESTAID live] sin conexión con /api/ventas_live',e);return null;}
+  if(!d||!d.ok){console.warn('[RESTAID live] respuesta no OK',d&&d.error);return null;}
+  const ord=(d.ordenes||[]).filter(o=>o.fecha&&o.fecha.slice(0,4)===hoyAño&&(!corte||o.fecha>corte));
+  if(!ord.length){console.log('[RESTAID live] al día: sin ventas nuevas desde',corte||'(inicio)');return null;}
+  const ids=new Set(ord.map(o=>o.orden_id));
+  const lin=(d.lineas||[]).filter(l=>ids.has(l.orden_id));
+  console.log('[RESTAID live]',ord.length,'órdenes nuevas ('+lin.length+' líneas) desde',corte||'(inicio)','· traductor:',JSON.stringify(d.traductor||{}));
+  const pseudo=filasAPseudoCSV(ord,lin,(base&&base.byPC)||{});
+  const prevProd=RESTAID.data.productos,prevOrd=RESTAID.data.ordenes;
+  RESTAID.data.productos=pseudo.PROD;RESTAID.data.ordenes=pseudo.ORD;
+  LIVE_SYNC=true;
+  try{await runAnalysis();}
+  finally{LIVE_SYNC=false;RESTAID.data.productos=prevProd;RESTAID.data.ordenes=prevOrd;}
+  const gLive=JSON.parse(JSON.stringify(G,(_,v)=>v instanceof Set?[...v]:v));
+  const gFus=fusionarG(base,gLive,{isBev,isExcl});
+  AÑOS_DISPONIBLES[hoyAño]=gFus;
+  try{publishPub(gFus);}catch(e){console.warn('[RESTAID live] publish fallido',e);}
+  console.log('[RESTAID live] fusionado:',gFus.periodStr,'·',Math.round(gFus.totVen)+'€ ·',gFus.nT,'tickets');
+  return hoyAño;
+}
 
 async function loadVentasFromDB(){
   const [rows,carta,escCloud]=await Promise.all([
@@ -2361,11 +2470,17 @@ async function loadVentasFromDB(){
       const flat=[];carta.secciones.forEach(s=>(s.items||[]).forEach(it=>{if(it&&it.nombre)flat.push(it.nombre);}));
       RESTAID.data.carta=flat;CARTA_FILTER=true;
     }else if(carta&&carta.platos){RESTAID.data.carta=carta.platos;}
-    // Cargar el año más reciente por defecto
-    const añoActivo=Object.keys(AÑOS_DISPONIBLES).sort().pop();
+    // Cargar el año más reciente por defecto, sincronizando antes lo vivo (webhook)
+    let añoActivo=Object.keys(AÑOS_DISPONIBLES).sort().pop();
+    try{const añoLive=await sincronizarVentasLive();if(añoLive&&añoLive>=añoActivo)añoActivo=añoLive;}catch(e){console.warn('[RESTAID live] sync fallida, cargando solo histórico',e);}
     cargarAño(añoActivo);
     renderYearTabs(añoActivo);
   }else{
+    // Sin histórico CSV: intentar arrancar solo con lo vivo (p. ej. año nuevo)
+    try{
+      const añoLive=await sincronizarVentasLive();
+      if(añoLive){cargarAño(añoLive);renderYearTabs(añoLive);return;}
+    }catch(e){console.warn('[RESTAID live] sync sin histórico fallida',e);}
     console.warn('[RESTAID load] sin datos agregados en Supabase');
     // Sin histórico: mostrar pantalla de upload
     $('upload-screen').style.display='flex';

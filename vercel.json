@@ -17,6 +17,9 @@
     },
     "api/revo_traductor.js": {
       "maxDuration": 60
+    },
+    "api/ventas_live.js": {
+      "maxDuration": 60
     }
   }
 }
