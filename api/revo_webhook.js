@@ -22,6 +22,13 @@
 //     procesado boolean default false
 //   );
 //
+// v3 (11-jul-2026): además de guardar order.closed, mantiene la tabla
+// revo_abiertas con las mesas abiertas AHORA MISMO (para el dashboard):
+//   - order.created / order.updated (status 0) → upsert en revo_abiertas
+//   - order.closed / cancelled / merged / deleted → se borra de revo_abiertas
+// Requiere dar de alta en Revo los webhooks adicionales (misma URL):
+//   order.created, order.updated, order.cancelled, order.merged
+//
 // Respuestas:
 //   200 → Revo da el envío por bueno (también para eventos que ignoramos,
 //         para que no reintente ni desactive el webhook)
@@ -113,7 +120,11 @@ module.exports = async (req, res) => {
     return;
   }
 
-  if (!eventoAceptado(evento.event)) {
+  const ABIERTA_UPSERT = new Set(['order.created', 'order.updated']);
+  const ABIERTA_BORRAR = new Set(['order.closed', 'order.cancelled', 'order.merged', 'order.deleted']);
+  const esGestionAbiertas = ABIERTA_UPSERT.has(evento.event) || ABIERTA_BORRAR.has(evento.event);
+
+  if (!eventoAceptado(evento.event) && !esGestionAbiertas) {
     // Evento que aún no procesamos: 200 para que Revo no reintente
     // ni acabe desactivando el webhook.
     console.log('[revo_webhook] evento ignorado:', evento.event, '| tenant:', evento.tenant);
@@ -126,6 +137,49 @@ module.exports = async (req, res) => {
   const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY;
   if (!SUPABASE_URL || !SUPABASE_KEY) {
     res.status(500).json({ ok: false, error: 'Supabase no configurado' });
+    return;
+  }
+
+  // ── Mesas abiertas (tabla revo_abiertas) — nunca bloquea la respuesta ──
+  try {
+    const d = evento.data || {};
+    const sb = {
+      'Content-Type': 'application/json', apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY}`,
+    };
+    if (ABIERTA_UPSERT.has(evento.event) && d.id && d.status === 0 && !d.canceled) {
+      const aMadrid = s => {
+        if (!s) return null;
+        const dt = new Date(String(s).replace(' ', 'T') + 'Z');
+        if (isNaN(dt)) return null;
+        return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(dt).replace(',', '');
+      };
+      const numV = v => { const n = parseFloat(String(v ?? 0).replace(',', '.')); return isNaN(n) ? 0 : n; };
+      await fetch(`${SUPABASE_URL}/rest/v1/revo_abiertas?on_conflict=orden_id`, {
+        method: 'POST',
+        headers: { ...sb, Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify([{
+          orden_id: d.id,
+          mesa: d.tableName || null,
+          comensales: Math.max(1, numV(d.guests) || 1),
+          empleado: d.tenantUserName || null,
+          total: numV(d.sum || d.total),
+          abierta_desde: aMadrid(d.opened || d.created_at),
+          actualizada_en: new Date().toISOString(),
+        }]),
+      });
+    } else if (ABIERTA_BORRAR.has(evento.event) && d.id) {
+      await fetch(`${SUPABASE_URL}/rest/v1/revo_abiertas?orden_id=eq.${d.id}`, {
+        method: 'DELETE', headers: sb,
+      });
+    }
+  } catch (e) {
+    console.warn('[revo_webhook] gestión abiertas falló (no bloquea):', String(e).slice(0, 120));
+  }
+
+  if (!eventoAceptado(evento.event)) {
+    // Evento solo de gestión de abiertas: no se archiva en revo_eventos.
+    res.status(200).json({ ok: true, abiertas: evento.event });
     return;
   }
 
