@@ -39,10 +39,13 @@ function normTS(s) {
  *  Campos verificados con respuesta real del 11-jul-2026 (orden 240226). */
 function transformarReporte(o) {
   if (!o || !o.id) return null;
-  if (o.status !== undefined && o.status !== 1) return null; // solo cierres definitivos
   const cerrado = normTS(o.tancada);
   const abierto = normTS(o.oberta);
   if (!cerrado) return null; // sin cierre no es una venta consolidada
+  // OJO dialecto reporte (verificado 11-jul-2026, orden 241746): status 0 con
+  // total > 0 es una venta REAL (tique rápido de barra). Solo se descarta el
+  // patrón "cierre intermedio" conocido del webhook: status 0 Y total 0.
+  if (o.status !== undefined && o.status !== 1 && num(o.total) <= 0) return null;
 
   let duracion = null;
   if (abierto) {
