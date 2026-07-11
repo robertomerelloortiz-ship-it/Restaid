@@ -2423,7 +2423,11 @@ async function sincronizarVentasLive(){
   const ids=new Set(ord.map(o=>o.orden_id));
   const lin=(d.lineas||[]).filter(l=>ids.has(l.orden_id));
   console.log('[RESTAID live]',ord.length,'órdenes nuevas ('+lin.length+' líneas) desde',corte||'(inicio)','· traductor:',JSON.stringify(d.traductor||{}));
-  const pseudo=filasAPseudoCSV(ord,lin,(base&&base.byPC)||{});
+  // Categorías: el catálogo de Revo manda; el histórico CSV rellena; lo demás cae en Sin cat
+  const catCatalogo=d.categorias||{};
+  const byPCFusion=Object.assign({},(base&&base.byPC)||{},catCatalogo);
+  if(Object.keys(catCatalogo).length)console.log('[RESTAID live] catálogo Revo:',Object.keys(catCatalogo).length,'productos con categoría real');
+  const pseudo=filasAPseudoCSV(ord,lin,byPCFusion);
   const prevProd=RESTAID.data.productos,prevOrd=RESTAID.data.ordenes;
   RESTAID.data.productos=pseudo.PROD;RESTAID.data.ordenes=pseudo.ORD;
   LIVE_SYNC=true;
