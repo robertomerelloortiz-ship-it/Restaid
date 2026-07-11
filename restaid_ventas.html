@@ -3488,7 +3488,13 @@ async function autoRefreshPendiente() {
 }
 
 // Lanzar después del primer render para no competir con loadVentasFromDB
-setTimeout(autoRefreshPendiente, 1500);
+// RETIRADO (11-jul-2026): el sondeo a la API en cada carga queda sustituido por
+// el webhook order.closed + sincronizarVentasLive (fusión aditiva sin persistir).
+// Motivos: (1) Revo pide webhooks, no polling; (2) revoToCSV clasificaba bebidas
+// por regex y todo lo no reconocido caía en cocina, corrompiendo el reparto
+// cocina/bebida del resumen guardado; (3) dos sistemas vivos se pisaban.
+// La función se conserva por si hace falta consultarla, pero NO se ejecuta.
+// setTimeout(autoRefreshPendiente, 1500);
 
 
 </script>
