@@ -20,6 +20,9 @@
     },
     "api/ventas_live.js": {
       "maxDuration": 60
+    },
+    "api/revo_backfill.js": {
+      "maxDuration": 60
     }
   }
 }
