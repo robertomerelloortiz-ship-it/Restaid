@@ -35,9 +35,11 @@ function normTS(s) {
   return /^\d{4}-\d{2}-\d{2}/.test(t) ? t : null;
 }
 
-/** Transforma una orden del dialecto REPORTE (catalán, hora local) al piso 2. */
+/** Transforma una orden del dialecto REPORTE (catalán, hora local) al piso 2.
+ *  Campos verificados con respuesta real del 11-jul-2026 (orden 240226). */
 function transformarReporte(o) {
   if (!o || !o.id) return null;
+  if (o.status !== undefined && o.status !== 1) return null; // solo cierres definitivos
   const cerrado = normTS(o.tancada);
   const abierto = normTS(o.oberta);
   if (!cerrado) return null; // sin cierre no es una venta consolidada
@@ -56,29 +58,31 @@ function transformarReporte(o) {
     duracion_min: duracion,
     comensales: Math.max(1, num(o.comensals) || 1),
     mesa: o.taula || null,
-    mesa_id: null,
-    empleado: null, // el dialecto reporte lleva el empleado por línea, no por orden
-    empleado_id: null,
+    mesa_id: o.table_id ?? null,
+    empleado: o.usuari || null,
+    empleado_id: o.user_id ?? null,
     total: num(o.total),
-    subtotal: null, impuestos: null,
-    descuento: num(o.discount_amount),
+    subtotal: o.subtotal != null ? num(o.subtotal) : null,
+    impuestos: o.impost != null ? num(o.impost) : null,
+    descuento: num(o.descompte) + num(o.descompte_de_comanda),
     propina: 0, metodo_pago: null, turno_revo: null,
-    reembolsada: false,
+    reembolsada: !!o.refunded_invoice,
   };
 
   const lineas = (o.contents || []).map((c, i) => ({
-    linea_id: -(o.id * 1000 + i), // sintético negativo: nunca colisiona con ids reales
+    linea_id: c.id ?? -(o.id * 1000 + i), // id real; sintético negativo solo si faltara
     orden_id: o.id,
     fecha: orden.fecha,
     producto: c.producte || '?',
-    item_id: null,
+    item_id: c.item_id ?? null,
     cantidad: num(c.quantitat) || 1,
     precio_unit: num(c.quantitat) ? num(c.total) / num(c.quantitat) : num(c.total),
     total: num(c.total),
-    subtotal: null, impuestos: null,
+    subtotal: c.subtotal != null ? num(c.subtotal) : null,
+    impuestos: c.impost != null ? num(c.impost) : null,
     descuento: num(c.discount_amount),
-    empleado_id: null,
-    dish_order: null,
+    empleado_id: c.user_id ?? null,
+    dish_order: c.dishOrder ?? null,
     marcado: normTS(c.data) || cerrado,
   }));
 
