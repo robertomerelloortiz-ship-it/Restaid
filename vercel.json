@@ -26,6 +26,9 @@
     },
     "api/revo_catalogo.js": {
       "maxDuration": 60
+    },
+    "api/hoy_live.js": {
+      "maxDuration": 30
     }
   }
 }

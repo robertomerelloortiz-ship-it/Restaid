@@ -980,12 +980,6 @@ nav {
       </svg>
       APPCC
     </div>
-    <div class="nav-item" data-module="marketing" onclick="loadModule('marketing', this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-      </svg>
-      Marketing
-    </div>
 
   </nav>
 
@@ -1030,7 +1024,6 @@ nav {
     <iframe id="frame-rrhh"       class="module-frame" src="" title="Personal"></iframe>
     <iframe id="frame-inventario" class="module-frame" src="" title="Inventario"></iframe>
     <iframe id="frame-appcc"      class="module-frame" src="" title="APPCC"></iframe>
-    <iframe id="frame-marketing"  class="module-frame" src="" title="Marketing"></iframe>
 
 <!-- ══ COPILOTO PANTALLA COMPLETA ══ -->
 <div id="copilot-overlay">
@@ -1113,16 +1106,14 @@ const MODULE_FILES = {
   ventas:     'restaid_ventas.html',
   rrhh:       'restaid_rrhh.html',
   inventario: 'restaid_inventario.html',
-  appcc:      'restaid_appcc.html',
-  marketing:  'restaid_marketing.html'
+  appcc:      'restaid_appcc.html'
 };
 
 const MODULE_LABELS = {
   ventas: 'Ventas',
   rrhh: 'Personal',
   inventario: 'Inventario',
-  appcc: 'APPCC',
-  marketing: 'Marketing'
+  appcc: 'APPCC'
 };
 
 const loadedModules = new Set();
@@ -1199,8 +1190,20 @@ function renderHome(){
 
 // Período activo del dashboard (preparado para conectar Revo en tiempo real)
 let HOME_PERIOD='hoy';
+// Hoy en vivo (cerradas + mesas abiertas) desde /api/hoy_live, refrescado cada 60 s
+let HOY_LIVE=null;
+async function refreshHoyLive(){
+  try{
+    const r=await fetch('/api/hoy_live');
+    const d=await r.json();
+    if(d&&d.ok){HOY_LIVE=d;if(HOME_PERIOD==='hoy')renderHome();}
+  }catch(e){/* sin red: se queda el último dato */}
+}
+setTimeout(refreshHoyLive,500);
+setInterval(refreshHoyLive,60000);
 function setHomePeriod(p){
   HOME_PERIOD=p;
+  if(p==='hoy')refreshHoyLive();
   renderHome();
 }
 
@@ -1404,6 +1407,7 @@ function renderHomeRevo(box,r,v,pub){
       }
     }
   }catch(e){}
+  let heroExtra='';
   if(HOME_PERIOD==='hoy'){
     const hoyISO=isoLocal(new Date());
     const vh=v.ventasHoy;
@@ -1411,16 +1415,29 @@ function renderHomeRevo(box,r,v,pub){
     const prevNueva=previsionDia(v,hoyISO,gf);
     const prevFallback=fc&&fc.dias[0]?fc.dias[0].eur:null;
     prevPeriodo=prevNueva!=null?prevNueva:prevFallback;
-    // El número grande SIEMPRE es el dato real: 0€ si aún no ha abierto el turno
-    const realHoy=(vh&&vh.fecha===hoyISO&&vh.euros>0)?vh.euros:0;
+    // El número grande SIEMPRE es el dato real: cerradas + mesas abiertas
+    // ahora mismo (HOY_LIVE, vía webhook), con fallback a lo publicado por Ventas
+    let realHoy=(vh&&vh.fecha===hoyISO&&vh.euros>0)?vh.euros:0;
+    if(HOY_LIVE&&HOY_LIVE.ok&&HOY_LIVE.fecha===hoyISO){
+      const c=HOY_LIVE.cerradas||{euros:0,n:0,comensales:0};
+      const a=HOY_LIVE.abiertas||{euros:0,n:0,comensales:0,mesas:[]};
+      realHoy=Math.round((c.euros+a.euros)*100)/100;
+      comensales=(c.comensales||0)+(a.comensales||0);
+      const mesasTxt=(a.mesas||[]).slice(0,6).map(m=>`${m.mesa||'?'} ${fmtE(m.total)}`).join(' · ');
+      heroExtra=`
+        <div style="display:flex;gap:18px;justify-content:center;margin-top:10px;font-size:13px">
+          <span style="color:#16a34a">✓ Cerradas: <b>${fmtE(c.euros)}</b> <span style="color:var(--tx3)">(${c.n} órdenes)</span></span>
+          <span style="color:#d97706">● Abiertas: <b>${fmtE(a.euros)}</b> <span style="color:var(--tx3)">(${a.n} mesa${a.n===1?'':'s'})</span></span>
+        </div>
+        ${a.n>0&&mesasTxt?`<div style="font-size:11px;color:var(--tx3);margin-top:4px">${mesasTxt}${a.mesas.length>6?' · …':''}</div>`:''}`;
+    } else if(realHoy>0&&capRef){
+      comensales=Math.round(realHoy/capRef);
+    }
     ventas=realHoy;
     estimado=false;
     periodoLbl='Hoy';
-    if(realHoy>0){
-      if(capRef)comensales=Math.round(realHoy/capRef);
-      if(prevPeriodo&&prevPeriodo>0){
-        varAnual={pct:Math.round((realHoy-prevPeriodo)/prevPeriodo*1000)/10,añoPrev:'prev.',nota:'vs previsión'};
-      }
+    if(realHoy>0&&prevPeriodo&&prevPeriodo>0){
+      varAnual={pct:Math.round((realHoy-prevPeriodo)/prevPeriodo*1000)/10,añoPrev:'prev.',nota:'vs previsión'};
     }
     perComensal=capRef;
   } else if(HOME_PERIOD==='ayer'){
@@ -1689,6 +1706,7 @@ function renderHomeRevo(box,r,v,pub){
         </div>
         ${prevPeriodo!=null&&prevPeriodo>0?`
         <div style="font-size:12px;color:var(--tx3);margin-top:4px">Previsión ${HOME_PERIOD==='hoy'?'de hoy':HOME_PERIOD==='ayer'?'de ayer':HOME_PERIOD==='semana'?'de la semana':'del mes'}: ${fmtE(prevPeriodo)}</div>`:''}
+        ${heroExtra||''}
       </div>
 
 
@@ -2030,8 +2048,7 @@ function readAllData() {
     rrhh:       parse('restaid_rrhh_v1'),
     escandallo: parse('restaid_escandallo_int_v1'),
     appcc:      parse('restaid_appcc_v1'),
-    ventas:     pub.ventas || null,
-    reputacionGoogle: pub.reputacionGoogle || null
+    ventas:     pub.ventas || null
   };
 }
 
