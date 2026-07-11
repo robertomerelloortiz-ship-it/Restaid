@@ -129,6 +129,7 @@ module.exports = async (req, res) => {
     const ordenesCrudas = [];
     let page = 1;
     const MAX_PAGES = 30;
+    let debugPrimera = null; // diagnóstico: qué se llamó y qué contestó Revo
     while (page <= MAX_PAGES) {
       const qs = new URLSearchParams({
         start_date: desde, end_date: hasta,
@@ -140,7 +141,17 @@ module.exports = async (req, res) => {
         const t = await r.text().catch(() => '');
         throw new Error(`Revo HTTP ${r.status} (página ${page}): ${t.slice(0, 200)}`);
       }
-      const cuerpo = await r.json();
+      const texto = await r.text();
+      let cuerpo = {};
+      try { cuerpo = JSON.parse(texto); } catch (_) { cuerpo = {}; }
+      if (page === 1) {
+        debugPrimera = {
+          url: `${BASE}${PATH}?${qs}`,
+          http: r.status,
+          claves_respuesta: cuerpo && typeof cuerpo === 'object' ? Object.keys(cuerpo).slice(0, 15) : typeof cuerpo,
+          primeros_400_chars: texto.slice(0, 400),
+        };
+      }
       // La respuesta puede venir como array plano o como {data:[...]} (Laravel)
       const lote = Array.isArray(cuerpo) ? cuerpo : Array.isArray(cuerpo.data) ? cuerpo.data : [];
       ordenesCrudas.push(...lote);
@@ -176,6 +187,7 @@ module.exports = async (req, res) => {
           n_invoices: (ordenesCrudas[0].orderInvoices || []).length,
         } : null,
         muestra_transformada: transformadas[0] ? transformadas[0].orden : null,
+        diagnostico: debugPrimera,
       });
       return;
     }
