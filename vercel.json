@@ -14,6 +14,9 @@
     },
     "api/revo_webhook.js": {
       "maxDuration": 30
+    },
+    "api/revo_traductor.js": {
+      "maxDuration": 60
     }
   }
 }
