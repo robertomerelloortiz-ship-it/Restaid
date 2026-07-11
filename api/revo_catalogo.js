@@ -1,51 +1,34 @@
-// /api/revo_catalogo.js — Sincroniza el catálogo de productos de Revo
-// (id → nombre → categoría real) a la tabla revo_catalogo de Supabase.
+// /api/revo_catalogo.js — Sincroniza el catálogo de Revo (v2).
 //
-// Es la fuente de verdad de categorías para las ventas que entran por
-// webhook/backfill: sin él, los productos nuevos de la carta caerían en
-// "Sin cat" y desviarían lentamente el reparto cocina/bebida (la misma
-// enfermedad que corrompió el resumen 2026, en versión lenta).
+// v2, tras ensayo real (11-jul-2026, 1.153 items): los productos traen
+// category_id (número), no el nombre. Se descarga también la lista de
+// categorías (/classic/catalog/categories) y se cruzan. De paso se captura
+// costPrice (precio de coste) para el escandallo futuro.
 //
 // Uso:
-//   ENSAYO (ver estructura real, no escribe): GET /api/revo_catalogo?key=LA_LLAVE&dry=1
-//   REAL:                                     GET /api/revo_catalogo?key=LA_LLAVE
+//   ENSAYO: GET /api/revo_catalogo?key=LA_LLAVE&dry=1
+//   REAL:   GET /api/revo_catalogo?key=LA_LLAVE
 //
-// Tabla (crear una vez en Supabase → SQL Editor):
+// Tabla (ampliada — ejecutar el ALTER si ya se creó la versión anterior):
 //   create table if not exists revo_catalogo (
 //     item_id bigint primary key,
 //     producto text not null,
 //     categoria text,
+//     categoria_id integer,
 //     grupo text,
 //     precio numeric(10,2),
+//     coste numeric(10,4),
 //     activo boolean default true,
 //     actualizado_en timestamptz default now()
 //   );
+//   -- si la tabla ya existía:
+//   alter table revo_catalogo add column if not exists categoria_id integer;
+//   alter table revo_catalogo add column if not exists coste numeric(10,4);
 
 function num(v) {
   if (v === null || v === undefined || v === '') return null;
   const n = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.'));
   return isNaN(n) ? null : n;
-}
-
-/** Mapea un item del catálogo con tolerancia a dialectos (se afinará con el
- *  ensayo, como hicimos con el reporte de órdenes). */
-function mapearItem(it) {
-  if (!it || it.id === undefined || it.id === null) return null;
-  const nombre = it.name || it.nom || it.nombre || it.producte || null;
-  if (!nombre) return null;
-  // La categoría puede venir anidada (objeto) o plana (nombre/id)
-  const cat = it.category || it.categoria || it.group || it.grup || null;
-  const categoria = cat && typeof cat === 'object' ? (cat.name || cat.nom || null) : (typeof cat === 'string' ? cat : null);
-  const grupoObj = it.superGroup || it.supergroup || it.parent || null;
-  const grupo = grupoObj && typeof grupoObj === 'object' ? (grupoObj.name || grupoObj.nom || null) : (typeof grupoObj === 'string' ? grupoObj : null);
-  return {
-    item_id: it.id,
-    producto: String(nombre),
-    categoria: categoria || null,
-    grupo: grupo || null,
-    precio: num(it.price ?? it.preu),
-    activo: it.active !== undefined ? !!it.active : (it.actiu !== undefined ? !!it.actiu : true),
-  };
 }
 
 function sbHeaders(key) {
@@ -64,7 +47,8 @@ module.exports = async (req, res) => {
   if (!token) { res.status(500).json({ ok: false, error: 'Falta REVO_TOKEN' }); return; }
   const isLegacy = token.length < 50;
   const BASE = isLegacy ? 'https://revoxef.works' : 'https://api.integrations.revoxef.works';
-  const PATH = isLegacy ? '/api/external/v2/catalog/items' : '/classic/catalog/items';
+  const P_ITEMS = isLegacy ? '/api/external/v2/catalog/items' : '/classic/catalog/items';
+  const P_CATS  = isLegacy ? '/api/external/v2/catalog/categories' : '/classic/catalog/categories';
   if (isLegacy && !process.env.REVO_TENANT) {
     res.status(500).json({ ok: false, error: 'Token legacy: falta REVO_TENANT' }); return;
   }
@@ -75,57 +59,84 @@ module.exports = async (req, res) => {
   const KEY_SB = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY;
   if (!dry && (!URL_SB || !KEY_SB)) { res.status(500).json({ ok: false, error: 'Supabase no configurado' }); return; }
 
-  try {
-    // ── 1. Descargar catálogo completo (paginación Laravel) ──
-    const items = [];
-    let page = 1, lastPage = 1, debugPrimera = null;
+  // Descarga paginada estilo Laravel, con diagnóstico de la primera página
+  async function fetchPaginado(path) {
+    const filas = [];
+    let page = 1, lastPage = 1, diag = null, fallo = null;
     do {
-      const r = await fetch(`${BASE}${PATH}?page=${page}`, { headers: revoHeaders });
+      const r = await fetch(`${BASE}${path}?page=${page}`, { headers: revoHeaders });
       const texto = await r.text();
       let cuerpo = {};
       try { cuerpo = JSON.parse(texto); } catch (_) {}
       if (page === 1) {
-        debugPrimera = {
-          url: `${BASE}${PATH}?page=1`, http: r.status,
+        diag = {
+          url: `${BASE}${path}?page=1`, http: r.status,
           claves_respuesta: cuerpo && typeof cuerpo === 'object' ? Object.keys(cuerpo).slice(0, 15) : typeof cuerpo,
-          primeros_600_chars: texto.slice(0, 600),
+          primeros_400_chars: texto.slice(0, 400),
         };
       }
-      if (!r.ok) throw new Error(`Revo HTTP ${r.status} (pág ${page}): ${texto.slice(0, 200)}`);
+      if (!r.ok) { fallo = `HTTP ${r.status}: ${texto.slice(0, 150)}`; break; }
       const lote = Array.isArray(cuerpo) ? cuerpo : Array.isArray(cuerpo.data) ? cuerpo.data : [];
-      items.push(...lote);
+      filas.push(...lote);
       lastPage = cuerpo.last_page || (cuerpo.meta && cuerpo.meta.last_page) || 1;
       page++;
     } while (page <= lastPage && page <= 60);
+    return { filas, diag, fallo };
+  }
 
-    // ── 2. Mapear ──
+  try {
+    // ── 1. Productos y categorías en paralelo ──
+    const [items, cats] = await Promise.all([fetchPaginado(P_ITEMS), fetchPaginado(P_CATS)]);
+    if (items.fallo) throw new Error('items: ' + items.fallo);
+
+    // ── 2. Mapa id → nombre de categoría (tolerante a dialectos) ──
+    const catPorId = {};
+    for (const c of cats.filas) {
+      if (c && c.id !== undefined) catPorId[c.id] = c.name || c.nom || c.nombre || null;
+    }
+
+    // ── 3. Cruzar ──
     const mapeados = [];
     let sinMapear = 0;
-    for (const it of items) {
-      const m = mapearItem(it);
-      if (m) mapeados.push(m); else sinMapear++;
+    for (const it of items.filas) {
+      if (!it || it.id === undefined || it.id === null) { sinMapear++; continue; }
+      const nombre = it.name || it.nom || null;
+      if (!nombre) { sinMapear++; continue; }
+      mapeados.push({
+        item_id: it.id,
+        producto: String(nombre),
+        categoria: catPorId[it.category_id] || null,
+        categoria_id: it.category_id ?? null,
+        grupo: catPorId[it.super_group_id] || null,
+        precio: num(it.price),
+        coste: num(it.costPrice),
+        activo: it.active !== undefined ? !!it.active : true,
+      });
     }
     const conCategoria = mapeados.filter(m => m.categoria).length;
 
-    // ── 3. Ensayo ──
+    // ── 4. Ensayo ──
     if (dry) {
       res.status(200).json({
         ok: true, modo: 'ENSAYO (no se ha escrito nada)',
-        items_recibidos: items.length,
+        items_recibidos: items.filas.length,
+        categorias_recibidas: cats.filas.length,
         mapeados: mapeados.length, sin_mapear: sinMapear,
         con_categoria: conCategoria,
-        muestra_item_crudo: items[0] || null,
+        muestra_categoria_cruda: cats.filas[0] || null,
         muestra_mapeada: mapeados[0] || null,
-        diagnostico: debugPrimera,
+        diagnostico_categorias: cats.diag,
+        fallo_categorias: cats.fallo || null,
       });
       return;
     }
 
-    // ── 4. Escritura real por lotes ──
+    // ── 5. Escritura real por lotes ──
     let guardados = 0;
     const errores = [];
+    const ahora = new Date().toISOString();
     for (let i = 0; i < mapeados.length; i += 200) {
-      const lote = mapeados.slice(i, i + 200).map(m => ({ ...m, actualizado_en: new Date().toISOString() }));
+      const lote = mapeados.slice(i, i + 200).map(m => ({ ...m, actualizado_en: ahora }));
       const r = await fetch(`${URL_SB}/rest/v1/revo_catalogo?on_conflict=item_id`, {
         method: 'POST',
         headers: { ...sbHeaders(KEY_SB), Prefer: 'resolution=merge-duplicates,return=minimal' },
@@ -135,8 +146,8 @@ module.exports = async (req, res) => {
       guardados += lote.length;
     }
 
-    console.log(`[revo_catalogo] items=${items.length} guardados=${guardados} con_categoria=${conCategoria} errores=${errores.length}`);
-    res.status(200).json({ ok: true, items_recibidos: items.length, guardados, con_categoria: conCategoria, errores });
+    console.log(`[revo_catalogo] items=${items.filas.length} cats=${cats.filas.length} guardados=${guardados} con_categoria=${conCategoria} errores=${errores.length}`);
+    res.status(200).json({ ok: true, items_recibidos: items.filas.length, categorias_recibidas: cats.filas.length, guardados, con_categoria: conCategoria, errores });
   } catch (e) {
     console.error('[revo_catalogo] fallo:', e.message || e);
     res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) });
