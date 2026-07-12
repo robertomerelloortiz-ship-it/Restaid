@@ -167,12 +167,14 @@ module.exports = async (req, res) => {
     const lunesOff = dJ.getDay() === 0 ? -6 : 1 - dJ.getDay();
     const lunesJ = new Date(dJ.getTime() + lunesOff * 86400000).toISOString().slice(0, 10);
     const mesJ = fecha.slice(0, 7) + '-01';
-    const [rC, rA, rY, rS, rM] = await Promise.all([
-      fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales&jornada=eq.${fecha}&limit=2000`, { headers: sbHeaders(KEY_SB) }),
+    const diaSiguiente = (() => { const d = new Date(fecha + 'T12:00:00'); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })();
+    const [rC, rA, rY, rS, rM, rL] = await Promise.all([
+      fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=orden_id,total,comensales,cerrado&jornada=eq.${fecha}&limit=2000`, { headers: sbHeaders(KEY_SB) }),
       fetch(`${URL_SB}/rest/v1/revo_abiertas?select=orden_id,mesa,comensales,empleado,total,abierta_desde&order=abierta_desde.asc&limit=200`, { headers: sbHeaders(KEY_SB) }),
       fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales&jornada=eq.${ayerJ}&limit=2000`, { headers: sbHeaders(KEY_SB) }),
       fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales,jornada&jornada=gte.${lunesJ}&jornada=lte.${fecha}&limit=5000`, { headers: sbHeaders(KEY_SB) }),
       fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales,jornada&jornada=gte.${mesJ}&jornada=lte.${fecha}&limit=10000`, { headers: sbHeaders(KEY_SB) }),
+      fetch(`${URL_SB}/rest/v1/ventas_lineas?select=producto,cantidad,orden_id&fecha=gte.${fecha}&fecha=lte.${diaSiguiente}&limit=5000`, { headers: sbHeaders(KEY_SB) }),
     ]);
     if (!rC.ok) throw new Error('cerradas: HTTP ' + rC.status);
     const cerradasFilas = await rC.json();
@@ -199,6 +201,29 @@ module.exports = async (req, res) => {
       n: ayerFilas.length,
       comensales: ayerFilas.reduce((s, o) => s + (o.comensales || 0), 0),
     };
+    // ── Pulso del servicio ──
+    // Curva horaria: facturación por hora de cierre (madrugada 00-03 al final)
+    const porHora = {};
+    for (const o of cerradasFilas) {
+      if (!o.cerrado) continue;
+      const h = parseInt(String(o.cerrado).slice(11, 13), 10);
+      if (isNaN(h)) continue;
+      const k = String(h).padStart(2, '0');
+      porHora[k] = Math.round(((porHora[k] || 0) + num(o.total)) * 100) / 100;
+    }
+    // Top productos: líneas de las órdenes cerradas de la jornada
+    const idsCerradas = new Set(cerradasFilas.map(o => o.orden_id));
+    const lineasFilas = rL && rL.ok ? await rL.json() : [];
+    const porProducto = {};
+    for (const l of lineasFilas) {
+      if (!idsCerradas.has(l.orden_id)) continue;
+      porProducto[l.producto] = (porProducto[l.producto] || 0) + num(l.cantidad);
+    }
+    const top = Object.keys(porProducto)
+      .sort((a, b) => porProducto[b] - porProducto[a])
+      .slice(0, 3)
+      .map(p => ({ producto: p, uds: Math.round(porProducto[p]) }));
+
     const suma = filas => ({
       euros: Math.round(filas.reduce((s, o) => s + num(o.total), 0) * 100) / 100,
       n: filas.length,
@@ -211,7 +236,7 @@ module.exports = async (req, res) => {
     const jornadasSem = [...new Set(semFilas.map(o => o.jornada))].filter(Boolean).sort();
     const semana = { desde: lunesJ, jornadas: jornadasSem, ...suma(semFilas) };
     const mes = { desde: mesJ, jornadas: jornadasMes, ...suma(mesFilas) };
-    res.status(200).json({ ok: true, fecha, cerradas, abiertas, ayer, semana, mes });
+    res.status(200).json({ ok: true, fecha, cerradas, abiertas, ayer, semana, mes, pulso: { porHora, top } });
   } catch (e) {
     console.error('[hoy_live] fallo:', e.message || e);
     res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) });
