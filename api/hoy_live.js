@@ -31,7 +31,6 @@ function hoyMadrid() { return FMT.format(new Date()).replace(',', '').slice(0, 1
 // al día anterior. CORTE_JORNADA_H = 4 → el día acaba a las 04:00 (las cenas
 // se alargan hasta la 01:30; entre las 04:00 y la apertura no hay actividad).
 // Convención única de Talabar: si algún día cambia, cambiarla SOLO aquí.
-const CORTE_JORNADA_H = 4;
 function jornadaServicio() {
   const ts = FMT.format(new Date(Date.now() - CORTE_JORNADA_H * 3600 * 1000)).replace(',', '');
   const fecha = ts.slice(0, 10);
@@ -41,6 +40,20 @@ function jornadaServicio() {
     desde: fecha + ' ' + hh + ':00:00',     // ventana de cierres que le pertenecen
     hasta: null,                            // hasta ahora mismo
   };
+}
+
+
+// Jornada de servicio (convención Talabar): el día acaba a las 04:00.
+// Un cierre a la 01:30 pertenece a la jornada del día anterior.
+const CORTE_JORNADA_H = 4;
+function jornadaDe(cerradoTs) {
+  if (!cerradoTs) return null;
+  const d = new Date(String(cerradoTs).replace(' ', 'T'));
+  if (isNaN(d)) return null;
+  d.setHours(d.getHours() - CORTE_JORNADA_H);
+  // fecha local del reloj retrasado (sin pasar por UTC para no mover el día)
+  const p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
 }
 
 function num(v) {
@@ -70,6 +83,7 @@ function transformarEvento(data) {
   }
   const orden = {
     orden_id: data.id, fecha: cerrado.fecha,
+    jornada: jornadaDe(cerrado.ts),
     abierto: abierto ? abierto.ts : null, cerrado: cerrado.ts,
     duracion_min: duracion,
     comensales: Math.max(1, num(data.guests) || 1),
@@ -142,16 +156,19 @@ module.exports = async (req, res) => {
   if (!URL_SB || !KEY_SB) { res.status(500).json({ ok: false, error: 'Supabase no configurado' }); return; }
   try {
     await procesarPendientes(URL_SB, KEY_SB);
-    // Jornada de servicio (criterio Revo): cierres desde las 06:00 de la jornada
+    // Jornada de servicio (corte 04:00): se consulta por la columna jornada
     const j = jornadaServicio();
     const fecha = j.fecha;
-    const [rC, rA] = await Promise.all([
-      fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales&cerrado=gte.${encodeURIComponent(j.desde)}&limit=2000`, { headers: sbHeaders(KEY_SB) }),
+    const ayerJ = (() => { const d = new Date(fecha + 'T12:00:00'); d.setDate(d.getDate() - 1); return d.toISOString().slice(0, 10); })();
+    const [rC, rA, rY] = await Promise.all([
+      fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales&jornada=eq.${fecha}&limit=2000`, { headers: sbHeaders(KEY_SB) }),
       fetch(`${URL_SB}/rest/v1/revo_abiertas?select=orden_id,mesa,comensales,empleado,total,abierta_desde&order=abierta_desde.asc&limit=200`, { headers: sbHeaders(KEY_SB) }),
+      fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales&jornada=eq.${ayerJ}&limit=2000`, { headers: sbHeaders(KEY_SB) }),
     ]);
     if (!rC.ok) throw new Error('cerradas: HTTP ' + rC.status);
     const cerradasFilas = await rC.json();
     const abiertasFilas = rA.ok ? await rA.json() : [];
+    const ayerFilas = rY.ok ? await rY.json() : [];
 
     const cerradas = {
       euros: Math.round(cerradasFilas.reduce((s, o) => s + num(o.total), 0) * 100) / 100,
@@ -167,7 +184,13 @@ module.exports = async (req, res) => {
         desde: o.abierta_desde ? String(o.abierta_desde).slice(11, 16) : null,
       })),
     };
-    res.status(200).json({ ok: true, fecha, cerradas, abiertas });
+    const ayer = {
+      fecha: ayerJ,
+      euros: Math.round(ayerFilas.reduce((s, o) => s + num(o.total), 0) * 100) / 100,
+      n: ayerFilas.length,
+      comensales: ayerFilas.reduce((s, o) => s + (o.comensales || 0), 0),
+    };
+    res.status(200).json({ ok: true, fecha, cerradas, abiertas, ayer });
   } catch (e) {
     console.error('[hoy_live] fallo:', e.message || e);
     res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) });

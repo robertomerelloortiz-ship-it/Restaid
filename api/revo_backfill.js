@@ -22,6 +22,20 @@
 //   ENSAYO:  GET /api/revo_backfill?desde=2026-07-01&hasta=2026-07-11&key=LA_LLAVE&dry=1
 //   REAL:    igual sin &dry=1
 
+
+// Jornada de servicio (convención Talabar): el día acaba a las 04:00.
+// Un cierre a la 01:30 pertenece a la jornada del día anterior.
+const CORTE_JORNADA_H = 4;
+function jornadaDe(cerradoTs) {
+  if (!cerradoTs) return null;
+  const d = new Date(String(cerradoTs).replace(' ', 'T'));
+  if (isNaN(d)) return null;
+  d.setHours(d.getHours() - CORTE_JORNADA_H);
+  // fecha local del reloj retrasado (sin pasar por UTC para no mover el día)
+  const p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+
 function num(v) {
   if (v === null || v === undefined || v === '') return 0;
   const n = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.'));
@@ -57,6 +71,7 @@ function transformarReporte(o) {
   const orden = {
     orden_id: o.id,
     fecha: cerrado.slice(0, 10),
+    jornada: jornadaDe(cerrado),
     abierto, cerrado,
     duracion_min: duracion,
     comensales: Math.max(1, num(o.comensals) || 1),

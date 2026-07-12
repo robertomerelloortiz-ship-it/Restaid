@@ -32,6 +32,20 @@ function utcAMadrid(s) {
   return { fecha, hora, ts: fecha + ' ' + hora, date: d };
 }
 
+
+// Jornada de servicio (convención Talabar): el día acaba a las 04:00.
+// Un cierre a la 01:30 pertenece a la jornada del día anterior.
+const CORTE_JORNADA_H = 4;
+function jornadaDe(cerradoTs) {
+  if (!cerradoTs) return null;
+  const d = new Date(String(cerradoTs).replace(' ', 'T'));
+  if (isNaN(d)) return null;
+  d.setHours(d.getHours() - CORTE_JORNADA_H);
+  // fecha local del reloj retrasado (sin pasar por UTC para no mover el día)
+  const p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+
 function num(v) {
   if (v === null || v === undefined || v === '') return 0;
   const n = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.'));
@@ -64,6 +78,7 @@ function transformarEvento(data) {
   const orden = {
     orden_id: data.id,
     fecha: cerrado.fecha,
+    jornada: jornadaDe(cerrado.ts),
     abierto: abierto ? abierto.ts : null,
     cerrado: cerrado.ts,
     duracion_min: duracion,
