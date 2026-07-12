@@ -1426,40 +1426,66 @@ function renderHomeRevo(box,r,v,pub){
       realHoy=Math.round((c.euros+a.euros)*100)/100;
       comensales=(c.comensales||0)+(a.comensales||0);
       if(comensales>0)perComensal=realHoy/comensales;
-      const mesasTxt=(a.mesas||[]).slice(0,6).map(m=>`${m.mesa||'?'} ${fmtE(m.total)}`).join(' · ');
       heroExtra=`
-        <div style="display:flex;gap:18px;justify-content:center;margin-top:10px;font-size:13px">
-          <span style="color:#16a34a">✓ Cerradas: <b>${fmtE(c.euros)}</b> <span style="color:var(--tx3)">(${c.n} órdenes)</span></span>
-          <span style="color:#d97706">● Abiertas: <b>${fmtE(a.euros)}</b> <span style="color:var(--tx3)">(${a.n} mesa${a.n===1?'':'s'})</span></span>
-        </div>
-        ${c.n>0?`<div style="font-size:12px;color:var(--tx3);margin-top:4px">Ticket medio: ${fmtE2(c.euros/c.n)}</div>`:''}
-        ${(()=>{ // ── Pulso del servicio ──
-          const P=HOY_LIVE.pulso||{};
-          const ph=P.porHora||{};
-          // Eje: 12h → hora actual (mín. hasta 15h), madrugada 00-03 tras las 23
-          const ahora=new Date();let hFin=ahora.getHours();if(hFin<4)hFin=24+hFin;
-          hFin=Math.max(hFin,15);
-          const horas=[];for(let h=12;h<=Math.min(hFin,27);h++)horas.push(h%24);
-          const vals=horas.map(h=>ph[String(h).padStart(2,'0')]||0);
-          const maxV=Math.max(...vals,1);
-          const barras=horas.map((h,i)=>{
-            const alt=Math.max(3,Math.round(vals[i]/maxV*34));
-            const on=vals[i]>0;
-            return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px">
-              <div style="width:9px;height:${alt}px;border-radius:2px;background:${on?'var(--acc,#d97706)':'#e5e7eb'}"></div>
-              <span style="font-size:8px;color:var(--tx3)">${h}</span></div>`;
-          }).join('');
-          const com=a.comensales||0;
-          const pct=Math.min(100,Math.round(com/AFORO_TALABAR*100));
-          const ocup=`<div style="margin-top:10px;font-size:12px;color:var(--tx3)">Ocupación ahora: <b style="color:var(--tx1)">${com}/${AFORO_TALABAR}</b> · ${pct}%
-            <div style="height:5px;background:#e5e7eb;border-radius:3px;margin-top:3px;max-width:220px;margin-left:auto;margin-right:auto">
-              <div style="height:5px;width:${pct}%;border-radius:3px;background:${pct>85?'#dc2626':pct>60?'#d97706':'#16a34a'}"></div></div></div>`;
-          const topTxt=(P.top&&P.top.length)?`<div style="margin-top:8px;font-size:12px;color:var(--tx3)">Top: ${P.top.map(t=>`<b style="color:var(--tx1)">${t.producto}</b> ×${t.uds}`).join(' · ')}</div>`:'';
-          return `<div style="margin-top:12px;border-top:1px solid var(--bd,#e5e7eb);padding-top:10px">
-            <div style="display:flex;gap:4px;justify-content:center;align-items:flex-end">${barras}</div>
-            ${ocup}${topTxt}</div>`;
-        })()}
-        ${a.n>0&&mesasTxt?`<div style="font-size:11px;color:var(--tx3);margin-top:4px">${mesasTxt}${a.mesas.length>6?' · …':''}</div>`:''}`;
+        <div style="max-width:560px;margin:18px auto 0;text-align:center">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div style="background:rgba(22,163,74,.06);border:1px solid rgba(22,163,74,.18);border-radius:12px;padding:12px 8px">
+              <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#16a34a;font-weight:600">Cerradas</div>
+              <div style="font-size:20px;font-weight:700;color:var(--tx1);margin-top:2px">${fmtE(c.euros)}</div>
+              <div style="font-size:11px;color:var(--tx3);margin-top:2px">${c.n} órdenes${c.n>0?` · ticket ${fmtE2(c.euros/c.n)}`:''}</div>
+            </div>
+            <div style="background:rgba(217,119,6,.06);border:1px solid rgba(217,119,6,.2);border-radius:12px;padding:12px 8px">
+              <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#d97706;font-weight:600">Abiertas</div>
+              <div style="font-size:20px;font-weight:700;color:var(--tx1);margin-top:2px">${fmtE(a.euros)}</div>
+              <div style="font-size:11px;color:var(--tx3);margin-top:2px">${a.n} mesa${a.n===1?'':'s'} en sala</div>
+            </div>
+          </div>
+          ${a.n>0?`<div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:10px">
+            ${(a.mesas||[]).slice(0,6).map(m=>`<span style="font-size:11px;color:var(--tx3);background:var(--bg2,#fff);border:1px solid var(--bd,#e5e7eb);border-radius:999px;padding:3px 10px">${m.mesa||'?'} · <b style="color:var(--tx1)">${fmtE(m.total)}</b></span>`).join('')}
+            ${a.mesas.length>6?`<span style="font-size:11px;color:var(--tx3);padding:3px 6px">+${a.mesas.length-6}</span>`:''}
+          </div>`:''}
+          ${(()=>{
+            const P=HOY_LIVE.pulso||{};const ph=P.porHora||{};
+            const ahora=new Date();let hFin=ahora.getHours();if(hFin<4)hFin=24+hFin;
+            hFin=Math.max(hFin,15);
+            const horas=[];for(let h=12;h<=Math.min(hFin,27);h++)horas.push(h%24);
+            const vals=horas.map(h=>ph[String(h).padStart(2,'0')]||0);
+            const maxV=Math.max(...vals,1);
+            const barras=horas.map((h,i)=>{
+              const alt=Math.max(4,Math.round(vals[i]/maxV*44));
+              const on=vals[i]>0;
+              const pico=vals[i]===maxV&&on;
+              return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;max-width:34px">
+                <div style="width:100%;max-width:14px;height:${alt}px;border-radius:4px;background:${pico?'#d97706':on?'rgba(217,119,6,.45)':'var(--bd,#e5e7eb)'}"></div>
+                <span style="font-size:9px;color:var(--tx3)">${h}</span></div>`;
+            }).join('');
+            const picoIdx=vals.indexOf(maxV);
+            const picoTxt=maxV>1?`Pico a las ${horas[picoIdx]}h · ${fmtE(maxV)}`:'';
+            return `<div style="margin-top:22px">
+              <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--tx3);margin-bottom:10px">Curva del día${picoTxt?` <span style="text-transform:none;letter-spacing:0;color:#d97706">· ${picoTxt}</span>`:''}</div>
+              <div style="display:flex;gap:6px;justify-content:center;align-items:flex-end">${barras}</div>
+            </div>`;
+          })()}
+          <div style="margin-top:20px;display:grid;grid-template-columns:1fr;gap:12px">
+            ${(()=>{
+              const com=a.comensales||0;
+              const pct=Math.min(100,Math.round(com/AFORO_TALABAR*100));
+              const col=pct>85?'#dc2626':pct>60?'#d97706':'#16a34a';
+              return `<div>
+                <div style="display:flex;justify-content:space-between;max-width:300px;margin:0 auto;font-size:11px;color:var(--tx3)">
+                  <span style="letter-spacing:.08em;text-transform:uppercase;font-size:10px">Ocupación</span>
+                  <span><b style="color:var(--tx1)">${com}/${AFORO_TALABAR}</b> · ${pct}%</span>
+                </div>
+                <div style="height:6px;background:var(--bd,#e5e7eb);border-radius:3px;margin:6px auto 0;max-width:300px">
+                  <div style="height:6px;width:${pct}%;border-radius:3px;background:${col};transition:width .4s"></div>
+                </div></div>`;
+            })()}
+            ${(HOY_LIVE.pulso&&HOY_LIVE.pulso.top&&HOY_LIVE.pulso.top.length)?`
+              <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center">
+                ${HOY_LIVE.pulso.top.map((t,i)=>`<span style="font-size:11px;border-radius:999px;padding:4px 12px;border:1px solid ${i===0?'rgba(217,119,6,.35)':'var(--bd,#e5e7eb)'};background:${i===0?'rgba(217,119,6,.07)':'var(--bg2,#fff)'};color:var(--tx3)"><b style="color:var(--tx1)">${t.producto}</b> ×${t.uds}</span>`).join('')}
+              </div>`:''}
+          </div>
+        </div>`;
     } else if(realHoy>0&&capRef){
       comensales=Math.round(realHoy/capRef);
     }
