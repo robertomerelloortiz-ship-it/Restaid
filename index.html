@@ -1440,10 +1440,14 @@ function renderHomeRevo(box,r,v,pub){
               <div style="font-size:11px;color:var(--tx3);margin-top:2px">${a.n} mesa${a.n===1?'':'s'} en sala</div>
             </div>
           </div>
-          ${a.n>0?`<div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:10px">
-            ${(a.mesas||[]).slice(0,6).map(m=>`<span style="font-size:11px;color:var(--tx3);background:var(--bg2,#fff);border:1px solid var(--bd,#e5e7eb);border-radius:999px;padding:3px 10px">${m.mesa||'?'} · <b style="color:var(--tx1)">${fmtE(m.total)}</b></span>`).join('')}
-            ${a.mesas.length>6?`<span style="font-size:11px;color:var(--tx3);padding:3px 6px">+${a.mesas.length-6}</span>`:''}
-          </div>`:''}
+          ${(()=>{
+            const conConsumo=(a.mesas||[]).filter(m=>(m.total||0)>0);
+            if(!conConsumo.length)return '';
+            return `<div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:10px">
+              ${conConsumo.slice(0,6).map(m=>`<span style="font-size:11px;color:var(--tx3);background:var(--bg2,#fff);border:1px solid var(--bd,#e5e7eb);border-radius:999px;padding:3px 10px">${m.mesa||'?'} · <b style="color:var(--tx1)">${fmtE(m.total)}</b></span>`).join('')}
+              ${conConsumo.length>6?`<span style="font-size:11px;color:var(--tx3);padding:3px 6px">+${conConsumo.length-6}</span>`:''}
+            </div>`;
+          })()}
           ${(()=>{
             const P=HOY_LIVE.pulso||{};const ph=P.porHora||{};
             const ahora=new Date();let hFin=ahora.getHours();if(hFin<4)hFin=24+hFin;
@@ -1492,9 +1496,11 @@ function renderHomeRevo(box,r,v,pub){
     ventas=realHoy;
     estimado=false;
     periodoLbl='Hoy';
-    if(realHoy>0&&prevPeriodo&&prevPeriodo>0){
-      varAnual={pct:Math.round((realHoy-prevPeriodo)/prevPeriodo*1000)/10,añoPrev:'prev.',nota:'vs previsión'};
-    }
+    // Sin comparativa vs previsión mientras la jornada está en curso: enfrentar
+    // el acumulado parcial (que va por su primer tercio) contra la previsión del
+    // día entero sale siempre en rojo aunque el día vaya bien. La previsión se
+    // mantiene como referencia informativa debajo del número grande.
+    varAnual=null;
     perComensal=capRef;
   } else if(HOME_PERIOD==='ayer'){
     const ayerISO=(()=>{const d=new Date();d.setDate(d.getDate()-1);return isoLocal(d);})();
