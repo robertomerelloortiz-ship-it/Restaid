@@ -171,7 +171,7 @@ module.exports = async (req, res) => {
       fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales&jornada=eq.${fecha}&limit=2000`, { headers: sbHeaders(KEY_SB) }),
       fetch(`${URL_SB}/rest/v1/revo_abiertas?select=orden_id,mesa,comensales,empleado,total,abierta_desde&order=abierta_desde.asc&limit=200`, { headers: sbHeaders(KEY_SB) }),
       fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales&jornada=eq.${ayerJ}&limit=2000`, { headers: sbHeaders(KEY_SB) }),
-      fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales&jornada=gte.${lunesJ}&jornada=lte.${fecha}&limit=5000`, { headers: sbHeaders(KEY_SB) }),
+      fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales,jornada&jornada=gte.${lunesJ}&jornada=lte.${fecha}&limit=5000`, { headers: sbHeaders(KEY_SB) }),
       fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales,jornada&jornada=gte.${mesJ}&jornada=lte.${fecha}&limit=10000`, { headers: sbHeaders(KEY_SB) }),
     ]);
     if (!rC.ok) throw new Error('cerradas: HTTP ' + rC.status);
@@ -208,8 +208,9 @@ module.exports = async (req, res) => {
     const mesFilas = rM.ok ? await rM.json() : [];
     // Jornadas con datos en el mes (para detectar huecos tipo 1-9 julio)
     const jornadasMes = [...new Set(mesFilas.map(o => o.jornada))].sort();
-    const semana = { desde: lunesJ, ...suma(semFilas) };
-    const mes = { desde: mesJ, jornadas_con_datos: jornadasMes.length, ...suma(mesFilas) };
+    const jornadasSem = [...new Set(semFilas.map(o => o.jornada))].filter(Boolean).sort();
+    const semana = { desde: lunesJ, jornadas: jornadasSem, ...suma(semFilas) };
+    const mes = { desde: mesJ, jornadas: jornadasMes, ...suma(mesFilas) };
     res.status(200).json({ ok: true, fecha, cerradas, abiertas, ayer, semana, mes });
   } catch (e) {
     console.error('[hoy_live] fallo:', e.message || e);
