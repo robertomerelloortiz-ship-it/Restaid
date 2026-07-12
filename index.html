@@ -862,6 +862,18 @@ nav {
     <div id="mesas-modal-body" style="padding:12px 16px 18px"></div>
   </div>
 </div>
+<div id="prod-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.55);backdrop-filter:blur(2px);align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)cerrarProductosModal()">
+  <div style="background:var(--bg2,#fff);border-radius:18px;max-width:460px;width:100%;max-height:82vh;overflow:auto;box-shadow:0 24px 60px rgba(0,0,0,.3)">
+    <div style="position:sticky;top:0;background:var(--bg2,#fff);padding:18px 20px 12px;border-bottom:1px solid var(--bd,#e5e7eb);display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="font-size:16px;font-weight:700;color:var(--tx1)">Más vendidos hoy</div>
+        <div id="prod-modal-sub" style="font-size:12px;color:var(--tx3);margin-top:2px"></div>
+      </div>
+      <button onclick="cerrarProductosModal()" style="background:none;border:none;font-size:22px;line-height:1;color:var(--tx3);cursor:pointer;padding:4px 8px">×</button>
+    </div>
+    <div id="prod-modal-body" style="padding:14px 18px 20px"></div>
+  </div>
+</div>
 
 <!-- ══ LOGIN (acceso) ══ -->
 <div id="login-overlay" style="position:fixed;inset:0;z-index:99999;background:#f4f5f7;display:none;align-items:center;justify-content:center;padding:24px;-webkit-tap-highlight-color:transparent;">
@@ -1227,6 +1239,52 @@ function _durTxt(min){
   const h=Math.floor(min/60),m=min%60;
   return h+'h'+(m?' '+m+'m':'');
 }
+// Mantener los modales frescos con cada refresco de HOY_LIVE
+const _refreshBase=refreshHoyLive;
+refreshHoyLive=async function(){
+  await _refreshBase();
+  const m=document.getElementById('mesas-modal');
+  if(m&&m.style.display!=='none')renderMesasModal();
+  const p=document.getElementById('prod-modal');
+  if(p&&p.style.display!=='none')renderProductosModal();
+};
+function abrirProductosModal(){
+  const el=document.getElementById('prod-modal');
+  if(!el)return;
+  renderProductosModal();
+  el.style.display='flex';
+}
+function cerrarProductosModal(){
+  const el=document.getElementById('prod-modal');
+  if(el)el.style.display='none';
+}
+function renderProductosModal(){
+  const P=(HOY_LIVE&&HOY_LIVE.pulso)||{};
+  const rk=(P.rankingEuros||[]);
+  const sub=document.getElementById('prod-modal-sub');
+  const body=document.getElementById('prod-modal-body');
+  if(!body)return;
+  if(sub)sub.textContent=`${fmtE(P.totalProductosEur||0)} en ${P.totalProductosUds||0} productos · ranking por facturación`;
+  if(!rk.length){body.innerHTML='<div style="text-align:center;color:var(--tx3);padding:24px 0">Aún no hay ventas hoy.</div>';return;}
+  const maxE=Math.max(...rk.map(r=>r.euros),1);
+  // Paleta: el nº1 destacado, degradado suave hacia el resto
+  body.innerHTML=rk.map((r,i)=>{
+    const w=Math.max(4,Math.round(r.euros/maxE*100));
+    const col=i===0?'#d97706':i<3?'rgba(217,119,6,.6)':'rgba(217,119,6,.32)';
+    return `<div style="margin-bottom:11px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:13px;margin-bottom:3px">
+        <span style="color:var(--tx1)"><b style="color:var(--tx3);font-size:11px;margin-right:6px">${i+1}</b>${r.producto}</span>
+        <span style="font-weight:700;color:var(--tx1)">${fmtE2(r.euros)}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="flex:1;height:8px;background:var(--bd,#e5e7eb);border-radius:4px;overflow:hidden">
+          <div style="height:8px;width:${w}%;background:${col};border-radius:4px;transition:width .4s"></div>
+        </div>
+        <span style="font-size:10px;color:var(--tx3);white-space:nowrap;min-width:70px;text-align:right">${r.uds} ud · ${r.pct}%</span>
+      </div>
+    </div>`;
+  }).join('');
+}
 function abrirMesasModal(){
   const el=document.getElementById('mesas-modal');
   if(!el)return;
@@ -1266,13 +1324,6 @@ function renderMesasModal(){
     </div>`;
   }).join('');
 }
-// Mantener el modal fresco con cada refresco de HOY_LIVE
-const _origRefresh=refreshHoyLive;
-refreshHoyLive=async function(){
-  await _origRefresh();
-  const el=document.getElementById('mesas-modal');
-  if(el&&el.style.display!=='none')renderMesasModal();
-};
 function setHomePeriod(p){
   HOME_PERIOD=p;
   if(p==='hoy'||p==='semana'||p==='mes'||p==='ayer')refreshHoyLive();
@@ -1555,8 +1606,11 @@ function renderHomeRevo(box,r,v,pub){
                 </div></div>`;
             })()}
             ${(HOY_LIVE.pulso&&HOY_LIVE.pulso.top&&HOY_LIVE.pulso.top.length)?`
-              <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center">
-                ${HOY_LIVE.pulso.top.map((t,i)=>`<span style="font-size:11px;border-radius:999px;padding:4px 12px;border:1px solid ${i===0?'rgba(217,119,6,.35)':'var(--bd,#e5e7eb)'};background:${i===0?'rgba(217,119,6,.07)':'var(--bg2,#fff)'};color:var(--tx3)"><b style="color:var(--tx1)">${t.producto}</b> ×${t.uds}</span>`).join('')}
+              <div onclick="abrirProductosModal()" style="cursor:pointer">
+                <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center">
+                  ${HOY_LIVE.pulso.top.map((t,i)=>`<span style="font-size:11px;border-radius:999px;padding:4px 12px;border:1px solid ${i===0?'rgba(217,119,6,.35)':'var(--bd,#e5e7eb)'};background:${i===0?'rgba(217,119,6,.07)':'var(--bg2,#fff)'};color:var(--tx3)"><b style="color:var(--tx1)">${t.producto}</b> ×${t.uds}</span>`).join('')}
+                </div>
+                <div style="font-size:10px;color:var(--tx3);margin-top:6px;text-align:center">ver ranking completo <span style="opacity:.7">›</span></div>
               </div>`:''}
           </div>
         </div>`;
