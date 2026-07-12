@@ -208,10 +208,15 @@ module.exports = async (req, res) => {
       euros: Math.round(abiertasFilas.reduce((s, o) => s + num(o.total), 0) * 100) / 100,
       n: abiertasFilas.length,
       comensales: abiertasFilas.reduce((s, o) => s + (o.comensales || 0), 0),
-      mesas: abiertasFilas.map(o => ({
-        mesa: o.mesa, total: num(o.total), comensales: o.comensales,
-        desde: o.abierta_desde ? String(o.abierta_desde).slice(11, 16) : null,
-      })),
+      mesas: abiertasFilas
+        .slice()
+        .sort((a, b) => String(a.abierta_desde || '').localeCompare(String(b.abierta_desde || '')))
+        .map(o => ({
+          mesa: o.mesa, total: num(o.total), comensales: o.comensales,
+          empleado: o.empleado || null,
+          desde: o.abierta_desde ? String(o.abierta_desde).slice(11, 16) : null,
+          abierta_desde: o.abierta_desde || null,
+        })),
     };
     const ayer = {
       fecha: ayerJ,
