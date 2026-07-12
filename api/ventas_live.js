@@ -50,7 +50,9 @@ function num(v) {
 
 function transformarEvento(data) {
   if (!data || !data.id) return null;
-  if (data.status !== 1) return null;
+  // status 0 con total 0 = cierre intermedio (descartar). status 0 con dinero
+  // = venta rápida REAL (caso 242713, verificado 12-jul-2026): se procesa.
+  if (data.status !== 1 && num(data.total) <= 0) return null;
   if (data.canceled) return null;
   const cerrado = utcAMadrid(data.closed || data.updated_at);
   const abierto = utcAMadrid(data.opened || data.created_at);
