@@ -1203,7 +1203,7 @@ setTimeout(refreshHoyLive,500);
 setInterval(refreshHoyLive,60000);
 function setHomePeriod(p){
   HOME_PERIOD=p;
-  if(p==='hoy')refreshHoyLive();
+  if(p==='hoy'||p==='semana'||p==='mes'||p==='ayer')refreshHoyLive();
   renderHome();
 }
 
@@ -1529,6 +1529,12 @@ function renderHomeRevo(box,r,v,pub){
     if(ventas&&capRef)comensales=Math.round(ventas/capRef);
     perComensal=capRef;
 
+    // Jornada real (corte 04:00, criterio Revo) si el endpoint en vivo la trae
+    if(HOY_LIVE&&HOY_LIVE.ok&&HOY_LIVE.semana&&HOY_LIVE.semana.euros>0){
+      ventas=HOY_LIVE.semana.euros;
+      estimado=false;
+      if(HOY_LIVE.semana.comensales)comensales=HOY_LIVE.semana.comensales;
+    }
   } else if(HOME_PERIOD==='mes'){
     const hoyM=new Date(); hoyM.setHours(0,0,0,0);
     const hoyMISO=isoLocal(hoyM);
@@ -1578,6 +1584,12 @@ function renderHomeRevo(box,r,v,pub){
     }
     if(ventas&&capRef)comensales=Math.round(ventas/capRef);
     perComensal=capRef;
+    // Jornada real (corte 04:00) si el endpoint en vivo la trae
+    if(HOY_LIVE&&HOY_LIVE.ok&&HOY_LIVE.mes&&HOY_LIVE.mes.euros>0){
+      ventas=HOY_LIVE.mes.euros;
+      estimado=false;
+      if(HOY_LIVE.mes.comensales)comensales=HOY_LIVE.mes.comensales;
+    }
   } else if(HOME_PERIOD==='ano'){
     // Año en curso o último año del histórico
     const pa=v.porAño||{};
