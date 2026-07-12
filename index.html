@@ -1423,12 +1423,14 @@ function renderHomeRevo(box,r,v,pub){
       const a=HOY_LIVE.abiertas||{euros:0,n:0,comensales:0,mesas:[]};
       realHoy=Math.round((c.euros+a.euros)*100)/100;
       comensales=(c.comensales||0)+(a.comensales||0);
+      if(comensales>0)perComensal=realHoy/comensales;
       const mesasTxt=(a.mesas||[]).slice(0,6).map(m=>`${m.mesa||'?'} ${fmtE(m.total)}`).join(' · ');
       heroExtra=`
         <div style="display:flex;gap:18px;justify-content:center;margin-top:10px;font-size:13px">
           <span style="color:#16a34a">✓ Cerradas: <b>${fmtE(c.euros)}</b> <span style="color:var(--tx3)">(${c.n} órdenes)</span></span>
           <span style="color:#d97706">● Abiertas: <b>${fmtE(a.euros)}</b> <span style="color:var(--tx3)">(${a.n} mesa${a.n===1?'':'s'})</span></span>
         </div>
+        ${c.n>0?`<div style="font-size:12px;color:var(--tx3);margin-top:4px">Ticket medio: ${(c.euros/c.n).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})} €</div>`:''}
         ${a.n>0&&mesasTxt?`<div style="font-size:11px;color:var(--tx3);margin-top:4px">${mesasTxt}${a.mesas.length>6?' · …':''}</div>`:''}`;
     } else if(realHoy>0&&capRef){
       comensales=Math.round(realHoy/capRef);
@@ -1452,10 +1454,8 @@ function renderHomeRevo(box,r,v,pub){
     if(ps)prevFallback=Math.round(((ps.Comida||0)+(ps.Cena||0))*(fc?fc.trend:1));
     prevPeriodo=prevNueva!=null?prevNueva:prevFallback;
     let realAyer=(vr&&vr[ayerISO]!=null&&vr[ayerISO]>0)?vr[ayerISO]:0;
-    // Jornada completa (corte 04:00, criterio Revo) si el endpoint en vivo la trae
     if(HOY_LIVE&&HOY_LIVE.ok&&HOY_LIVE.ayer&&HOY_LIVE.ayer.euros>0){
       realAyer=HOY_LIVE.ayer.euros;
-      if(HOY_LIVE.ayer.comensales)comensales=HOY_LIVE.ayer.comensales;
     }
     ventas=realAyer;
     estimado=false;
@@ -1464,6 +1464,12 @@ function renderHomeRevo(box,r,v,pub){
     }
     if(ventas&&capRef)comensales=Math.round(ventas/capRef);
     perComensal=capRef;
+    // Datos REALES de la jornada (órdenes del piso 2): comensales, €/comensal y ticket medio
+    if(HOY_LIVE&&HOY_LIVE.ok&&HOY_LIVE.ayer&&HOY_LIVE.ayer.euros>0){
+      const Y=HOY_LIVE.ayer;
+      if(Y.comensales>0){comensales=Y.comensales;perComensal=Y.euros/Y.comensales;}
+      if(Y.n>0)heroExtra=`<div style="font-size:12px;color:var(--tx3);margin-top:6px">${Y.n} órdenes · ticket medio ${(Y.euros/Y.n).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})} €</div>`;
+    }
     periodoLbl='Ayer '+ayerISO.split('-').reverse().slice(0,2).join('/');
   } else if(HOME_PERIOD==='semana'){
     // Semana actual: lunes a hoy (real desde ventasRecientes)
@@ -1534,7 +1540,7 @@ function renderHomeRevo(box,r,v,pub){
       const S=HOY_LIVE.semana;
       ventas=S.euros;
       estimado=false;
-      if(S.comensales)comensales=S.comensales;
+      if(S.comensales){comensales=S.comensales;perComensal=S.euros/S.comensales;}
       // Cobertura: jornadas esperadas (lunes→jornada actual) vs con datos
       const jAct=HOY_LIVE.fecha, jIni=S.desde;
       const espera=Math.round((new Date(jAct+'T12:00')-new Date(jIni+'T12:00'))/86400000)+1;
@@ -1599,7 +1605,7 @@ function renderHomeRevo(box,r,v,pub){
       const M=HOY_LIVE.mes;
       ventas=M.euros;
       estimado=false;
-      if(M.comensales)comensales=M.comensales;
+      if(M.comensales){comensales=M.comensales;perComensal=M.euros/M.comensales;}
       const jAct=HOY_LIVE.fecha;
       const espera=parseInt(jAct.slice(8),10); // días del mes hasta la jornada actual
       const tiene=(M.jornadas||[]).length;
