@@ -1451,7 +1451,12 @@ function renderHomeRevo(box,r,v,pub){
     const ps=v.prevSemana&&v.prevSemana[dowAyer];
     if(ps)prevFallback=Math.round(((ps.Comida||0)+(ps.Cena||0))*(fc?fc.trend:1));
     prevPeriodo=prevNueva!=null?prevNueva:prevFallback;
-    const realAyer=(vr&&vr[ayerISO]!=null&&vr[ayerISO]>0)?vr[ayerISO]:0;
+    let realAyer=(vr&&vr[ayerISO]!=null&&vr[ayerISO]>0)?vr[ayerISO]:0;
+    // Jornada completa (corte 04:00, criterio Revo) si el endpoint en vivo la trae
+    if(HOY_LIVE&&HOY_LIVE.ok&&HOY_LIVE.ayer&&HOY_LIVE.ayer.euros>0){
+      realAyer=HOY_LIVE.ayer.euros;
+      if(HOY_LIVE.ayer.comensales)comensales=HOY_LIVE.ayer.comensales;
+    }
     ventas=realAyer;
     estimado=false;
     if(realAyer>0&&prevPeriodo&&prevPeriodo>0){
