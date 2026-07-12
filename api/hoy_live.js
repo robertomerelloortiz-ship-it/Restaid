@@ -174,7 +174,7 @@ module.exports = async (req, res) => {
       fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales&jornada=eq.${ayerJ}&limit=2000`, { headers: sbHeaders(KEY_SB) }),
       fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales,jornada&jornada=gte.${lunesJ}&jornada=lte.${fecha}&limit=5000`, { headers: sbHeaders(KEY_SB) }),
       fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales,jornada&jornada=gte.${mesJ}&jornada=lte.${fecha}&limit=10000`, { headers: sbHeaders(KEY_SB) }),
-      fetch(`${URL_SB}/rest/v1/ventas_lineas?select=producto,cantidad,orden_id&fecha=gte.${fecha}&fecha=lte.${diaSiguiente}&limit=5000`, { headers: sbHeaders(KEY_SB) }),
+      fetch(`${URL_SB}/rest/v1/ventas_lineas?select=producto,cantidad,total,orden_id&fecha=gte.${fecha}&fecha=lte.${diaSiguiente}&limit=5000`, { headers: sbHeaders(KEY_SB) }),
     ]);
     if (!rC.ok) throw new Error('cerradas: HTTP ' + rC.status);
     const cerradasFilas = await rC.json();
@@ -237,15 +237,30 @@ module.exports = async (req, res) => {
     // Top productos: líneas de las órdenes cerradas de la jornada
     const idsCerradas = new Set(cerradasFilas.map(o => o.orden_id));
     const lineasFilas = rL && rL.ok ? await rL.json() : [];
-    const porProducto = {};
+    const porProducto = {};   // unidades
+    const eurosProducto = {}; // € facturados
+    let totalLineasEur = 0, totalLineasUds = 0;
     for (const l of lineasFilas) {
       if (!idsCerradas.has(l.orden_id)) continue;
       porProducto[l.producto] = (porProducto[l.producto] || 0) + num(l.cantidad);
+      eurosProducto[l.producto] = (eurosProducto[l.producto] || 0) + num(l.total);
+      totalLineasEur += num(l.total);
+      totalLineasUds += num(l.cantidad);
     }
     const top = Object.keys(porProducto)
       .sort((a, b) => porProducto[b] - porProducto[a])
       .slice(0, 3)
       .map(p => ({ producto: p, uds: Math.round(porProducto[p]) }));
+    // Ranking por DINERO (top 12) para el modal de productos
+    const rankingEuros = Object.keys(eurosProducto)
+      .sort((a, b) => eurosProducto[b] - eurosProducto[a])
+      .slice(0, 12)
+      .map(p => ({
+        producto: p,
+        euros: Math.round(eurosProducto[p] * 100) / 100,
+        uds: Math.round(porProducto[p]),
+        pct: totalLineasEur > 0 ? Math.round(eurosProducto[p] / totalLineasEur * 1000) / 10 : 0,
+      }));
 
     const suma = filas => ({
       euros: Math.round(filas.reduce((s, o) => s + num(o.total), 0) * 100) / 100,
@@ -259,7 +274,7 @@ module.exports = async (req, res) => {
     const jornadasSem = [...new Set(semFilas.map(o => o.jornada))].filter(Boolean).sort();
     const semana = { desde: lunesJ, jornadas: jornadasSem, ...suma(semFilas) };
     const mes = { desde: mesJ, jornadas: jornadasMes, ...suma(mesFilas) };
-    res.status(200).json({ ok: true, fecha, cerradas, abiertas, ayer, semana, mes, pulso: { porHora, top } });
+    res.status(200).json({ ok: true, fecha, cerradas, abiertas, ayer, semana, mes, pulso: { porHora, top, rankingEuros, totalProductosEur: Math.round(totalLineasEur * 100) / 100, totalProductosUds: totalLineasUds } });
   } catch (e) {
     console.error('[hoy_live] fallo:', e.message || e);
     res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) });
