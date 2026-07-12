@@ -1531,9 +1531,19 @@ function renderHomeRevo(box,r,v,pub){
 
     // Jornada real (corte 04:00, criterio Revo) si el endpoint en vivo la trae
     if(HOY_LIVE&&HOY_LIVE.ok&&HOY_LIVE.semana&&HOY_LIVE.semana.euros>0){
-      ventas=HOY_LIVE.semana.euros;
+      const S=HOY_LIVE.semana;
+      ventas=S.euros;
       estimado=false;
-      if(HOY_LIVE.semana.comensales)comensales=HOY_LIVE.semana.comensales;
+      if(S.comensales)comensales=S.comensales;
+      // Cobertura: jornadas esperadas (lunes→jornada actual) vs con datos
+      const jAct=HOY_LIVE.fecha, jIni=S.desde;
+      const espera=Math.round((new Date(jAct+'T12:00')-new Date(jIni+'T12:00'))/86400000)+1;
+      const tiene=(S.jornadas||[]).length;
+      if(tiene<espera){
+        varAnual=null; // sin comparativa: sería engañosa con datos parciales
+        heroExtra=`<div style="margin-top:8px;font-size:12px;color:#d97706;background:rgba(217,119,6,.08);border-radius:8px;padding:6px 12px;display:inline-block">
+          ⚠ Semana incompleta: datos de ${tiene} de ${espera} jornadas (las anteriores al 10/07 llegarán cuando Revo consolide julio)</div>`;
+      }
     }
   } else if(HOME_PERIOD==='mes'){
     const hoyM=new Date(); hoyM.setHours(0,0,0,0);
@@ -1586,9 +1596,18 @@ function renderHomeRevo(box,r,v,pub){
     perComensal=capRef;
     // Jornada real (corte 04:00) si el endpoint en vivo la trae
     if(HOY_LIVE&&HOY_LIVE.ok&&HOY_LIVE.mes&&HOY_LIVE.mes.euros>0){
-      ventas=HOY_LIVE.mes.euros;
+      const M=HOY_LIVE.mes;
+      ventas=M.euros;
       estimado=false;
-      if(HOY_LIVE.mes.comensales)comensales=HOY_LIVE.mes.comensales;
+      if(M.comensales)comensales=M.comensales;
+      const jAct=HOY_LIVE.fecha;
+      const espera=parseInt(jAct.slice(8),10); // días del mes hasta la jornada actual
+      const tiene=(M.jornadas||[]).length;
+      if(tiene<espera){
+        varAnual=null;
+        heroExtra=`<div style="margin-top:8px;font-size:12px;color:#d97706;background:rgba(217,119,6,.08);border-radius:8px;padding:6px 12px;display:inline-block">
+          ⚠ Mes incompleto: datos de ${tiene} de ${espera} jornadas (el 1–9/07 llegará cuando Revo consolide julio)</div>`;
+      }
     }
   } else if(HOME_PERIOD==='ano'){
     // Año en curso o último año del histórico
