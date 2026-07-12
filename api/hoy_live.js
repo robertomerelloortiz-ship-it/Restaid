@@ -162,10 +162,17 @@ module.exports = async (req, res) => {
     const j = jornadaServicio();
     const fecha = j.fecha;
     const ayerJ = (() => { const d = new Date(fecha + 'T12:00:00'); d.setDate(d.getDate() - 1); return d.toISOString().slice(0, 10); })();
-    const [rC, rA, rY] = await Promise.all([
+    // Semana de jornadas (lunes de la jornada actual) y mes de la jornada
+    const dJ = new Date(fecha + 'T12:00:00');
+    const lunesOff = dJ.getDay() === 0 ? -6 : 1 - dJ.getDay();
+    const lunesJ = new Date(dJ.getTime() + lunesOff * 86400000).toISOString().slice(0, 10);
+    const mesJ = fecha.slice(0, 7) + '-01';
+    const [rC, rA, rY, rS, rM] = await Promise.all([
       fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales&jornada=eq.${fecha}&limit=2000`, { headers: sbHeaders(KEY_SB) }),
       fetch(`${URL_SB}/rest/v1/revo_abiertas?select=orden_id,mesa,comensales,empleado,total,abierta_desde&order=abierta_desde.asc&limit=200`, { headers: sbHeaders(KEY_SB) }),
       fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales&jornada=eq.${ayerJ}&limit=2000`, { headers: sbHeaders(KEY_SB) }),
+      fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales&jornada=gte.${lunesJ}&jornada=lte.${fecha}&limit=5000`, { headers: sbHeaders(KEY_SB) }),
+      fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales,jornada&jornada=gte.${mesJ}&jornada=lte.${fecha}&limit=10000`, { headers: sbHeaders(KEY_SB) }),
     ]);
     if (!rC.ok) throw new Error('cerradas: HTTP ' + rC.status);
     const cerradasFilas = await rC.json();
@@ -192,7 +199,18 @@ module.exports = async (req, res) => {
       n: ayerFilas.length,
       comensales: ayerFilas.reduce((s, o) => s + (o.comensales || 0), 0),
     };
-    res.status(200).json({ ok: true, fecha, cerradas, abiertas, ayer });
+    const suma = filas => ({
+      euros: Math.round(filas.reduce((s, o) => s + num(o.total), 0) * 100) / 100,
+      n: filas.length,
+      comensales: filas.reduce((s, o) => s + (o.comensales || 0), 0),
+    });
+    const semFilas = rS.ok ? await rS.json() : [];
+    const mesFilas = rM.ok ? await rM.json() : [];
+    // Jornadas con datos en el mes (para detectar huecos tipo 1-9 julio)
+    const jornadasMes = [...new Set(mesFilas.map(o => o.jornada))].sort();
+    const semana = { desde: lunesJ, ...suma(semFilas) };
+    const mes = { desde: mesJ, jornadas_con_datos: jornadasMes.length, ...suma(mesFilas) };
+    res.status(200).json({ ok: true, fecha, cerradas, abiertas, ayer, semana, mes });
   } catch (e) {
     console.error('[hoy_live] fallo:', e.message || e);
     res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) });
