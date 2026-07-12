@@ -178,8 +178,26 @@ module.exports = async (req, res) => {
     ]);
     if (!rC.ok) throw new Error('cerradas: HTTP ' + rC.status);
     const cerradasFilas = await rC.json();
-    const abiertasFilas = rA.ok ? await rA.json() : [];
+    let abiertasFilas = rA.ok ? await rA.json() : [];
     const ayerFilas = rY.ok ? await rY.json() : [];
+
+    // Autolimpieza de mesas fantasma: aperturas rancias (0 € y >6 h sin
+    // actualizarse) cuyo evento de cierre/anulación nunca llegó. Se excluyen
+    // del conteo y se borran en segundo plano (sin bloquear la respuesta).
+    const AHORA = Date.now();
+    const esFantasma = a => {
+      const ref = a.actualizada_en || a.abierta_desde;
+      const edadH = ref ? (AHORA - new Date(ref).getTime()) / 3600000 : 999;
+      return (num(a.total) || 0) === 0 && edadH >= 6;
+    };
+    const fantasmas = abiertasFilas.filter(esFantasma);
+    abiertasFilas = abiertasFilas.filter(a => !esFantasma(a));
+    if (fantasmas.length) {
+      const idsF = fantasmas.map(a => a.orden_id);
+      fetch(`${URL_SB}/rest/v1/revo_abiertas?orden_id=in.(${idsF.join(',')})`, { method: 'DELETE', headers: sbHeaders(KEY_SB) })
+        .then(() => console.log('[hoy_live] limpiadas', idsF.length, 'mesas fantasma:', idsF.join(',')))
+        .catch(() => {});
+    }
 
     const cerradas = {
       euros: Math.round(cerradasFilas.reduce((s, o) => s + num(o.total), 0) * 100) / 100,
