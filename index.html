@@ -1418,7 +1418,7 @@ function renderHomeRevo(box,r,v,pub){
     // El número grande SIEMPRE es el dato real: cerradas + mesas abiertas
     // ahora mismo (HOY_LIVE, vía webhook), con fallback a lo publicado por Ventas
     let realHoy=(vh&&vh.fecha===hoyISO&&vh.euros>0)?vh.euros:0;
-    if(HOY_LIVE&&HOY_LIVE.ok&&HOY_LIVE.fecha===hoyISO){
+    if(HOY_LIVE&&HOY_LIVE.ok&&(HOY_LIVE.fecha===hoyISO||HOY_LIVE.fecha)){
       const c=HOY_LIVE.cerradas||{euros:0,n:0,comensales:0};
       const a=HOY_LIVE.abiertas||{euros:0,n:0,comensales:0,mesas:[]};
       realHoy=Math.round((c.euros+a.euros)*100)/100;
