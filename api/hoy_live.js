@@ -27,6 +27,22 @@ function utcAMadrid(s) {
 }
 function hoyMadrid() { return FMT.format(new Date()).replace(',', '').slice(0, 10); }
 
+// Jornada de SERVICIO (criterio Revo y de la casa): la madrugada pertenece
+// al día anterior. CORTE_JORNADA_H = 4 → el día acaba a las 04:00 (las cenas
+// se alargan hasta la 01:30; entre las 04:00 y la apertura no hay actividad).
+// Convención única de Talabar: si algún día cambia, cambiarla SOLO aquí.
+const CORTE_JORNADA_H = 4;
+function jornadaServicio() {
+  const ts = FMT.format(new Date(Date.now() - CORTE_JORNADA_H * 3600 * 1000)).replace(',', '');
+  const fecha = ts.slice(0, 10);
+  const hh = String(CORTE_JORNADA_H).padStart(2, '0');
+  return {
+    fecha,                                  // etiqueta de la jornada
+    desde: fecha + ' ' + hh + ':00:00',     // ventana de cierres que le pertenecen
+    hasta: null,                            // hasta ahora mismo
+  };
+}
+
 function num(v) {
   if (v === null || v === undefined || v === '') return 0;
   const n = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.'));
@@ -126,9 +142,11 @@ module.exports = async (req, res) => {
   if (!URL_SB || !KEY_SB) { res.status(500).json({ ok: false, error: 'Supabase no configurado' }); return; }
   try {
     await procesarPendientes(URL_SB, KEY_SB);
-    const fecha = hoyMadrid();
+    // Jornada de servicio (criterio Revo): cierres desde las 06:00 de la jornada
+    const j = jornadaServicio();
+    const fecha = j.fecha;
     const [rC, rA] = await Promise.all([
-      fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales&fecha=eq.${fecha}&limit=2000`, { headers: sbHeaders(KEY_SB) }),
+      fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales&cerrado=gte.${encodeURIComponent(j.desde)}&limit=2000`, { headers: sbHeaders(KEY_SB) }),
       fetch(`${URL_SB}/rest/v1/revo_abiertas?select=orden_id,mesa,comensales,empleado,total,abierta_desde&order=abierta_desde.asc&limit=200`, { headers: sbHeaders(KEY_SB) }),
     ]);
     if (!rC.ok) throw new Error('cerradas: HTTP ' + rC.status);
