@@ -29,6 +29,9 @@
     },
     "api/hoy_live.js": {
       "maxDuration": 30
+    },
+    "api/limpiar_abiertas.js": {
+      "maxDuration": 30
     }
   }
 }
