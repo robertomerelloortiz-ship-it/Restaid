@@ -1178,6 +1178,7 @@ function showHome(el){
 }
 
 function fmtE(n){return (Math.round(Number(n)||0)).toLocaleString('es-ES')+' €';}
+function fmtE2(n){return (Number(n)||0).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';}
 function semColor(p,verde,ambar){return p==null?'#94a3b8':p<verde?'#16a34a':p<ambar?'#d97706':'#dc2626';}
 
 function renderHome(){
@@ -1192,6 +1193,7 @@ function renderHome(){
 let HOME_PERIOD='hoy';
 // Hoy en vivo (cerradas + mesas abiertas) desde /api/hoy_live, refrescado cada 60 s
 let HOY_LIVE=null;
+const AFORO_TALABAR=84; // plazas; alinear con config de RRHH si cambia
 async function refreshHoyLive(){
   try{
     const r=await fetch('/api/hoy_live');
@@ -1430,7 +1432,33 @@ function renderHomeRevo(box,r,v,pub){
           <span style="color:#16a34a">✓ Cerradas: <b>${fmtE(c.euros)}</b> <span style="color:var(--tx3)">(${c.n} órdenes)</span></span>
           <span style="color:#d97706">● Abiertas: <b>${fmtE(a.euros)}</b> <span style="color:var(--tx3)">(${a.n} mesa${a.n===1?'':'s'})</span></span>
         </div>
-        ${c.n>0?`<div style="font-size:12px;color:var(--tx3);margin-top:4px">Ticket medio: ${(c.euros/c.n).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})} €</div>`:''}
+        ${c.n>0?`<div style="font-size:12px;color:var(--tx3);margin-top:4px">Ticket medio: ${fmtE2(c.euros/c.n)}</div>`:''}
+        ${(()=>{ // ── Pulso del servicio ──
+          const P=HOY_LIVE.pulso||{};
+          const ph=P.porHora||{};
+          // Eje: 12h → hora actual (mín. hasta 15h), madrugada 00-03 tras las 23
+          const ahora=new Date();let hFin=ahora.getHours();if(hFin<4)hFin=24+hFin;
+          hFin=Math.max(hFin,15);
+          const horas=[];for(let h=12;h<=Math.min(hFin,27);h++)horas.push(h%24);
+          const vals=horas.map(h=>ph[String(h).padStart(2,'0')]||0);
+          const maxV=Math.max(...vals,1);
+          const barras=horas.map((h,i)=>{
+            const alt=Math.max(3,Math.round(vals[i]/maxV*34));
+            const on=vals[i]>0;
+            return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+              <div style="width:9px;height:${alt}px;border-radius:2px;background:${on?'var(--acc,#d97706)':'#e5e7eb'}"></div>
+              <span style="font-size:8px;color:var(--tx3)">${h}</span></div>`;
+          }).join('');
+          const com=a.comensales||0;
+          const pct=Math.min(100,Math.round(com/AFORO_TALABAR*100));
+          const ocup=`<div style="margin-top:10px;font-size:12px;color:var(--tx3)">Ocupación ahora: <b style="color:var(--tx1)">${com}/${AFORO_TALABAR}</b> · ${pct}%
+            <div style="height:5px;background:#e5e7eb;border-radius:3px;margin-top:3px;max-width:220px;margin-left:auto;margin-right:auto">
+              <div style="height:5px;width:${pct}%;border-radius:3px;background:${pct>85?'#dc2626':pct>60?'#d97706':'#16a34a'}"></div></div></div>`;
+          const topTxt=(P.top&&P.top.length)?`<div style="margin-top:8px;font-size:12px;color:var(--tx3)">Top: ${P.top.map(t=>`<b style="color:var(--tx1)">${t.producto}</b> ×${t.uds}`).join(' · ')}</div>`:'';
+          return `<div style="margin-top:12px;border-top:1px solid var(--bd,#e5e7eb);padding-top:10px">
+            <div style="display:flex;gap:4px;justify-content:center;align-items:flex-end">${barras}</div>
+            ${ocup}${topTxt}</div>`;
+        })()}
         ${a.n>0&&mesasTxt?`<div style="font-size:11px;color:var(--tx3);margin-top:4px">${mesasTxt}${a.mesas.length>6?' · …':''}</div>`:''}`;
     } else if(realHoy>0&&capRef){
       comensales=Math.round(realHoy/capRef);
@@ -1468,7 +1496,7 @@ function renderHomeRevo(box,r,v,pub){
     if(HOY_LIVE&&HOY_LIVE.ok&&HOY_LIVE.ayer&&HOY_LIVE.ayer.euros>0){
       const Y=HOY_LIVE.ayer;
       if(Y.comensales>0){comensales=Y.comensales;perComensal=Y.euros/Y.comensales;}
-      if(Y.n>0)heroExtra=`<div style="font-size:12px;color:var(--tx3);margin-top:6px">${Y.n} órdenes · ticket medio ${(Y.euros/Y.n).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})} €</div>`;
+      if(Y.n>0)heroExtra=`<div style="font-size:12px;color:var(--tx3);margin-top:6px">${Y.n} órdenes · ticket medio ${fmtE2(Y.euros/Y.n)}</div>`;
     }
     periodoLbl='Ayer '+ayerISO.split('-').reverse().slice(0,2).join('/');
   } else if(HOME_PERIOD==='semana'){
@@ -1541,13 +1569,14 @@ function renderHomeRevo(box,r,v,pub){
       ventas=S.euros;
       estimado=false;
       if(S.comensales){comensales=S.comensales;perComensal=S.euros/S.comensales;}
+      if(S.n>0){const _tm=`<div style="font-size:12px;color:var(--tx3);margin-top:6px">${S.n} órdenes · ticket medio ${fmtE2(S.euros/S.n)}</div>`;heroExtra=_tm+heroExtra;}
       // Cobertura: jornadas esperadas (lunes→jornada actual) vs con datos
       const jAct=HOY_LIVE.fecha, jIni=S.desde;
       const espera=Math.round((new Date(jAct+'T12:00')-new Date(jIni+'T12:00'))/86400000)+1;
       const tiene=(S.jornadas||[]).length;
       if(tiene<espera){
         varAnual=null; // sin comparativa: sería engañosa con datos parciales
-        heroExtra=`<div style="margin-top:8px;font-size:12px;color:#d97706;background:rgba(217,119,6,.08);border-radius:8px;padding:6px 12px;display:inline-block">
+        heroExtra+=`<div style="margin-top:8px;font-size:12px;color:#d97706;background:rgba(217,119,6,.08);border-radius:8px;padding:6px 12px;display:inline-block">
           ⚠ Semana incompleta: datos de ${tiene} de ${espera} jornadas (las anteriores al 10/07 llegarán cuando Revo consolide julio)</div>`;
       }
     }
@@ -1606,12 +1635,13 @@ function renderHomeRevo(box,r,v,pub){
       ventas=M.euros;
       estimado=false;
       if(M.comensales){comensales=M.comensales;perComensal=M.euros/M.comensales;}
+      if(M.n>0){const _tm=`<div style="font-size:12px;color:var(--tx3);margin-top:6px">${M.n} órdenes · ticket medio ${fmtE2(M.euros/M.n)}</div>`;heroExtra=_tm+heroExtra;}
       const jAct=HOY_LIVE.fecha;
       const espera=parseInt(jAct.slice(8),10); // días del mes hasta la jornada actual
       const tiene=(M.jornadas||[]).length;
       if(tiene<espera){
         varAnual=null;
-        heroExtra=`<div style="margin-top:8px;font-size:12px;color:#d97706;background:rgba(217,119,6,.08);border-radius:8px;padding:6px 12px;display:inline-block">
+        heroExtra+=`<div style="margin-top:8px;font-size:12px;color:#d97706;background:rgba(217,119,6,.08);border-radius:8px;padding:6px 12px;display:inline-block">
           ⚠ Mes incompleto: datos de ${tiene} de ${espera} jornadas (el 1–9/07 llegará cuando Revo consolide julio)</div>`;
       }
     }
