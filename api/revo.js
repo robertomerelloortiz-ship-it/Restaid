@@ -50,10 +50,9 @@ module.exports = async (req, res) => {
     return;
   }
 
-  // Autorización RESTAID
+  // Autorización RESTAID (misma convención que claude.js y login.js)
   const pass = req.headers['x-restaid-pass'] || '';
-  const isPersonal = pass === 'personal';
-  if (!isPersonal && (!process.env.RESTAID_PASS || pass !== process.env.RESTAID_PASS)) {
+  if (!process.env.RESTAID_PASS || pass !== process.env.RESTAID_PASS) {
     res.status(401).json({ error: 'No autorizado' });
     return;
   }
