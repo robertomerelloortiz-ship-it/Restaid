@@ -1122,12 +1122,13 @@ function renderCuadrante(){
   <div class="page-hd"><h2>Cuadrante</h2><p>Toca una celda para asignar turno</p></div>
   <div class="cuad-toolbar">
     <div class="cuad-week"><button onclick="navWeek(-1)">‹</button><span class="cuad-week-lbl">${weekLabel(DB.semanaActual)}</span><button onclick="navWeek(1)">›</button></div>
-    <button class="btn btn-amber btn-sm" id="cuad-gen-btn" onclick="generarCuadranteIA()">✨ Generar con IA</button>
+    <button class="btn btn-amber btn-sm" id="cuad-gen-btn" onclick="openExcepcionModal()">✨ Generar con IA</button>
     <button class="btn btn-ghost btn-sm" onclick="openVentasPrev()">€ Ventas previstas</button>
     <button class="btn btn-ghost btn-sm" onclick="exportCuad()">↓ Excel</button>
     ${w.asignaciones.length?`<button class="btn btn-danger btn-sm" onclick="clearCuad()">Vaciar</button>`:''}
   </div>
   <div id="cuad-ai-panel"></div>
+  ${w.notaSemana?`<div style="border-left:3px solid var(--amber);background:var(--bg);border-radius:6px;padding:9px 12px;margin:.4rem 0;font-size:12.5px;color:var(--tx2);display:flex;gap:8px;align-items:flex-start"><span>📝</span><div><strong>Situación excepcional de esta semana:</strong> ${esc(w.notaSemana)}</div></div>`:''}
   ${dimensionamientoHTML(w,salaEmps,cocEmps)}
   ${isCurWeek?renderCuadNow():''}
   <div class="cuad-scroll"><table class="cuad-table">
@@ -1562,6 +1563,27 @@ function openCuadAI(){
     </div>
   </div>`;
 }
+function openExcepcionModal(){
+  const w=curWeek();
+  const host=$('modal-host');
+  host.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()"><div class="modal">
+    <h3>Antes de generar</h3>
+    <p class="modal-desc">¿Hay alguna situación excepcional a tener en cuenta esta semana? Un evento, una baja puntual, un grupo grande, alguien que no puede un día concreto… Se guarda con la semana y se muestra sobre el cuadrante para tenerla presente al revisarlo.</p>
+    <div class="field"><label>Situación excepcional <span style="font-weight:400;color:var(--tx3)">(opcional)</span></label><textarea id="exc-nota" rows="4" style="width:100%;resize:vertical;font-family:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--bdr);border-radius:6px;background:var(--bg);color:var(--tx)" placeholder="Ej. El sábado viene un grupo de 20 a las 21:00. Ana no puede el jueves.">${esc(w.notaSemana||'')}</textarea></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-amber btn-sm" onclick="generarConExcepcion()">✨ Generar cuadrante</button>
+    </div>
+  </div></div>`;
+  setTimeout(()=>{const t=$('exc-nota');if(t)t.focus();},50);
+}
+function generarConExcepcion(){
+  const w=curWeek();
+  const nota=($('exc-nota')?.value||'').trim();
+  w.notaSemana=nota;saveDB();
+  closeModal();
+  generarCuadranteIA();
+}
 function generarCuadranteIA(){
   const w=curWeek();
   // Botón del spinner: el de la barra (siempre existe). Se mantiene el
@@ -1955,6 +1977,9 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
   const srvIni = cfg.servicioIni || '12:00';
   const srvFin = cfg.servicioFin || '01:00';
   const umbral = parseHM(cfg.umbralCena || '17:00');
+  // Frontera mañana/tarde para las ventanas de disponibilidad y el corte de
+  // tandas del turno partido. Independiente del umbral de informes (Comida/Cena).
+  const FIN_MANANA = cfg.finManana > 0 ? cfg.finManana : 18;
   const llegadaAntesMin = cfg.llegadaAntes || 0;
   const srvIniH = parseHM(srvIni);
   const laboralIniH = srvIniH - llegadaAntesMin / 60;
@@ -2022,6 +2047,34 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
     return true;
   };
 
+  const esPartido = e => ((e.horarioHabitual || {}).franja) === 'partido';
+
+  // Ventana [ini, fin] dentro de la cual puede caer la persona:
+  //  - con entrada/salida habitual puesta => esas horas (envoltorio duro)
+  //  - franja 'mañana' => hasta FIN_MANANA ; 'tarde' => desde FIN_MANANA
+  //  - resto (incl. 'partido' sin horas) => servicio entero
+  // La demanda sigue mandando el escalonado DENTRO de la ventana.
+  const ventanaEmp = (e) => {
+    const hh = e.horarioHabitual || {};
+    if (hh.horaIni && hh.horaFin) {
+      let i = parseHM(hh.horaIni), f = parseHM(hh.horaFin);
+      if (f <= i) f += 24;
+      return [i, f];
+    }
+    if (hh.franja === 'mañana') return [laboralIniH, FIN_MANANA];
+    if (hh.franja === 'tarde')  return [FIN_MANANA, srvFinH];
+    return [laboralIniH, srvFinH];
+  };
+
+  // ¿El bloque [iniH,finH) respeta la ventana y, si es partido, no forma un
+  // corrido que cruce la frontera de tandas (para que parta comida/cena)?
+  const dentroVentana = (e, iniH, finH) => {
+    const [wi, wf] = ventanaEmp(e);
+    if (iniH < wi - 0.01 || finH > wf + 0.01) return false;
+    if (esPartido(e) && iniH < FIN_MANANA - 0.01 && finH > FIN_MANANA + 0.01) return false;
+    return true;
+  };
+
   // ── Colocar un bloque, con todas las verificaciones ──────────────────
   // ¿Cabe un bloque [iniH, finH) en el día, respetando solapes, pausas y
   // que ningún turno CONTINUO resultante (bloques pegados) supere el máximo?
@@ -2047,6 +2100,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
     if (iniH < laboralIniH || finH > srvFinH) return null;
     if (!puedeTrabajarDia(emp, di)) return null;
     if (!turnoCompatible(emp, iniH)) return null;
+    if (!dentroVentana(emp, iniH, finH)) return null;
     if ((horasAsig[emp.id] || 0) + durH > horasObjetivo[emp.id] + TOLERANCIA_) return null;
 
     // Regla dura: nunca más de MAX_DIAS_SEMANA_ días distintos trabajados
@@ -2078,19 +2132,28 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
     if (restante <= 0) return 0;
     const tp = (emp.horarioHabitual || {}).turnoPref;
     const durServicio = srvFinH - srvIniH;
-    const maxBloqueEfectivo = (tp === 'Comida' || tp === 'Cena')
+    let maxBloqueEfectivo = (tp === 'Comida' || tp === 'Cena')
       ? Math.min(MAX_BLOQUE_, durServicio / 2)
       : MAX_BLOQUE_;
-    // Si tiene horario fijo, usar esa duración directamente
-    if (emp.horarioHabitual && emp.horarioHabitual.horaIni && emp.horarioHabitual.horaFin) {
-      let i = parseHM(emp.horarioHabitual.horaIni), f = parseHM(emp.horarioHabitual.horaFin);
-      if (f <= i) f += 24;
-      return Math.min(MAX_BLOQUE_, f - i);
+    // Acotar la duración a la ventana de disponibilidad de la persona.
+    const [wi, wf] = ventanaEmp(emp);
+    maxBloqueEfectivo = Math.min(maxBloqueEfectivo, wf - wi);
+    if (esPartido(emp)) {
+      // Cada tramo debe caber en UNA tanda (mañana o tarde), sin cruzar.
+      const t1 = Math.min(wf, FIN_MANANA) - wi;
+      const t2 = wf - Math.max(wi, FIN_MANANA);
+      const tandaMax = Math.max(t1 > 0 ? t1 : 0, t2 > 0 ? t2 : 0);
+      maxBloqueEfectivo = Math.min(maxBloqueEfectivo, tandaMax);
+    } else if (emp.horarioHabitual && emp.horarioHabitual.horaIni && emp.horarioHabitual.horaFin) {
+      // Horario fijo (no partido): su turno es la ventana entera.
+      return Math.min(maxBloqueEfectivo, wf - wi);
     }
     // Estimar cuántos días le quedan por trabajar (máx MAX_DIAS_SEMANA_, menos los ya usados)
     const diasYaTrabajados = new Set(bloques.filter(b => b.empId === emp.id).map(b => b.dia)).size;
     const diasRestantesEstimados = Math.max(1, MAX_DIAS_SEMANA_ - diasYaTrabajados);
-    const dur = restante / diasRestantesEstimados;
+    // El partido reparte su jornada diaria en dos tandas (comida + cena).
+    const divisor = esPartido(emp) ? diasRestantesEstimados * 2 : diasRestantesEstimados;
+    const dur = restante / divisor;
     return Math.min(maxBloqueEfectivo, Math.max(MIN_BLOQUE_, Math.round(dur * 2) / 2));
   };
 
@@ -2124,6 +2187,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
       // Debe cubrir la franja ancla para ser candidato relevante a esta llamada
       if (anclaFranjaH < iniH || anclaFranjaH >= finH) continue;
       if (!turnoCompatible(emp, iniH)) continue;
+      if (!dentroVentana(emp, iniH, finH)) continue;
       const key = `${emp.id}|${dia}`;
       const existentes = bloquesEmpDia[key] || [];
       const horasDia = existentes.reduce((s, b) => s + (b.finH - b.iniH), 0);
@@ -2240,6 +2304,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
         for (let iniH = laboralIniH; iniH <= srvFinH - dur + 0.01; iniH += 0.5) {
           if (!turnoCompatible(emp, iniH)) continue;
           const finH = iniH + dur;
+          if (!dentroVentana(emp, iniH, finH)) continue;
           if (!cabeEnDia(existentes, iniH, finH)) continue;
           let score = scoreCobertura(dia, iniH, finH, grupo);
           if (horaTipica != null) score -= PESO_CONSISTENCIA_HORARIO * Math.abs(iniH - horaTipica);
