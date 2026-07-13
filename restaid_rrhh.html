@@ -988,6 +988,13 @@ function openEmpModal(id){
       <div class="field"><label>Día de descanso estándar</label><select id="em-descanso"><option value="">Sin definir</option>${DIAS_FULL.map(d=>`<option ${e.diaDescanso===d?'selected':''}>${d}</option>`).join('')}</select></div>
     </div>
     <div style="border-top:1px solid var(--bdr);margin:.75rem 0 .5rem;padding-top:.75rem">
+      <div style="font-size:11.5px;font-weight:700;color:var(--tx2);margin-bottom:.35rem">Días que trabaja</div>
+      <p class="field-hint" style="margin:0 0 .55rem">Marca los días que esta persona puede entrar. El cuadrante solo la asignará en esos días. Déjalos todos marcados si puede trabajar cualquier día.</p>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${DIAS.map((d,i)=>{const full=DIAS_FULL[i];const chk=(!Array.isArray(e.diasTrabaja)||!e.diasTrabaja.length)?true:e.diasTrabaja.includes(full);return `<label style="display:flex;align-items:center;gap:5px;font-size:12px;background:var(--bg);border:1px solid var(--bdr);border-radius:6px;padding:5px 9px;cursor:pointer"><input type="checkbox" id="em-dt-${i}" ${chk?'checked':''}>${d}</label>`;}).join('')}
+      </div>
+    </div>
+    <div style="border-top:1px solid var(--bdr);margin:.75rem 0 .5rem;padding-top:.75rem">
       <div style="font-size:11.5px;font-weight:700;color:var(--tx2);margin-bottom:.6rem">Horario habitual</div>
       <div class="field-row">
         <div class="field"><label>Turno preferido</label><select id="em-turno-pref"><option value="">Sin preferencia</option><option value="Comida" ${(e.horarioHabitual||{}).turnoPref==='Comida'?'selected':''}>Solo Comida (mediodía)</option><option value="Cena" ${(e.horarioHabitual||{}).turnoPref==='Cena'?'selected':''}>Solo Cena (noche)</option><option value="Ambos" ${(e.horarioHabitual||{}).turnoPref==='Ambos'?'selected':''}>Ambos turnos</option></select><div class="field-hint">El cuadrante respetará esta preferencia al asignar turnos.</div></div>
@@ -1047,7 +1054,10 @@ function saveEmp(id){
   const salarioHora=salarioBrutoMes>0?salarioBrutoMes/(horasContrato*4.33):0;
   const bajaIT=!!($('em-bajaIT')?.checked);
   const costeITMes=bajaIT?(parseFloat($('em-costeIT')?.value)||0):0;
-  const obj={nombre,rol:$('em-rol').value,contrato:$('em-contrato').value,salarioBrutoMes,salarioHora,horasContrato,fechaAlta:$('em-alta').value||'',diaDescanso:$('em-descanso').value||'',pin,bajaIT,costeITMes,
+  // Días que trabaja: si están las 7 marcadas equivale a "cualquier día".
+  const diasTrabaja=DIAS_FULL.filter((d,i)=>$('em-dt-'+i)?.checked);
+  if(diasTrabaja.length===0){toast('Marca al menos un día que trabaje (o usa día de descanso / baja médica si no está disponible)');return;}
+  const obj={nombre,rol:$('em-rol').value,contrato:$('em-contrato').value,salarioBrutoMes,salarioHora,horasContrato,fechaAlta:$('em-alta').value||'',diaDescanso:$('em-descanso').value||'',diasTrabaja,pin,bajaIT,costeITMes,
     horarioHabitual:{turnoPref:$('em-turno-pref').value||'',franja:$('em-franja').value||'',horaIni:$('em-hora-ini').value||'',horaFin:$('em-hora-fin').value||''}};
   if(id){const e=emp(id);Object.assign(e,obj);}
   else{obj.id=uid();obj.cumple='';obj.prefs='';obj.skills=[];obj.personal={};obj.vacaciones=[];obj.imagen='';DB.empleados.push(obj);}
@@ -1112,7 +1122,7 @@ function renderCuadrante(){
   <div class="page-hd"><h2>Cuadrante</h2><p>Toca una celda para asignar turno</p></div>
   <div class="cuad-toolbar">
     <div class="cuad-week"><button onclick="navWeek(-1)">‹</button><span class="cuad-week-lbl">${weekLabel(DB.semanaActual)}</span><button onclick="navWeek(1)">›</button></div>
-    <button class="btn btn-amber btn-sm" onclick="openCuadAI()">✨ Generar con IA</button>
+    <button class="btn btn-amber btn-sm" id="cuad-gen-btn" onclick="generarCuadranteIA()">✨ Generar con IA</button>
     <button class="btn btn-ghost btn-sm" onclick="openVentasPrev()">€ Ventas previstas</button>
     <button class="btn btn-ghost btn-sm" onclick="exportCuad()">↓ Excel</button>
     ${w.asignaciones.length?`<button class="btn btn-danger btn-sm" onclick="clearCuad()">Vaciar</button>`:''}
@@ -1554,10 +1564,17 @@ function openCuadAI(){
 }
 function generarCuadranteIA(){
   const w=curWeek();
-  const btn=$('ai-gen-btn');btn.innerHTML='<span class="spin"></span> Calculando...';btn.disabled=true;
+  // Botón del spinner: el de la barra (siempre existe). Se mantiene el
+  // fallback al antiguo botón del panel por si algún flujo lo reutiliza.
+  const btn=$('cuad-gen-btn')||$('ai-gen-btn');
+  const btnHtmlPrev=btn?btn.innerHTML:'';
+  if(btn){btn.innerHTML='<span class="spin"></span> Calculando...';btn.disabled=true;}
+  const restaurarBtn=()=>{if(btn){btn.innerHTML=btnHtmlPrev;btn.disabled=false;}};
   try{
     const resultado=calcularCuadranteV2();
     if(resultado&&resultado.bloques&&resultado.bloques.length){
+      // renderCuadrante() repinta la barra, así que el botón (y su spinner)
+      // se sustituye por uno nuevo: no hace falta restaurarlo aquí.
       w.asignaciones=resultado.bloques;saveDB();CUAD_AI_OPEN=false;renderCuadrante();updateSidebar();
       // Mostrar diagnóstico si hay franjas sin cubrir o empleados bajo contrato
       const {diagnostico}=resultado;
@@ -1570,12 +1587,12 @@ function generarCuadranteIA(){
         toast('Cuadrante generado · revísalo y ajusta lo que quieras');
       }
     }else{
-      btn.innerHTML='⚡ Generar cuadrante';btn.disabled=false;
+      restaurarBtn();
       toast('No hay suficientes datos para generar el cuadrante automáticamente');
     }
   }catch(err){
     console.error('[Cuadrante v2]',err);
-    btn.innerHTML='⚡ Generar cuadrante';btn.disabled=false;
+    restaurarBtn();
     toast('Error al generar el cuadrante: '+err.message);
   }
 }
@@ -1987,7 +2004,15 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
   });
   const bloquesEmpDia = {}; // "empId|dia" -> [{iniH, finH}]
 
-  const puedeTrabajarDia = (e, di) => !(e.diaDescanso && DIAS_FULL[di] === e.diaDescanso) && !enVacacionesDia(e, di);
+  const puedeTrabajarDia = (e, di) => {
+    if (e.diaDescanso && DIAS_FULL[di] === e.diaDescanso) return false;
+    if (enVacacionesDia(e, di)) return false;
+    // Disponibilidad explícita por día: si la persona tiene marcados días
+    // concretos que trabaja, solo puede entrar esos. Lista vacía o ausente
+    // => sin restricción (idéntico al comportamiento previo).
+    if (Array.isArray(e.diasTrabaja) && e.diasTrabaja.length && !e.diasTrabaja.includes(DIAS_FULL[di])) return false;
+    return true;
+  };
 
   const turnoCompatible = (e, iniH) => {
     const tp = (e.horarioHabitual || {}).turnoPref;
