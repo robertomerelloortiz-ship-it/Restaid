@@ -236,6 +236,9 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
 .dim-ok{background:#e6f4ea;color:#1e7e34}
 .dim-falta{background:#fdecea;color:#c62828}
 .dim-sobra{background:#e8f0fe;color:#1a56db}
+.dim-justo{background:#fef3c7;color:#92400e}
+.dim-total-sep{border-top:1px dashed var(--bdr,#e5e0d8);margin-top:6px;padding-top:6px}
+.dim-total-sep .dim-nombre{font-weight:700}
 .dim-hint{font-size:11px;color:var(--tx3,#999);margin-top:6px}
 .cuad-week{display:flex;align-items:center;gap:8px;background:var(--surf);border:1px solid var(--bdr);border-radius:7px;padding:5px 8px}
 .cuad-week button{background:transparent;border:none;cursor:pointer;font-size:16px;color:var(--tx2);padding:2px 7px;border-radius:5px}
@@ -1093,21 +1096,36 @@ function dimensionamientoHTML(w,salaEmps,cocEmps){
   const vPub=pub.ventas||{};
   const curvas={};DIAS.forEach(d=>{curvas[d]=(vPub.halfHourCurvaPorDia&&vPub.halfHourCurvaPorDia[d])||vPub.halfHourCurva||null;});
   const nec=horasNecesariasSemana(ventasPorDia,curvas,cfgUI,vPub.permanenciaPorDiaTurno||null);
-  const conSala=salaEmps.reduce((s,e)=>s+(e.horasContrato||0),0);
-  const conCoc=cocEmps.reduce((s,e)=>s+(e.horasContrato||0),0);
-  const linea=(nombre,necH,conH)=>{
-    const dif=Math.round((conH-necH)*10)/10;
+  // Horas disponibles por grupo, descontando las vacaciones de ESTA semana con
+  // la misma vara que el motor: contrato × (7 - díasVac) / 7.
+  const monday=weekIdToMonday(DB.semanaActual);
+  const fechasISO=DIAS.map((_,di)=>{const d=new Date(monday);d.setUTCDate(d.getUTCDate()+di);return d.toISOString().slice(0,10);});
+  const nVacDe=e=>DIAS.reduce((n,_,di)=>n+((e.vacaciones||[]).some(v=>v.inicio<=fechasISO[di]&&v.fin>=fechasISO[di])?1:0),0);
+  const dispDe=e=>Math.round((e.horasContrato||0)*(7-nVacDe(e))/7*10)/10;
+  const sumRaw=arr=>arr.reduce((s,e)=>s+(e.horasContrato||0),0);
+  const sumDisp=arr=>arr.reduce((s,e)=>s+dispDe(e),0);
+  const conSala=sumDisp(salaEmps), rawSala=sumRaw(salaEmps);
+  const conCoc=sumDisp(cocEmps),  rawCoc=sumRaw(cocEmps);
+  const colchonPct=(cfg.colchonPct>0?cfg.colchonPct:12);
+  // Veredicto contra el RANGO RECOMENDADO (mínimo + colchón), no contra el
+  // mínimo pelado: así "sobran/faltan" es la cifra sobre la que se decide.
+  const linea=(nombre,minH,tienesH,rawH)=>{
+    const rec=minH*(1+colchonPct/100);
     let cls,txt;
-    if(dif<-1){cls='dim-falta';txt=`faltan ${fc(-dif,0)} h`;}
-    else if(dif>necH*0.2){cls='dim-sobra';txt=`sobran ~${fc(dif,0)} h`;}
-    else{cls='dim-ok';txt='equilibrado';}
-    return `<div class="dim-grupo"><span class="dim-nombre">${nombre}</span><span class="dim-datos">${fc(necH,0)} h necesarias · ${fc(conH,0)} h contratadas</span><span class="dim-veredicto ${cls}">${txt}</span></div>`;
+    if(tienesH<minH-1){cls='dim-falta';txt=`faltan ~${fc(minH-tienesH,0)} h`;}
+    else if(tienesH<rec-1){cls='dim-justo';txt=`justo · faltan ~${fc(rec-tienesH,0)} h`;}
+    else if(tienesH<=rec*1.1+1){cls='dim-ok';txt='bien dimensionado';}
+    else{cls='dim-sobra';txt=`sobran ~${fc(tienesH-rec,0)} h`;}
+    const vac=(rawH-tienesH)>=0.5?` <span style="color:var(--tx3)">(−${fc(rawH-tienesH,0)} h vacac.)</span>`:'';
+    return `<div class="dim-grupo"><span class="dim-nombre">${nombre}</span><span class="dim-datos">Recomendado <b>~${fc(rec,0)} h</b> <span style="color:var(--tx3)">(mín. ${fc(minH,0)})</span> · tienes ${fc(tienesH,0)} h${vac}</span><span class="dim-veredicto ${cls}">${txt}</span></div>`;
   };
+  const minTot=nec.sala+nec.cocina, tienesTot=conSala+conCoc, rawTot=rawSala+rawCoc;
   return `<div class="dim-panel">
-    <div class="dim-titulo">⚖ Dimensionamiento de plantilla <span class="dim-sub">(semana prevista, mismas reglas que la fila Dotación)</span></div>
-    ${linea('Sala',nec.sala,conSala)}
-    ${linea('Cocina',nec.cocina,conCoc)}
-    <div class="dim-hint">Las horas necesarias son el mínimo teórico franja a franja; en la práctica conviene un colchón del 10-15% porque los turnos no encajan perfectos (duración mínima, descansos, máximo de días).</div>
+    <div class="dim-titulo">⚖ Dimensionamiento de plantilla <span class="dim-sub">(semana prevista)</span></div>
+    ${linea('Sala',nec.sala,conSala,rawSala)}
+    ${linea('Cocina',nec.cocina,conCoc,rawCoc)}
+    <div class="dim-total-sep">${linea('Total',minTot,tienesTot,rawTot)}</div>
+    <div class="dim-hint">«Recomendado» = mínimo teórico franja a franja + colchón del ${fc(colchonPct,0)} % (los turnos no encajan perfectos: duración mínima, descansos, máximo de días). «Tienes» ya descuenta las vacaciones de esta semana.</div>
   </div>`;
 }
 
