@@ -1572,20 +1572,95 @@ function openExcepcionModal(){
     <div class="field"><label>Situación excepcional <span style="font-weight:400;color:var(--tx3)">(opcional)</span></label><textarea id="exc-nota" rows="4" style="width:100%;resize:vertical;font-family:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--bdr);border-radius:6px;background:var(--bg);color:var(--tx)" placeholder="Ej. El sábado viene un grupo de 20 a las 21:00. Ana no puede el jueves.">${esc(w.notaSemana||'')}</textarea></div>
     <div class="modal-actions">
       <button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-amber btn-sm" onclick="generarConExcepcion()">✨ Generar cuadrante</button>
+      <button class="btn btn-amber btn-sm" id="exc-gen-btn" onclick="generarConExcepcion()">✨ Generar cuadrante</button>
     </div>
   </div></div>`;
   setTimeout(()=>{const t=$('exc-nota');if(t)t.focus();},50);
 }
-function generarConExcepcion(){
+function _normDia(s){
+  if(s==null)return '';
+  const t=String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+  const abbr=['lun','mar','mie','jue','vie','sab','dom'];
+  let i=['lunes','martes','miercoles','jueves','viernes','sabado','domingo'].indexOf(t);
+  if(i<0)i=abbr.indexOf(t);
+  if(i<0)i=abbr.findIndex(a=>t.startsWith(a));
+  return i>=0?DIAS_FULL[i]:'';
+}
+function _empIdPorNombre(nombre){
+  if(!nombre)return null;
+  const norm=x=>String(x||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+  const t=norm(nombre);
+  const e=(DB.empleados||[]).find(e=>{const n=norm(e.nombre);return n===t||n.startsWith(t)||t.startsWith(n)||n.includes(t);});
+  return e?e.id:null;
+}
+// Manda la nota a Claude y la traduce a ajustes estructurados. La IA SOLO
+// interpreta lenguaje→datos; no decide turnos. Devuelve {indisponibles,refuerzos}.
+async function interpretarNotaIA(nota){
+  const nombres=(DB.empleados||[]).map(e=>e.nombre).filter(Boolean).join(', ');
+  const system=`Eres un traductor para el generador de cuadrantes de un restaurante. Conviertes una nota en español sobre situaciones excepcionales de ESTA semana en datos estructurados. Responde SOLO con un objeto JSON válido: sin texto, sin markdown, sin explicación.
+Formato exacto:
+{"indisponibles":[{"nombre":"<de la plantilla>","dia":"Lunes|Martes|Miércoles|Jueves|Viernes|Sábado|Domingo"}],"refuerzos":[{"dia":"<día>","desde":"HH:MM","hasta":"HH:MM","comensales":<entero>}]}
+Reglas: usa SOLO estos nombres de plantilla: ${nombres}. Un grupo o evento => refuerzo con su nº de comensales y su franja horaria. Alguien que no puede un día => indisponible. Lo que no encaje en esos dos tipos, ignóralo. Si no hay nada, listas vacías.`;
+  const res=await fetch(API_URL,{method:'POST',headers:aiHeaders(),body:JSON.stringify({model:MODEL,max_tokens:600,system,messages:[{role:'user',content:nota}]})});
+  if(!res.ok)throw new Error('HTTP '+res.status);
+  const data=await res.json();
+  let txt=((data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n')||'').trim();
+  txt=txt.replace(/^```json/i,'').replace(/^```/,'').replace(/```$/,'').trim();
+  const m=txt.match(/\{[\s\S]*\}/);if(m)txt=m[0];
+  let parsed;try{parsed=JSON.parse(txt);}catch(e){throw new Error('interpretación no válida');}
+  const indisponibles=[];
+  (parsed.indisponibles||[]).forEach(x=>{const empId=_empIdPorNombre(x.nombre);const dia=_normDia(x.dia);if(empId&&dia)indisponibles.push({empId,dia,nombre:x.nombre});});
+  const refuerzos=[];
+  (parsed.refuerzos||[]).forEach(x=>{const dia=_normDia(x.dia);const com=parseInt(x.comensales,10);if(dia&&x.desde&&x.hasta&&com>0)refuerzos.push({dia,desde:String(x.desde),hasta:String(x.hasta),comensales:com});});
+  return {indisponibles,refuerzos};
+}
+function _resumenAjustes(aj){
+  const items=[];
+  aj.indisponibles.forEach(x=>items.push(`${x.nombre||'(alguien)'} no trabaja el ${x.dia}`));
+  aj.refuerzos.forEach(x=>items.push(`Refuerzo el ${x.dia} de ${x.desde} a ${x.hasta} · ${x.comensales} comensales`));
+  return items;
+}
+// Muestra lo que la IA entendió y pide confirmación ANTES de tocar el horario.
+function confirmarAjustesModal(aj){
+  const items=_resumenAjustes(aj);
+  const host=$('modal-host');
+  const lista=items.length
+    ?('<ul style="margin:.5rem 0 0;padding-left:1.1rem;font-size:13px;line-height:1.7">'+items.map(t=>'<li>'+esc(t)+'</li>').join('')+'</ul>')
+    :'<p class="modal-desc">No he detectado indisponibilidades ni refuerzos concretos en la nota. Puedo generar el cuadrante normal.</p>';
+  window.__ajustesPend={indisponibles:aj.indisponibles.map(x=>({empId:x.empId,dia:x.dia})),refuerzos:aj.refuerzos};
+  host.innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()"><div class="modal">
+    <h3>Esto he entendido</h3>
+    <p class="modal-desc">Revísalo antes de generar. El cuadrante lo tendrá en cuenta.</p>
+    ${lista}
+    <div class="modal-actions" style="flex-wrap:wrap;gap:6px">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal();generarCuadranteIA(null)">Generar sin ajustes</button>
+      <button class="btn btn-amber btn-sm" ${items.length?'':'disabled'} onclick="closeModal();generarCuadranteIA(window.__ajustesPend||null)">Generar con esto</button>
+    </div>
+  </div></div>`;
+}
+async function generarConExcepcion(){
   const w=curWeek();
   const nota=($('exc-nota')?.value||'').trim();
   w.notaSemana=nota;saveDB();
-  closeModal();
-  generarCuadranteIA();
+  if(!nota){closeModal();generarCuadranteIA(null);return;}
+  const btnG=$('exc-gen-btn');
+  if(btnG){btnG.innerHTML='<span class="spin"></span> Interpretando...';btnG.disabled=true;}
+  try{
+    const aj=await interpretarNotaIA(nota);
+    closeModal();
+    confirmarAjustesModal(aj);
+  }catch(e){
+    console.error('[Excepción IA]',e);
+    closeModal();
+    toast('No pude interpretar la nota con la IA; genero el cuadrante normal.');
+    generarCuadranteIA(null);
+  }
 }
-function generarCuadranteIA(){
+function generarCuadranteIA(ajustes){
   const w=curWeek();
+  if(ajustes!==undefined) w.ajustesSemana=ajustes||null;
+  const ajustesUsar=(ajustes!==undefined)?ajustes:(w.ajustesSemana||null);
   // Botón del spinner: el de la barra (siempre existe). Se mantiene el
   // fallback al antiguo botón del panel por si algún flujo lo reutiliza.
   const btn=$('cuad-gen-btn')||$('ai-gen-btn');
@@ -1593,7 +1668,7 @@ function generarCuadranteIA(){
   if(btn){btn.innerHTML='<span class="spin"></span> Calculando...';btn.disabled=true;}
   const restaurarBtn=()=>{if(btn){btn.innerHTML=btnHtmlPrev;btn.disabled=false;}};
   try{
-    const resultado=calcularCuadranteV2();
+    const resultado=calcularCuadranteV2(ajustesUsar);
     if(resultado&&resultado.bloques&&resultado.bloques.length){
       // renderCuadrante() repinta la barra, así que el botón (y su spinner)
       // se sustituye por uno nuevo: no hace falta restaurarlo aquí.
@@ -1619,7 +1694,7 @@ function generarCuadranteIA(){
   }
 }
 
-function calcularCuadranteV2(){
+function calcularCuadranteV2(ajustes){
   const w=curWeek();
   const cfg=DB.config||{};
   const lunes=weekIdToMonday(DB.semanaActual);
@@ -1704,7 +1779,8 @@ function calcularCuadranteV2(){
     ventasPorDia,
     curvasPorDia,
     config:cfg,
-    semanaMonday:lunes
+    semanaMonday:lunes,
+    ajustes
   });
 }
 
@@ -1960,8 +2036,21 @@ function horasNecesariasSemana(ventasPorDia, curvasPorDia, config, permanenciaPo
  * que comida y cena se cubren de forma independiente — un empleado cubriendo
  * el pico de comida no "satisface" artificialmente la demanda de cena.
  */
-function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, semanaMonday }) {
+function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, semanaMonday, ajustes }) {
   const cfg = config || {};
+  // Ajustes puntuales de la semana (los interpreta la IA desde la nota de
+  // situación excepcional): indisponibilidad de una persona un día concreto, y
+  // refuerzos de demanda (comensales extra) en un día/franja. La IA solo
+  // traduce el texto a estos datos; el motor sigue cuadrando de forma determinista.
+  const AJ = ajustes || {};
+  const _diaIdx = (d) => {
+    if (typeof d === 'number') return d;
+    const i = DIAS.indexOf(d);
+    return i >= 0 ? i : DIAS_FULL.indexOf(d);
+  };
+  const indispSet = new Set((AJ.indisponibles || [])
+    .map(x => `${x.empId}|${_diaIdx(x.dia)}`)
+    .filter(k => !k.endsWith('|-1')));
   // Parámetros configurables por el usuario (pestaña "Ajustes del cuadrante").
   // Si no vienen en cfg, se usan los valores por defecto de siempre.
   const MIN_BLOQUE_ = cfg.minBloque > 0 ? cfg.minBloque : MIN_BLOQUE;
@@ -2017,6 +2106,29 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
   DIAS.forEach(d => {
     demanda[d] = calcularDemandaFranjas(ventasPorDia[d] || 0, curvasPorDia[d] || null, cfg, franjas, (cfg.permanenciaPorDia && cfg.permanenciaPorDia[d]) || null);
   });
+  // Refuerzos puntuales: N comensales extra presentes en [desde,hasta) de un
+  // día suben la demanda de esa franja, con las MISMAS ratios que el cálculo
+  // normal (ceil(comensales/ratio)). El motor intenta cubrirlo con la plantilla
+  // dentro de sus reglas; si no llega, aparece en el diagnóstico infrademanda.
+  const _ratioSala = cfg.ratioSala || 25;
+  const _ratioCocina = cfg.ratioCocina || 30;
+  (AJ.refuerzos || []).forEach(rf => {
+    const di = _diaIdx(rf.dia); if (di < 0) return;
+    const d = DIAS[di];
+    const desde = parseHM(rf.desde), hasta = parseHM(rf.hasta);
+    if (desde == null || hasta == null) return;
+    let h1 = desde, h2 = hasta; if (h2 <= h1) h2 += 24;
+    const com = Number(rf.comensales) || 0; if (com <= 0) return;
+    const extraSala = Math.ceil(com / _ratioSala);
+    const extraCocina = Math.ceil(com / _ratioCocina);
+    franjas.forEach(f => {
+      let fh = f.h; if (fh < srvIniH) fh += 24;
+      if (fh >= h1 - 0.01 && fh < h2 - 0.01 && demanda[d][f.hStr]) {
+        demanda[d][f.hStr].sala += extraSala;
+        demanda[d][f.hStr].cocina += extraCocina;
+      }
+    });
+  });
 
   // ── Estado ────────────────────────────────────────────────────────────
   const bloques = [];
@@ -2030,6 +2142,7 @@ function generarCuadrante({ empleados, ventasPorDia, curvasPorDia, config, seman
   const bloquesEmpDia = {}; // "empId|dia" -> [{iniH, finH}]
 
   const puedeTrabajarDia = (e, di) => {
+    if (indispSet.has(`${e.id}|${di}`)) return false; // indisponibilidad puntual de esta semana
     if (e.diaDescanso && DIAS_FULL[di] === e.diaDescanso) return false;
     if (enVacacionesDia(e, di)) return false;
     // Disponibilidad explícita por día: si la persona tiene marcados días

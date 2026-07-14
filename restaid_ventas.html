@@ -478,6 +478,44 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
 .mb-prod-n{flex:1;font-size:13px;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mb-prod-v{font-size:13px;font-weight:700;color:var(--tx);flex-shrink:0}
 .mb-note{font-size:10.5px;color:var(--tx3);line-height:1.5;padding:0 2px}
+/* Comida vs Cena (dos servicios) */
+.mb-turnos{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--bdr);border:1px solid var(--bdr);border-radius:var(--r);overflow:hidden;margin-bottom:1.4rem}
+.mb-turno{background:var(--surf);padding:.9rem 1rem;text-align:center}
+.mb-t-lbl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--tx3);margin-bottom:5px}
+.mb-t-val{font-family:'DM Serif Display';font-size:21px;color:var(--tx);line-height:1;margin-bottom:4px}
+.mb-t-sub{font-size:11px;color:var(--tx3)}
+.mb-t-pct{display:inline-block;font-size:11px;font-weight:700;padding:1px 8px;border-radius:10px;margin-top:5px}
+.mb-turno.comida .mb-t-pct{background:rgba(26,43,60,.09);color:var(--navy)}
+.mb-turno.cena .mb-t-pct{background:rgba(232,145,74,.14);color:#B96A28}
+/* Curva horaria (barras CSS, sin librería) */
+.mb-curve{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--r);padding:.9rem 1rem .6rem;margin-bottom:1.4rem}
+.mb-curve-peak{font-size:12px;color:var(--tx2);margin-bottom:.6rem}
+.mb-curve-peak b{color:var(--tx)}
+.mb-curve-bars{display:flex;align-items:flex-end;gap:2px;height:56px}
+.mb-cbar{flex:1;min-width:0;border-radius:2px 2px 0 0;background:var(--navy)}
+.mb-cbar.cena{background:var(--amber,#E8914A)}
+.mb-cbar.peak{outline:2px solid var(--tx);outline-offset:-1px}
+.mb-curve-lbls{display:flex;margin-top:4px}
+.mb-curve-lbls span{flex:1;font-size:9.5px;color:var(--tx3);text-align:left;white-space:nowrap}
+.mb-curve-leg{display:flex;gap:12px;margin-top:.55rem;font-size:10.5px;color:var(--tx3)}
+.mb-curve-leg i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+/* Última semana vs semana típica */
+.mb-week{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--r);padding:.85rem 1rem;margin-bottom:1.4rem}
+.mb-wk-sum{display:flex;align-items:baseline;gap:8px;padding-bottom:.65rem;margin-bottom:.55rem;border-bottom:1px solid var(--bg);flex-wrap:wrap}
+.mb-wk-tot{font-family:'DM Serif Display';font-size:20px;color:var(--tx)}
+.mb-wk-chip{font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:12px}
+.mb-wk-chip.up{background:var(--green-bg);color:var(--green)}
+.mb-wk-chip.down{background:var(--red-bg);color:var(--red)}
+.mb-wk-lbl{font-size:11px;color:var(--tx3)}
+.mb-wk-row{display:flex;align-items:center;gap:8px;padding:4.5px 0;font-size:12.5px}
+.mb-wk-d{width:74px;color:var(--tx2);flex-shrink:0}
+.mb-wk-d b{color:var(--tx);font-weight:600}
+.mb-wk-v{margin-left:auto;font-weight:600;color:var(--tx);flex-shrink:0}
+.mb-wk-delta{width:58px;text-align:right;font-size:11.5px;font-weight:700;flex-shrink:0}
+.mb-wk-delta.up{color:var(--green)}
+.mb-wk-delta.down{color:var(--red)}
+.mb-wk-delta.na{color:var(--tx3);font-weight:400}
+.mb-wk-row.off{opacity:.45}
 /* ── Responsive ── */
 @media(max-width:980px){
   .g2,.g3,.visit-grid{grid-template-columns:1fr}
@@ -1446,8 +1484,88 @@ function renderMobile(){
   // Facturación por día (barras CSS)
   const dayVals=dayOrd.map(d=>g.byDay[d]||0), maxDay=Math.max(...dayVals,1);
 
+  // Última semana vs tu semana típica: los últimos 7 días del período contra
+  // la media de cada día de semana calculada SIN esos 7 días (comparación limpia).
+  let semanaHtml='';
+  if(g.d1&&g.byDate){
+    const dNames=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+    const fin=new Date(g.d1+'T12:00:00Z');
+    const win=[];// [{iso, dow, val}]
+    for(let i=6;i>=0;i--){const dt=new Date(fin);dt.setUTCDate(dt.getUTCDate()-i);const iso=dt.toISOString().slice(0,10);win.push({iso,dow:dNames[dt.getUTCDay()],val:g.byDate[iso]||0});}
+    const winSet=new Set(win.map(x=>x.iso));
+    // Media típica por día de semana, excluyendo la ventana comparada
+    const tipSum={},tipN={};
+    Object.keys(g.byDate).forEach(iso=>{
+      if(winSet.has(iso))return;const v=g.byDate[iso]||0;if(v<=0)return;
+      const dw=dNames[new Date(iso+'T12:00:00Z').getUTCDay()];
+      tipSum[dw]=(tipSum[dw]||0)+v;tipN[dw]=(tipN[dw]||0)+1;
+    });
+    const tip=dw=>tipN[dw]>=3?tipSum[dw]/tipN[dw]:null; // mínimo 3 muestras para fiarse
+    const rows=win.map(x=>{
+      const t=tip(x.dow);
+      if(x.val<=0)return `<div class="mb-wk-row off"><span class="mb-wk-d"><b>${x.dow}</b> ${x.iso.slice(8)}/${x.iso.slice(5,7)}</span><span class="mb-wk-v">—</span><span class="mb-wk-delta na">cerrado</span></div>`;
+      let delta='<span class="mb-wk-delta na">s/hist</span>';
+      if(t){const p=(x.val-t)/t*100;delta=`<span class="mb-wk-delta ${p>=0?'up':'down'}">${p>=0?'▲':'▼'} ${fc(Math.abs(p),0)}%</span>`;}
+      return `<div class="mb-wk-row"><span class="mb-wk-d"><b>${x.dow}</b> ${x.iso.slice(8)}/${x.iso.slice(5,7)}</span><span class="mb-wk-v">${fk(x.val)} €</span>${delta}</div>`;
+    });
+    // Resumen: total de la semana vs semana típica (solo días abiertos con historial)
+    const comp=win.filter(x=>x.val>0&&tip(x.dow));
+    const totWin=win.reduce((s,x)=>s+x.val,0);
+    let chip='';
+    if(comp.length>=3){
+      const totTip=comp.reduce((s,x)=>s+tip(x.dow),0);
+      const totComp=comp.reduce((s,x)=>s+x.val,0);
+      const p=(totComp-totTip)/totTip*100;
+      chip=`<span class="mb-wk-chip ${p>=0?'up':'down'}">${p>=0?'▲':'▼'} ${fc(Math.abs(p),1)}% vs tu semana típica</span>`;
+    }
+    if(totWin>0&&comp.length>=3){
+      semanaHtml=`
+    <div class="mb-section-t">Última semana</div>
+    <div class="mb-week">
+      <div class="mb-wk-sum"><span class="mb-wk-tot">${fk(totWin)} €</span>${chip}<span class="mb-wk-lbl">${win[0].iso.slice(8)}/${win[0].iso.slice(5,7)} – ${win[6].iso.slice(8)}/${win[6].iso.slice(5,7)}</span></div>
+      ${rows.join('')}
+    </div>`;
+    }
+  }
+
   // Top 5 productos por euros
   const topProd=Object.keys(g.byPE||{}).sort((a,b)=>g.byPE[b]-g.byPE[a]).slice(0,5);
+
+  // Comida vs Cena (dos servicios): euros, % y €/día de cada uno
+  let turnosHtml='';
+  const tCom=(g.byTurno&&g.byTurno['Comida'])||0, tCen=(g.byTurno&&g.byTurno['Cena'])||0;
+  if(tCom+tCen>0){
+    const tot=tCom+tCen;
+    const dCom=(g.nDiasTurno&&g.nDiasTurno['Comida'])||g.nDays||1;
+    const dCen=(g.nDiasTurno&&g.nDiasTurno['Cena'])||g.nDays||1;
+    turnosHtml=`
+    <div class="mb-section-t">Comida vs Cena</div>
+    <div class="mb-turnos">
+      <div class="mb-turno comida"><div class="mb-t-lbl">☀️ Comida</div><div class="mb-t-val">${fk(tCom)} €</div><div class="mb-t-sub">${fc(tCom/dCom,0)} €/día</div><div class="mb-t-pct">${fc(tCom/tot*100,0)}%</div></div>
+      <div class="mb-turno cena"><div class="mb-t-lbl">🌙 Cena</div><div class="mb-t-val">${fk(tCen)} €</div><div class="mb-t-sub">${fc(tCen/dCen,0)} €/día</div><div class="mb-t-pct">${fc(tCen/tot*100,0)}%</div></div>
+    </div>`;
+  }
+
+  // Curva horaria (barras CSS): a qué hora entra el dinero, con la hora punta.
+  // Orden por jornada de servicio: la madrugada (00:00-05:30) va al final.
+  let curvaHtml='';
+  const hhAdj=k=>{const h=parseInt(k);return h<6?h+24:h;};
+  const hhKeys=Object.keys(g.halfHour||{}).filter(k=>(g.halfHour[k]||0)>0).sort((a,b)=>hhAdj(a)-hhAdj(b)||a.localeCompare(b));
+  if(hhKeys.length>=4){
+    const maxHH=Math.max(...hhKeys.map(k=>g.halfHour[k]));
+    const peakHH=hhKeys.slice().sort((a,b)=>g.halfHour[b]-g.halfHour[a])[0];
+    const esCena=k=>{const h=parseInt(k);for(const[name,t]of Object.entries(CFG.turnos)){if(h>=t.ini&&h<t.fin)return name==='Cena';}return true;};
+    // Etiquetas: solo horas en punto pares, para no saturar
+    const lbl=k=>{const[h,m]=k.split(':');return m==='00'&&parseInt(h)%2===0?parseInt(h)+'h':'';};
+    curvaHtml=`
+    <div class="mb-section-t">¿A qué hora entra el dinero?</div>
+    <div class="mb-curve">
+      ${peakHH?`<div class="mb-curve-peak">Hora punta: <b>${peakHH}</b> · ${fk(g.halfHour[peakHH])} € en el período</div>`:''}
+      <div class="mb-curve-bars">${hhKeys.map(k=>`<i class="mb-cbar${esCena(k)?' cena':''}${k===peakHH?' peak':''}" style="height:${Math.max(4,Math.round(g.halfHour[k]/maxHH*100))}%"></i>`).join('')}</div>
+      <div class="mb-curve-lbls">${hhKeys.map(k=>`<span>${lbl(k)}</span>`).join('')}</div>
+      <div class="mb-curve-leg"><span><i style="background:var(--navy)"></i>Comida</span><span><i style="background:var(--amber,#E8914A)"></i>Cena</span></div>
+    </div>`;
+  }
 
   box.innerHTML=`
     <div class="mb-hero">
@@ -1471,12 +1589,18 @@ function renderMobile(){
       <div class="mb-split-bar"><i style="width:${Math.min(100,g.pctBeb)}%;background:var(--blue)"></i></div>
     </div>
 
+    ${turnosHtml}
+
     ${ins.length?`<div class="mb-section-t">Claves</div><div class="mb-ins">${ins.map(t=>`<div class="mb-ins-row">${t}</div>`).join('')}</div>`:''}
+
+    ${semanaHtml}
 
     <div class="mb-section-t">Facturación por día</div>
     <div class="mb-days">
       ${dayOrd.map((d,i)=>`<div class="mb-day"><span class="mb-day-n">${d}</span><span class="mb-day-bar"><i style="width:${Math.round(dayVals[i]/maxDay*100)}%"></i></span><span class="mb-day-v">${fk(dayVals[i])}</span></div>`).join('')}
     </div>
+
+    ${curvaHtml}
 
     ${topProd.length?`<div class="mb-section-t">Top productos</div><div class="mb-prods">${topProd.map((p,i)=>`<div class="mb-prod"><span class="mb-prod-n">${i+1}. ${p}</span><span class="mb-prod-v">${fc(g.byPE[p],0)} €</span></div>`).join('')}</div>`:''}
 
