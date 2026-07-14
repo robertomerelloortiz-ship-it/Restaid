@@ -85,6 +85,29 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
 .mb-dc.today:not(.sel)::after{content:'';position:absolute;bottom:5px;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%;background:var(--amber)}
 .mb-dc.today.sel{box-shadow:0 0 0 2px var(--amber-lt)}
 /* Turnos del día */
+/* Dotación del día (presencia real en la hora punta de cada turno) */
+.mb-dot-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:1.1rem}
+.mb-dotc{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--r);padding:.6rem .7rem;display:flex;align-items:center;gap:7px}
+.mb-dotc-ic{font-size:14px;flex-shrink:0}
+.mb-dotc-lbl{font-size:11px;color:var(--tx3);line-height:1.25;flex:1;min-width:0}
+.mb-dotc-lbl b{display:block;font-size:11.5px;color:var(--tx2);font-weight:600}
+.mb-dotc-v{font-size:13.5px;font-weight:700;font-variant-numeric:tabular-nums;flex-shrink:0;padding:1px 7px;border-radius:9px}
+.mb-dotc-v.ok{background:var(--green-bg);color:var(--green)}
+.mb-dotc-v.warn{background:var(--ylw-bg);color:var(--ylw)}
+.mb-dotc-v.bad{background:var(--red-bg);color:var(--red)}
+/* Línea de tiempo del día: el cuadrante que en móvil no cabe como tabla */
+.mb-tl{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--r);padding:.85rem .9rem;margin-bottom:1.4rem}
+.mb-tl-ruler{position:relative;height:13px;margin-left:66px;border-bottom:1px solid var(--bdr);margin-bottom:7px}
+.mb-tl-ruler span{position:absolute;top:0;font-size:9.5px;color:var(--tx3);transform:translateX(-50%);white-space:nowrap}
+.mb-tl-grp{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--tx3);margin:.5rem 0 .3rem}
+.mb-tl-row{display:flex;align-items:center;gap:6px;padding:2.5px 0}
+.mb-tl-name{width:60px;flex-shrink:0;font-size:11.5px;font-weight:600;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mb-tl-track{position:relative;flex:1;height:17px;background:var(--bg);border-radius:4px;overflow:hidden}
+.mb-tl-bar{position:absolute;top:0;bottom:0;border-radius:4px;background:var(--navy);display:flex;align-items:center;justify-content:center}
+.mb-tl-bar.coc{background:var(--amber-dk)}
+.mb-tl-bar span{font-size:8.5px;color:#fff;font-weight:600;opacity:.9;white-space:nowrap;overflow:hidden}
+.mb-tl-now{position:absolute;top:0;bottom:0;width:2px;background:var(--red);z-index:2}
+.mb-tl-libra{font-size:10.5px;color:var(--tx3);font-style:italic;padding-left:66px}
 .mb-turnos{display:flex;flex-direction:column;gap:10px;margin-bottom:1.4rem}
 .mb-turno{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--r);padding:.85rem 1rem}
 .mb-turno-hd{display:flex;align-items:center;justify-content:space-between;font-size:13px;font-weight:700;color:var(--tx);margin-bottom:.5rem;padding-bottom:.5rem;border-bottom:1px solid var(--bg)}
@@ -789,16 +812,83 @@ function renderMobile(){
   const diaNom=DIAS_FULL[selIdx].toLowerCase();
   const LETRAS=['L','M','X','J','V','S','D'];
 
-  /* ── Bloque 1: turnos del día seleccionado ── */
-  function turnoHtml(tn){
-    const items=w.asignaciones.filter(a=>a.dia===MOB_DAY&&a.turno===tn)
-      .map(a=>({a,e:emp(a.empId)})).filter(x=>x.e)
-      .sort((x,y)=>(x.a.ini||'').localeCompare(y.a.ini||''));
-    const head=`<div class="mb-turno-hd"><span>${tn==='Comida'?'🍽️ Comida':'🌙 Cena'}</span><span class="mb-turno-n">${items.length||'—'}</span></div>`;
-    if(!items.length) return head+`<div class="mb-none">Sin turnos asignados</div>`;
-    return head+items.map(({a,e})=>`<div class="mb-shift"><span class="mb-shift-name">${esc(e.nombre)}</span><span class="emp-role-tag ${roleClass(e.rol)}">${esc(e.rol)}</span><span class="mb-shift-time">${a.ini}–${a.fin}</span></div>`).join('');
-  }
   const diaChips=DIAS.map((d,i)=>`<button class="mb-dc${i===selIdx?' sel':''}${isCurWeek&&i===todayDow?' today':''}" onclick="mobSetDay('${d}')">${LETRAS[i]}</button>`).join('');
+
+  /* ── Bloque 1: dotación del día — presencia REAL en la hora punta de cada
+     turno (misma vara que la fila Dotación del escritorio). Antes se agrupaba
+     por la etiqueta del bloque, y quien entraba a las 15:00 y salía a las 23:00
+     no contaba en la cena aunque estuviera sirviendo. ── */
+  const salaEmpsM=DB.empleados.filter(e=>(e.rol==='Sala'||e.rol==='Barra')&&!e.bajaIT);
+  const cocEmpsM=DB.empleados.filter(e=>(e.rol==='Cocina'||e.rol==='Office')&&!e.bajaIT);
+  const vDiaSel=ventasDia(w,MOB_DAY);
+  const dotCls=(have,need)=>need<=0?'ok':have>=need?'ok':have>=need-1?'warn':'bad';
+  const dotChip=(ic,grupo,tn,rol,emps)=>{
+    const have=staffCount(w,MOB_DAY,tn,rol,emps), need=staffNeeded(w,MOB_DAY,tn,rol);
+    return `<div class="mb-dotc"><span class="mb-dotc-ic">${ic}</span><span class="mb-dotc-lbl"><b>${grupo}</b>${tn}</span><span class="mb-dotc-v ${dotCls(have,need)}">${have}/${need}</span></div>`;
+  };
+  const dotHtml=vDiaSel>0?`
+    <div class="mb-section-t">Dotación · ${esHoy?'hoy':diaNom}</div>
+    <div class="mb-dot-grid">
+      ${dotChip('🍽️','Sala','Comida','Sala',salaEmpsM)}
+      ${dotChip('🌙','Sala','Cena','Sala',salaEmpsM)}
+      ${dotChip('🍽️','Cocina','Comida','Cocina',cocEmpsM)}
+      ${dotChip('🌙','Cocina','Cena','Cocina',cocEmpsM)}
+    </div>`:'';
+
+  /* ── Bloque 2: línea de tiempo del día. El cuadrante es una tabla de 7
+     columnas: en el móvil no cabe. Esto responde la pregunta que se hace
+     desde el teléfono: quién está, desde cuándo y hasta cuándo. Los turnos
+     partidos aparecen como dos tramos en la misma fila. ── */
+  const srvIniH=parseHM(DB.config.servicioIni||'12:00');
+  let srvFinH=parseHM(DB.config.servicioFin||'01:00'); if(srvFinH<=srvIniH) srvFinH+=24;
+  const spanH=srvFinH-srvIniH;
+  const posOf=h=>Math.max(0,Math.min(100,(h-srvIniH)/spanH*100));
+  const MB_NOCHE=6; // antes de las 6:00 = madrugada => cuenta en la jornada anterior
+  // Línea de "ahora" (solo si el día seleccionado es hoy y estamos en servicio)
+  let nowBar='';
+  if(esHoy){
+    const nw=new Date(); let nh=nw.getHours()+nw.getMinutes()/60;
+    if(nh<MB_NOCHE) nh+=24;
+    if(nh>=srvIniH&&nh<=srvFinH) nowBar=`<i class="mb-tl-now" style="left:${posOf(nh)}%"></i>`;
+  }
+  const tlRow=(e)=>{
+    const bs=w.asignaciones.filter(a=>a.dia===MOB_DAY&&a.empId===e.id);
+    if(!bs.length) return '';
+    const barras=bs.map(a=>{
+      let i=parseHM(a.ini), f=parseHM(a.fin);
+      if(i==null||f==null) return '';
+      // Solo la madrugada (antes de las 6:00) pertenece al día siguiente. Una
+      // entrada a las 11:00 es llegada antes de abrir, no la madrugada: si se
+      // tratara igual se iría al extremo derecho de la línea.
+      if(i<MB_NOCHE) i+=24;
+      if(f<MB_NOCHE) f+=24;
+      if(f<=i) f+=24;
+      const l=posOf(i), wd=Math.max(2,posOf(f)-l);
+      const txt=wd>=38?`${a.ini}–${a.fin}`:(wd>=17?a.ini:'');
+      return `<i class="mb-tl-bar${['Cocina','Office'].includes(e.rol)?' coc':''}" style="left:${l}%;width:${wd}%"><span>${txt}</span></i>`;
+    }).join('');
+    return `<div class="mb-tl-row"><span class="mb-tl-name">${esc(e.nombre)}</span><span class="mb-tl-track">${barras}${nowBar}</span></div>`;
+  };
+  const marcas=[];
+  for(let h=Math.ceil(srvIniH); h<=srvFinH; h+=3) marcas.push(`<span style="left:${posOf(h)}%">${String(Math.round(h)%24).padStart(2,'0')}h</span>`);
+  const filasSala=salaEmpsM.map(tlRow).filter(Boolean).join('');
+  const filasCoc=cocEmpsM.map(tlRow).filter(Boolean).join('');
+  const tlHtml=(filasSala||filasCoc)?`
+    <div class="mb-tl">
+      <div class="mb-tl-ruler">${marcas.join('')}</div>
+      ${filasSala?`<div class="mb-tl-grp">Sala y barra</div>${filasSala}`:''}
+      ${filasCoc?`<div class="mb-tl-grp">Cocina y office</div>${filasCoc}`:''}
+    </div>`:`<div class="mb-tl"><div class="mb-none">Sin turnos asignados ${esHoy?'hoy':'el '+diaNom}.</div></div>`;
+
+  /* ── Coste del día seleccionado ── */
+  const cDia=costeDia(w,MOB_DAY), pDia=vDiaSel>0?cDia/vDiaSel*100:null;
+  const clsDia=pctClass(pDia);
+  const colDia=clsDia==='ok'?'var(--green)':clsDia==='warn'?'var(--ylw)':clsDia==='bad'?'var(--red)':'var(--tx3)';
+  const costeDiaHtml=(cDia>0||vDiaSel>0)?`
+    <div class="mb-grid" style="margin-bottom:1.4rem">
+      <div class="mb-cell"><div class="mb-c-lbl">Coste ${esHoy?'hoy':diaNom}</div><div class="mb-c-val">${fk(cDia)}€</div></div>
+      <div class="mb-cell"><div class="mb-c-lbl">Sobre ventas</div><div class="mb-c-val" style="color:${colDia}">${pDia!=null?fc(pDia,0)+'%':'—'}</div></div>
+    </div>`:'';
 
   /* ── Bloque 3: esta semana — vacaciones + quién libra ── */
   const monday=weekIdToMonday(DB.semanaActual);
@@ -842,11 +932,12 @@ function renderMobile(){
 
     <div class="mb-daysel">${diaChips}</div>
 
+    ${dotHtml}
+
     <div class="mb-section-t">${esHoy?'Turnos de hoy':'Turnos · '+diaNom}</div>
-    <div class="mb-turnos">
-      <div class="mb-turno">${turnoHtml('Comida')}</div>
-      <div class="mb-turno">${turnoHtml('Cena')}</div>
-    </div>
+    ${tlHtml}
+
+    ${costeDiaHtml}
 
     <div class="mb-section-t">Esta semana</div>
     <div class="mb-card">
