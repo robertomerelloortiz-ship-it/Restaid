@@ -722,14 +722,16 @@ function pctClass(pct){if(pct==null||!isFinite(pct))return'none';const t=DB.conf
 /* Dotación: presencia SIMULTÁNEA del rol en el pico de demanda del día+turno.
    Misma vara que staffNeeded (antes contaba bloques por etiqueta de inicio:
    un 17:30-00:00 cubría toda la cena pero contaba 0 en "Cena"). */
-function staffCount(w,dia,turno,rol){
+function staffCount(w,dia,turno,rol,empsGrupo){
   const cfg=DB.config||{};
   const aforo=_aforoUI();
   const cfgUI=aforo?{...cfg,aforo}:cfg;
   const franjas=generarFranjas(cfg.servicioIni||'12:00',cfg.servicioFin||'01:00');
   const vd=ventasDia(w,dia);
   const demanda=calcularDemandaFranjas(vd,_curvaDiaUI(dia),cfgUI,franjas,_permanenciaDiaUI(dia));
-  const bloquesRol=w.asignaciones.filter(a=>a.dia===dia&&(()=>{const e=emp(a.empId);return e&&e.rol===rol;})());
+  // Si llega el grupo de la sección (Sala+Barra / Cocina+Office) se usa ese;
+  // si no, se cae al rol estricto para compatibilidad.
+  const bloquesRol=w.asignaciones.filter(a=>a.dia===dia&&(()=>{const e=emp(a.empId);if(!e)return false;return empsGrupo?empsGrupo.some(x=>x.id===e.id):e.rol===rol;})());
   return staffCubiertoUnificado(bloquesRol,demanda,franjas,cfgUI,turno,rol);
 }
 function _curvaDiaUI(dia){let pub={};try{pub=JSON.parse(localStorage.getItem('restaid_pub_v1')||'{}')||{};}catch(e){}const vPub=pub.ventas||{};return(vPub.halfHourCurvaPorDia&&vPub.halfHourCurvaPorDia[dia])||vPub.halfHourCurva||null;}
@@ -1210,7 +1212,9 @@ function renderCuadRows(label,emps,rolKey,w,isCurWeek,todayDow){
   TURNOS.forEach(tn=>{
     html+=`<tr><td class="cuad-emp-cell" style="font-size:10px;font-weight:600;color:var(--tx3)">Dotación ${tn}</td>
     ${DIAS.map(d=>{
-      const have=w.asignaciones.filter(a=>a.dia===d&&a.turno===tn&&emps.some(e=>e.id===a.empId)).length;
+      // Presencia real en la hora punta del turno (no etiquetas de bloque):
+      // un 15:00-23:00 cuenta en la cena porque ESTÁ a la hora punta de la cena.
+      const have=staffCount(w,d,tn,rolKey,emps);
       const need=staffNeeded(w,d,tn,rolKey);
       if(need<=0)return `<td class="cuad-staff" style="color:var(--tx3)">—</td>`;
       const cls=have>=need?'cuad-staff-ok':have>=need-1?'cuad-staff-warn':'cuad-staff-bad';
