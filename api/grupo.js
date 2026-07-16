@@ -85,6 +85,13 @@ function consolidar(oks) {
       .map(m => ({ ...m, mesa: `${o.nombre} · ${m.mesa}`, local: o.id }))),
   };
 
+  const colgadas = {
+    n: ds.reduce((s, d) => s + ((d.colgadas && d.colgadas.n) || 0), 0),
+    euros: r2(ds.reduce((s, d) => s + ((d.colgadas && d.colgadas.euros) || 0), 0)),
+    mesas: oks.flatMap(o => ((o.datos.colgadas && o.datos.colgadas.mesas) || [])
+      .map(m => ({ ...m, mesa: `${o.nombre} · ${m.mesa}`, local: o.id }))),
+  };
+
   const ayer = { fecha: (ds.find(d => d.ayer && d.ayer.fecha) || {}).ayer?.fecha || null, ...sumaBloque(ds, 'ayer') };
   const uni = k => [...new Set(ds.flatMap(d => (d[k] && d[k].jornadas) || []))].filter(Boolean).sort();
   const semana = { desde: (ds[0].semana || {}).desde || null, jornadas: uni('semana'), ...sumaBloque(ds, 'semana') };
@@ -118,7 +125,7 @@ function consolidar(oks) {
       aforo: ds.reduce((s, d) => s + ((d.negocio && d.negocio.aforo) || 0), 0),
     },
     fecha: ds[0].fecha,
-    cerradas, abiertas, control, ayer, semana, mes,
+    cerradas, abiertas, control, colgadas, ayer, semana, mes,
     pulso: { porHora, top, rankingEuros, totalProductosEur, totalProductosUds },
   };
 }
@@ -130,8 +137,16 @@ module.exports = async (req, res) => {
   const lista = locales();
   const quiere = String(req.query.local || '').trim();
 
-  // Sin parámetro: solo la lista, para pintar el selector.
-  if (!quiere) { res.status(200).json({ ok: true, locales: lista.map(l => ({ id: l.id, nombre: l.nombre })) }); return; }
+  // Sin parámetro: la lista y cuál de ellos es este despliegue, para que el
+  // Inicio sepa cuándo está mirando datos ajenos y avise.
+  if (!quiere) {
+    res.status(200).json({
+      ok: true,
+      propio: process.env.NEGOCIO_ID || 'talabar',
+      locales: lista.map(l => ({ id: l.id, nombre: l.nombre })),
+    });
+    return;
+  }
   if (!lista.length) { res.status(200).json({ ok: false, error: 'No hay grupo configurado' }); return; }
 
   try {

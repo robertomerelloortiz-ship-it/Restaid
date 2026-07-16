@@ -250,6 +250,24 @@ module.exports = async (req, res) => {
     const controlFilas = abiertasFilas.filter(a => esMesaControl(a.mesa));
     abiertasFilas = abiertasFilas.filter(a => !esMesaControl(a.mesa));
 
+    // Guardarraíl de jornada: una mesa abierta ANTES del inicio de la jornada
+    // de servicio actual (corte 04:00) no es una mesa viva de hoy, sea cual
+    // sea su nombre o su dinero. Sale del pulso y se devuelve como "colgada"
+    // para que el dueño la vea y la anule en Revo. Genérico: no depende de
+    // listas de mesas y cubre cualquier zombi futuro.
+    const esDeJornadaAnterior = a => {
+      if (!a.abierta_desde) return false;
+      const j = jornadaDe(String(a.abierta_desde));
+      return j && j < fecha; // `fecha` es la jornada de servicio actual
+    };
+    const colgadasFilas = abiertasFilas.filter(esDeJornadaAnterior);
+    abiertasFilas = abiertasFilas.filter(a => !esDeJornadaAnterior(a));
+    const colgadas = {
+      n: colgadasFilas.length,
+      euros: Math.round(colgadasFilas.reduce((s, o) => s + num(o.total), 0) * 100) / 100,
+      mesas: colgadasFilas.map(o => ({ mesa: o.mesa, total: num(o.total), abierta_desde: o.abierta_desde || null })),
+    };
+
     const cerradas = {
       euros: Math.round(cerradasFilas.reduce((s, o) => s + num(o.total), 0) * 100) / 100,
       n: cerradasFilas.length,
@@ -330,7 +348,7 @@ module.exports = async (req, res) => {
     const jornadasSem = [...new Set(semFilas.map(o => o.jornada))].filter(Boolean).sort();
     const semana = { desde: lunesJ, jornadas: jornadasSem, ...suma(semFilas) };
     const mes = { desde: mesJ, jornadas: jornadasMes, ...suma(mesFilas) };
-    res.status(200).json({ ok: true, negocio: NEGOCIO, fecha, cerradas, abiertas, control, ayer, semana, mes, pulso: { porHora, top, rankingEuros, totalProductosEur: Math.round(totalLineasEur * 100) / 100, totalProductosUds: totalLineasUds } });
+    res.status(200).json({ ok: true, negocio: NEGOCIO, fecha, cerradas, abiertas, control, colgadas, ayer, semana, mes, pulso: { porHora, top, rankingEuros, totalProductosEur: Math.round(totalLineasEur * 100) / 100, totalProductosUds: totalLineasUds } });
   } catch (e) {
     console.error('[hoy_live] fallo:', e.message || e);
     res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) });

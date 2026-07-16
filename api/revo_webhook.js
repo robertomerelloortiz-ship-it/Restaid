@@ -181,6 +181,14 @@ module.exports = async (req, res) => {
           actualizada_en: new Date().toISOString(),
         }]),
       });
+    } else if (ABIERTA_UPSERT.has(evento.event) && d.id) {
+      // Un created/updated con status ≠ 0 o cancelado significa que la orden
+      // YA NO está abierta (cobro rápido, cierre que llega como updated).
+      // Antes este caso no entraba en ninguna rama y la mesa quedaba
+      // atascada para siempre con dinero (la autolimpieza solo barre 0 €).
+      await fetch(`${SUPABASE_URL}/rest/v1/revo_abiertas?orden_id=eq.${d.id}`, {
+        method: 'DELETE', headers: sb,
+      });
     } else if (ABIERTA_BORRAR.has(evento.event) && d.id) {
       await fetch(`${SUPABASE_URL}/rest/v1/revo_abiertas?orden_id=eq.${d.id}`, {
         method: 'DELETE', headers: sb,
