@@ -2538,7 +2538,7 @@ async function sincronizarVentasLive(){
   const corte=base?(base.d1||''):'';
   let d;
   try{
-    const r=await fetch('/api/ventas_live?desde='+encodeURIComponent(corte));
+    const r=await fetch('/api/ventas_live?desde='+encodeURIComponent(corte),{headers:{'x-restaid-pass':localStorage.getItem('restaid_pass')||''}});
     d=await r.json();
   }catch(e){console.warn('[RESTAID live] sin conexión con /api/ventas_live',e);return null;}
   if(!d||!d.ok){console.warn('[RESTAID live] respuesta no OK',d&&d.error);return null;}

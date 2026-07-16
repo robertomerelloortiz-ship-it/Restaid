@@ -678,6 +678,30 @@ nav {
   box-shadow: 0 2px 10px rgba(232,145,74,.32);
 }
 
+/* Selector de negocio (grupo). Deliberadamente más sobrio que el de período:
+   se cambia de local pocas veces; el período, constantemente. */
+.revo-negocios {
+  display: flex; gap: 6px; justify-content: center; flex-wrap: wrap;
+  margin: 0 0 14px; padding-bottom: 14px;
+  border-bottom: 1px solid var(--bd, #e5e7eb);
+}
+.revo-negocio {
+  border: 1px solid var(--bd, #e5e7eb); background: none; cursor: pointer;
+  padding: 5px 14px; border-radius: 20px;
+  font-size: 12.5px; font-weight: 600; color: var(--tx3);
+  font-family: inherit; transition: all .18s;
+}
+.revo-negocio:hover { color: var(--tx2); border-color: var(--tx3); }
+.revo-negocio.active {
+  background: var(--tx1, #1A2B3C); color: #fff; border-color: var(--tx1, #1A2B3C);
+}
+.revo-negocio.todos.active { background: var(--amber); border-color: var(--amber); }
+.revo-grupo-aviso {
+  text-align: center; font-size: 12px; color: #b45309;
+  background: rgba(232,145,74,.10); border-radius: 8px;
+  padding: 7px 12px; margin: 0 0 14px;
+}
+
 /* Número estrella */
 .revo-hero {
   text-align: center;
@@ -1215,17 +1239,59 @@ function renderHome(){
 
 // Período activo del dashboard (preparado para conectar Revo en tiempo real)
 let HOME_PERIOD='hoy';
+// ── Grupo de negocios ────────────────────────────────────────────────────
+// Cada local es un despliegue independiente con sus datos. Si este local
+// pertenece a un grupo (variable GRUPO_LOCALES en el servidor), el Inicio
+// deja elegir qué negocio mirar, o la suma de todos. Si no hay grupo, no
+// aparece nada y todo funciona exactamente como antes.
+let GRUPO_LOCALES=[];      // [{id,nombre}]
+let GRUPO_SEL=localStorage.getItem('restaid_grupo_sel')||'';  // '' = este local
+let GRUPO_AVISO='';
+const _pass=()=>localStorage.getItem('restaid_pass')||'';
+async function cargarGrupo(){
+  try{
+    const r=await fetch('/api/grupo',{headers:{'x-restaid-pass':_pass()}});
+    const d=await r.json();
+    if(d&&d.ok&&Array.isArray(d.locales)&&d.locales.length>1){
+      GRUPO_LOCALES=d.locales;
+      if(GRUPO_SEL&&GRUPO_SEL!=='todos'&&!GRUPO_LOCALES.some(l=>l.id===GRUPO_SEL))GRUPO_SEL='';
+      renderHome();
+    }
+  }catch(e){/* sin grupo: se sigue como local único */}
+}
+function setNegocio(id){
+  GRUPO_SEL=(id===GRUPO_SEL)?'':id;
+  try{localStorage.setItem('restaid_grupo_sel',GRUPO_SEL);}catch(e){}
+  HOY_LIVE=null;GRUPO_AVISO='';renderHome();refreshHoyLive();
+}
 // Hoy en vivo (cerradas + mesas abiertas) desde /api/hoy_live, refrescado cada 60 s
 let HOY_LIVE=null;
-const AFORO_TALABAR=84; // plazas; alinear con config de RRHH si cambia
+// Aforo del local. Lo declara el servidor (variable AFORO de cada despliegue),
+// así cada negocio del grupo trae el suyo. El 84 es el de Talabar por defecto.
+let AFORO_LOCAL=84;
 async function refreshHoyLive(){
   try{
-    const r=await fetch('/api/hoy_live');
+    // Sin selección de grupo se pide el propio local (igual que siempre).
+    const url=GRUPO_SEL?('/api/grupo?local='+encodeURIComponent(GRUPO_SEL)):'/api/hoy_live';
+    const r=await fetch(url,{headers:{'x-restaid-pass':_pass()}});
     const d=await r.json();
-    if(d&&d.ok){HOY_LIVE=d;if(HOME_PERIOD==='hoy')renderHome();}
+    if(d&&d.ok){
+      HOY_LIVE=d;
+      if(d.negocio&&d.negocio.aforo>0)AFORO_LOCAL=d.negocio.aforo;
+      // Una suma incompleta se avisa: es peor un total silenciosamente corto.
+      GRUPO_AVISO='';
+      if(d.parcial&&Array.isArray(d.locales)){
+        const caidos=d.locales.filter(l=>!l.ok).map(l=>l.nombre);
+        if(caidos.length)GRUPO_AVISO=`⚠ Suma incompleta: no responde ${caidos.join(', ')}`;
+      }
+      if(HOME_PERIOD==='hoy')renderHome();
+    }else if(d&&d.error){
+      GRUPO_AVISO='⚠ '+d.error;renderHome();
+    }
   }catch(e){/* sin red: se queda el último dato */}
 }
 setTimeout(refreshHoyLive,500);
+setTimeout(cargarGrupo,700);
 setInterval(refreshHoyLive,60000);
 function _minsDesde(ts){
   if(!ts)return null;
@@ -1594,12 +1660,12 @@ function renderHomeRevo(box,r,v,pub){
           <div style="margin-top:20px;display:grid;grid-template-columns:1fr;gap:12px">
             ${(()=>{
               const com=a.comensales||0;
-              const pct=Math.min(100,Math.round(com/AFORO_TALABAR*100));
+              const pct=Math.min(100,Math.round(com/AFORO_LOCAL*100));
               const col=pct>85?'#dc2626':pct>60?'#d97706':'#16a34a';
               return `<div>
                 <div style="display:flex;justify-content:space-between;max-width:300px;margin:0 auto;font-size:11px;color:var(--tx3)">
                   <span style="letter-spacing:.08em;text-transform:uppercase;font-size:10px">Ocupación</span>
-                  <span><b style="color:var(--tx1)">${com}/${AFORO_TALABAR}</b> · ${pct}%</span>
+                  <span><b style="color:var(--tx1)">${com}/${AFORO_LOCAL}</b> · ${pct}%</span>
                 </div>
                 <div style="height:6px;background:var(--bd,#e5e7eb);border-radius:3px;margin:6px auto 0;max-width:300px">
                   <div style="height:6px;width:${pct}%;border-radius:3px;background:${col};transition:width .4s"></div>
@@ -1916,6 +1982,14 @@ function renderHomeRevo(box,r,v,pub){
 
   box.innerHTML=`
     <div class="revo-home">
+      ${GRUPO_LOCALES.length>1?`
+      <!-- Selector de negocio (solo si este local pertenece a un grupo) -->
+      <div class="revo-negocios">
+        ${GRUPO_LOCALES.map(l=>`<button class="revo-negocio ${GRUPO_SEL===l.id?'active':''}" onclick="setNegocio('${l.id}')">${l.nombre}</button>`).join('')}
+        <button class="revo-negocio ${GRUPO_SEL==='todos'?'active':''} todos" onclick="setNegocio('todos')">Σ Todos</button>
+      </div>`:''}
+      ${GRUPO_AVISO?`<div class="revo-grupo-aviso">${GRUPO_AVISO}</div>`:''}
+
       <!-- Selector de período -->
       <div class="revo-periods">
         ${periods.map(p=>`<button class="revo-period ${HOME_PERIOD===p.id?'active':''}" onclick="setHomePeriod('${p.id}')">${p.lbl}</button>`).join('')}
