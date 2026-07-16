@@ -1239,7 +1239,12 @@ function semColor(p,verde,ambar){return p==null?'#94a3b8':p<verde?'#16a34a':p<am
 function renderHome(){
   const box=document.getElementById('home-dash');if(!box)return;
   const pub=readPub();
-  const r=pub.rrhh||{},v=pub.ventas||{};
+  let r=pub.rrhh||{},v=pub.ventas||{};
+  // El "pub" (localStorage) lo publican los módulos de ESTE local: previsión,
+  // coste laboral, materia prima, medias históricas… Si se está mirando OTRO
+  // local (o la suma), esos datos no aplican y mostrarlos sería mezclar
+  // negocios (la previsión de Talabar sobre las ventas de La Canilla).
+  if(GRUPO_SEL){r={};v={};}
   if(!HOME_PERIOD)HOME_PERIOD='semana';
   renderHomeRevo(box,r,v,pub);
 }
@@ -1270,7 +1275,11 @@ async function cargarGrupo(){
   }catch(e){/* sin grupo: se sigue como local único */}
 }
 function setNegocio(id){
-  GRUPO_SEL=(id===GRUPO_SEL)?'':id;
+  let sel=(id===GRUPO_SEL)?'':id;
+  // Elegir tu propio local = la vista normal de siempre: se pide /api/hoy_live
+  // directo, sin pasar por la capa de grupo (un salto de red menos).
+  if(sel&&GRUPO_PROPIO&&sel===GRUPO_PROPIO)sel='';
+  GRUPO_SEL=sel;
   try{localStorage.setItem('restaid_grupo_sel',GRUPO_SEL);}catch(e){}
   HOY_LIVE=null; GRUPO_AVISO='';
   // Repinta primero en estado "cargando" (datos a null) y luego con los reales.
@@ -1299,11 +1308,18 @@ async function refreshHoyLive(){
         const caidos=d.locales.filter(l=>!l.ok).map(l=>l.nombre);
         if(caidos.length)GRUPO_AVISO=`⚠ Suma incompleta: no responde ${caidos.join(', ')}`;
       }
-      if(HOME_PERIOD==='hoy')renderHome();
-    }else if(d&&d.error){
-      GRUPO_AVISO='⚠ '+d.error;renderHome();
+      renderHome(); // SIEMPRE: cada período usa datos de esta respuesta
+    }else{
+      // Error del servidor: salir del spinner y mostrar el aviso.
+      HOY_LIVE={ok:false};
+      GRUPO_AVISO='⚠ '+((d&&d.error)||'No se pudieron cargar los datos');
+      renderHome();
     }
-  }catch(e){/* sin red: se queda el último dato */}
+  }catch(e){
+    // Sin red o respuesta ilegible: salir del spinner con aviso.
+    if(HOY_LIVE===null){HOY_LIVE={ok:false};GRUPO_AVISO='⚠ Sin conexión con el servidor';renderHome();}
+    /* si ya había datos, se conservan */
+  }
 }
 setTimeout(refreshHoyLive,500);
 setTimeout(cargarGrupo,700);
@@ -1378,12 +1394,21 @@ function cerrarMesasModal(){
 }
 function renderMesasModal(){
   const a=(HOY_LIVE&&HOY_LIVE.abiertas)||{};
+  const cg=(HOY_LIVE&&HOY_LIVE.colgadas)||{};
   const mesas=(a.mesas||[]).slice();
   const sub=document.getElementById('mesas-modal-sub');
   const body=document.getElementById('mesas-modal-body');
   if(!body)return;
   if(sub)sub.textContent=`${mesas.length} abierta${mesas.length===1?'':'s'} · ${fmtE(a.euros||0)} en curso`;
-  if(!mesas.length){body.innerHTML='<div style="text-align:center;color:var(--tx3);padding:24px 0">No hay mesas abiertas ahora mismo.</div>';return;}
+  // Órdenes colgadas de jornadas anteriores: no son servicio de hoy, pero se
+  // enseñan para que se anulen en Revo (si alguien las cerrara, entrarían
+  // como venta del día y descuadrarían la paridad con Revo).
+  const colgadasHtml=(cg.n>0)?`
+    <div style="border-top:1px dashed var(--bd,#e5e7eb);margin-top:14px;padding-top:12px">
+      <div style="font-size:12px;font-weight:700;color:#b45309;margin-bottom:8px">⚠ ${cg.n} orden${cg.n===1?'':'es'} colgada${cg.n===1?'':'s'} de otro día · ${fmtE(cg.euros||0)} — anular en Revo</div>
+      ${(cg.mesas||[]).map(m=>`<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--tx3);padding:4px 2px"><span>${m.mesa||'—'} · desde ${String(m.abierta_desde||'').slice(0,10)}</span><b>${fmtE(m.total||0)}</b></div>`).join('')}
+    </div>`:'';
+  if(!mesas.length){body.innerHTML='<div style="text-align:center;color:var(--tx3);padding:24px 0">No hay mesas abiertas ahora mismo.</div>'+colgadasHtml;return;}
   // Ya vienen ordenadas por antigüedad desde el endpoint; recalculamos minutos en vivo
   body.innerHTML=mesas.map(m=>{
     const min=_minsDesde(m.abierta_desde);
@@ -1403,7 +1428,7 @@ function renderMesasModal(){
       ${sinConsumo?'<div style="font-size:11px;color:#d97706;margin-top:6px">Sin comanda todavía</div>':''}
       ${alerta?'<div style="font-size:11px;color:#dc2626;margin-top:4px">Lleva un buen rato abierta — ¿revisar?</div>':''}
     </div>`;
-  }).join('');
+  }).join('')+colgadasHtml;
 }
 function setHomePeriod(p){
   HOME_PERIOD=p;
@@ -2012,7 +2037,7 @@ function renderHomeRevo(box,r,v,pub){
       ${GRUPO_LOCALES.length>1?`
       <!-- Selector de negocio (solo si este local pertenece a un grupo) -->
       <div class="revo-negocios">
-        ${GRUPO_LOCALES.map(l=>`<button class="revo-negocio ${GRUPO_SEL===l.id?'active':''}" onclick="setNegocio('${l.id}')">${l.nombre}</button>`).join('')}
+        ${GRUPO_LOCALES.map(l=>{const activo=(GRUPO_SEL===l.id)||(!GRUPO_SEL&&l.id===GRUPO_PROPIO);return `<button class="revo-negocio ${activo?'active':''}" onclick="setNegocio('${l.id}')">${l.nombre}</button>`;}).join('')}
         <button class="revo-negocio ${GRUPO_SEL==='todos'?'active':''} todos" onclick="setNegocio('todos')">Σ Todos</button>
       </div>`:''}
       ${GRUPO_AVISO?`<div class="revo-grupo-aviso">${GRUPO_AVISO}</div>`:''}
