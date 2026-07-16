@@ -29,6 +29,32 @@ const MESAS_CONTROL = (process.env.MESAS_CONTROL || 'MESA 24,Barra 8')
   .split(',').map(s => s.trim()).filter(Boolean);
 const esMesaControl = m => MESAS_CONTROL.includes(String(m || '').trim());
 
+// ── Identidad del negocio ────────────────────────────────────────────────
+// Cada despliegue (= cada local) se describe a sí mismo. Así el Inicio no
+// necesita saber de qué local es, y la vista de grupo puede etiquetar cada
+// uno sin listas duplicadas. Se configuran en Vercel:
+//   NEGOCIO_ID / NEGOCIO_NOMBRE / AFORO
+const NEGOCIO = {
+  id: process.env.NEGOCIO_ID || 'talabar',
+  nombre: process.env.NEGOCIO_NOMBRE || 'Talabar',
+  aforo: parseInt(process.env.AFORO, 10) > 0 ? parseInt(process.env.AFORO, 10) : 84,
+};
+
+// ── Autorización ─────────────────────────────────────────────────────────
+// Este endpoint expone ventas del día, mesas abiertas y nombres de personal:
+// nunca debe ser público. Acepta dos llaves:
+//   - x-restaid-pass  : la contraseña del local (la del navegador).
+//   - x-restaid-grupo : el secreto compartido del grupo, para que el Inicio
+//     de un local hermano pueda leer estos totales de servidor a servidor.
+//     Nunca baja al navegador.
+function autorizado(req) {
+  const pass = req.headers['x-restaid-pass'] || '';
+  if (process.env.RESTAID_PASS && pass === process.env.RESTAID_PASS) return true;
+  const grupo = req.headers['x-restaid-grupo'] || '';
+  if (process.env.GRUPO_TOKEN && grupo === process.env.GRUPO_TOKEN) return true;
+  return false;
+}
+
 const FMT = new Intl.DateTimeFormat('sv-SE', {
   timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit',
   hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
@@ -170,6 +196,7 @@ async function procesarPendientes(URL_SB, KEY_SB) {
 
 module.exports = async (req, res) => {
   if (req.method !== 'GET') { res.status(405).json({ ok: false, error: 'Solo GET' }); return; }
+  if (!autorizado(req)) { res.status(401).json({ ok: false, error: 'No autorizado' }); return; }
   const URL_SB = process.env.SUPABASE_URL;
   const KEY_SB = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY;
   if (!URL_SB || !KEY_SB) { res.status(500).json({ ok: false, error: 'Supabase no configurado' }); return; }
@@ -303,7 +330,7 @@ module.exports = async (req, res) => {
     const jornadasSem = [...new Set(semFilas.map(o => o.jornada))].filter(Boolean).sort();
     const semana = { desde: lunesJ, jornadas: jornadasSem, ...suma(semFilas) };
     const mes = { desde: mesJ, jornadas: jornadasMes, ...suma(mesFilas) };
-    res.status(200).json({ ok: true, fecha, cerradas, abiertas, control, ayer, semana, mes, pulso: { porHora, top, rankingEuros, totalProductosEur: Math.round(totalLineasEur * 100) / 100, totalProductosUds: totalLineasUds } });
+    res.status(200).json({ ok: true, negocio: NEGOCIO, fecha, cerradas, abiertas, control, ayer, semana, mes, pulso: { porHora, top, rankingEuros, totalProductosEur: Math.round(totalLineasEur * 100) / 100, totalProductosUds: totalLineasUds } });
   } catch (e) {
     console.error('[hoy_live] fallo:', e.message || e);
     res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) });

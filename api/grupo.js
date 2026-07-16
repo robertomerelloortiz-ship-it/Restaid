@@ -1,0 +1,160 @@
+// /api/grupo.js — Capa de grupo (varios locales del mismo dueño).
+//
+// Modelo (el de Revo): cada local es un despliegue independiente, con su
+// usuario, su contraseña, su base de datos y su cuenta de Revo. Este endpoint
+// NO mezcla datos: pregunta a cada local por su propio /api/hoy_live y suma
+// los totales para la vista de grupo del Inicio.
+//
+// Uso:
+//   GET /api/grupo                 → { locales:[{id,nombre}] }  (para el selector)
+//   GET /api/grupo?local=<id>      → el hoy_live de ese local, tal cual
+//   GET /api/grupo?local=todos     → la SUMA de todos los locales
+//
+// Variables (las mismas en todos los despliegues del grupo):
+//   GRUPO_LOCALES = [{"id":"talabar","nombre":"Talabar","url":"https://talabar.vercel.app"},
+//                    {"id":"local2","nombre":"Segundo","url":"https://local2.vercel.app"}]
+//   GRUPO_TOKEN   = secreto compartido; viaja SOLO de servidor a servidor,
+//                   nunca baja al navegador.
+//
+// Si GRUPO_LOCALES no está definida, no hay grupo: devuelve lista vacía y el
+// Inicio se comporta exactamente como hasta ahora.
+
+function locales() {
+  try {
+    const raw = process.env.GRUPO_LOCALES;
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr.filter(l => l && l.id && l.url).map(l => ({
+      id: String(l.id), nombre: String(l.nombre || l.id), url: String(l.url).replace(/\/+$/, ''),
+    }));
+  } catch (e) {
+    console.error('[grupo] GRUPO_LOCALES mal formada:', e.message);
+    return [];
+  }
+}
+
+// El navegador se identifica con la contraseña de SU local.
+function autorizado(req) {
+  const pass = req.headers['x-restaid-pass'] || '';
+  return !!process.env.RESTAID_PASS && pass === process.env.RESTAID_PASS;
+}
+
+async function pedirLocal(l) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 9000);
+  try {
+    const r = await fetch(l.url + '/api/hoy_live', {
+      headers: { 'x-restaid-grupo': process.env.GRUPO_TOKEN || '' },
+      signal: ctrl.signal,
+    });
+    if (!r.ok) return { ...l, ok: false, error: 'HTTP ' + r.status };
+    const d = await r.json();
+    if (!d || !d.ok) return { ...l, ok: false, error: (d && d.error) || 'respuesta no válida' };
+    return { ...l, ok: true, datos: d };
+  } catch (e) {
+    return { ...l, ok: false, error: String(e.name === 'AbortError' ? 'sin respuesta (9s)' : e.message).slice(0, 120) };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
+const sumaBloque = (arr, k) => ({
+  euros: r2(arr.reduce((s, d) => s + ((d[k] && d[k].euros) || 0), 0)),
+  n: arr.reduce((s, d) => s + ((d[k] && d[k].n) || 0), 0),
+  comensales: arr.reduce((s, d) => s + ((d[k] && d[k].comensales) || 0), 0),
+});
+
+// Consolida N respuestas de hoy_live en una sola con la MISMA forma, para que
+// el Inicio la pinte sin cambiar nada.
+function consolidar(oks) {
+  const ds = oks.map(o => o.datos);
+  const cerradas = sumaBloque(ds, 'cerradas');
+  const abiertas = sumaBloque(ds, 'abiertas');
+
+  // Mesas abiertas: se concatenan etiquetando de qué local es cada una.
+  abiertas.mesas = oks.flatMap(o => ((o.datos.abiertas && o.datos.abiertas.mesas) || [])
+    .map(m => ({ ...m, mesa: `${o.nombre} · ${m.mesa}`, local: o.id })))
+    .sort((a, b) => String(a.abierta_desde || '').localeCompare(String(b.abierta_desde || '')));
+
+  const control = {
+    n: ds.reduce((s, d) => s + ((d.control && d.control.n) || 0), 0),
+    euros: r2(ds.reduce((s, d) => s + ((d.control && d.control.euros) || 0), 0)),
+    mesas: oks.flatMap(o => ((o.datos.control && o.datos.control.mesas) || [])
+      .map(m => ({ ...m, mesa: `${o.nombre} · ${m.mesa}`, local: o.id }))),
+  };
+
+  const ayer = { fecha: (ds.find(d => d.ayer && d.ayer.fecha) || {}).ayer?.fecha || null, ...sumaBloque(ds, 'ayer') };
+  const uni = k => [...new Set(ds.flatMap(d => (d[k] && d[k].jornadas) || []))].filter(Boolean).sort();
+  const semana = { desde: (ds[0].semana || {}).desde || null, jornadas: uni('semana'), ...sumaBloque(ds, 'semana') };
+  const mes = { desde: (ds[0].mes || {}).desde || null, jornadas: uni('mes'), ...sumaBloque(ds, 'mes') };
+
+  // Curva horaria: se suma hora a hora.
+  const porHora = {};
+  ds.forEach(d => Object.entries((d.pulso && d.pulso.porHora) || {})
+    .forEach(([h, v]) => { porHora[h] = r2((porHora[h] || 0) + (Number(v) || 0)); }));
+
+  // Productos: se acumulan por nombre entre locales y se recalcula el % sobre
+  // el total del GRUPO (no se promedian los porcentajes de cada local).
+  const uds = {}, eur = {};
+  ds.forEach(d => ((d.pulso && d.pulso.rankingEuros) || []).forEach(p => {
+    uds[p.producto] = (uds[p.producto] || 0) + (p.uds || 0);
+    eur[p.producto] = (eur[p.producto] || 0) + (p.euros || 0);
+  }));
+  const totalProductosEur = r2(ds.reduce((s, d) => s + ((d.pulso && d.pulso.totalProductosEur) || 0), 0));
+  const totalProductosUds = ds.reduce((s, d) => s + ((d.pulso && d.pulso.totalProductosUds) || 0), 0);
+  const rankingEuros = Object.keys(eur).sort((a, b) => eur[b] - eur[a]).slice(0, 12).map(p => ({
+    producto: p, euros: r2(eur[p]), uds: Math.round(uds[p]),
+    pct: totalProductosEur > 0 ? Math.round(eur[p] / totalProductosEur * 1000) / 10 : 0,
+  }));
+  const top = Object.keys(uds).sort((a, b) => uds[b] - uds[a]).slice(0, 3)
+    .map(p => ({ producto: p, uds: Math.round(uds[p]) }));
+
+  return {
+    ok: true,
+    negocio: {
+      id: 'grupo', nombre: 'Todos',
+      aforo: ds.reduce((s, d) => s + ((d.negocio && d.negocio.aforo) || 0), 0),
+    },
+    fecha: ds[0].fecha,
+    cerradas, abiertas, control, ayer, semana, mes,
+    pulso: { porHora, top, rankingEuros, totalProductosEur, totalProductosUds },
+  };
+}
+
+module.exports = async (req, res) => {
+  if (req.method !== 'GET') { res.status(405).json({ ok: false, error: 'Solo GET' }); return; }
+  if (!autorizado(req)) { res.status(401).json({ ok: false, error: 'No autorizado' }); return; }
+
+  const lista = locales();
+  const quiere = String(req.query.local || '').trim();
+
+  // Sin parámetro: solo la lista, para pintar el selector.
+  if (!quiere) { res.status(200).json({ ok: true, locales: lista.map(l => ({ id: l.id, nombre: l.nombre })) }); return; }
+  if (!lista.length) { res.status(200).json({ ok: false, error: 'No hay grupo configurado' }); return; }
+
+  try {
+    if (quiere === 'todos') {
+      const rs = await Promise.all(lista.map(pedirLocal));
+      const oks = rs.filter(r => r.ok);
+      if (!oks.length) { res.status(502).json({ ok: false, error: 'Ningún local respondió' }); return; }
+      const out = consolidar(oks);
+      // Se informa de qué locales entraron en la suma y cuáles fallaron: una
+      // suma incompleta sin avisar sería peor que no dar el dato.
+      out.locales = rs.map(r => ({ id: r.id, nombre: r.nombre, ok: r.ok, error: r.error || null,
+        euros: r.ok ? r2(((r.datos.cerradas || {}).euros || 0) + ((r.datos.abiertas || {}).euros || 0)) : null }));
+      out.parcial = oks.length < lista.length;
+      res.status(200).json(out);
+      return;
+    }
+    const l = lista.find(x => x.id === quiere);
+    if (!l) { res.status(404).json({ ok: false, error: 'Local desconocido' }); return; }
+    const r = await pedirLocal(l);
+    if (!r.ok) { res.status(502).json({ ok: false, error: `${l.nombre}: ${r.error}` }); return; }
+    res.status(200).json(r.datos);
+  } catch (e) {
+    console.error('[grupo] fallo:', e.message || e);
+    res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) });
+  }
+};

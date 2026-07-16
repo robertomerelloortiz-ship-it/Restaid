@@ -141,7 +141,20 @@ async function procesarPendientes(URL_SB, KEY_SB) {
   return { procesados, descartados };
 }
 
+// ── Autorización ─────────────────────────────────────────────────────────
+// Este endpoint devuelve el histórico de órdenes y líneas: nunca debe ser
+// público. Acepta la contraseña del local (x-restaid-pass) o el secreto del
+// grupo (x-restaid-grupo) para lecturas de servidor a servidor entre locales.
+function autorizado(req) {
+  const pass = req.headers['x-restaid-pass'] || '';
+  if (process.env.RESTAID_PASS && pass === process.env.RESTAID_PASS) return true;
+  const grupo = req.headers['x-restaid-grupo'] || '';
+  if (process.env.GRUPO_TOKEN && grupo === process.env.GRUPO_TOKEN) return true;
+  return false;
+}
+
 module.exports = async (req, res) => {
+  if (!autorizado(req)) { res.status(401).json({ ok: false, error: 'No autorizado' }); return; }
   if (req.method !== 'GET') {
     res.status(405).json({ ok: false, error: 'Solo GET' });
     return;
