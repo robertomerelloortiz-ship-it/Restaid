@@ -945,6 +945,10 @@ nav {
         localStorage.setItem('restaid_authed','1');
         localStorage.setItem('restaid_pass',p);
         hideLogin();
+        // Recargar los datos YA con la contraseña recién guardada. Sin esto,
+        // la primera visita a un dominio nuevo se queda con el 401 del fetch
+        // que se disparó antes del login, hasta el refresco de los 60s.
+        try{ if(window.postLoginRefresh) window.postLoginRefresh(); }catch(e){}
       } else if(r.status===401){
         err.textContent='Usuario o contraseña incorrectos.'; err.style.display='block';
       } else {
@@ -1261,8 +1265,13 @@ let GRUPO_PROPIO='';       // id del local de ESTE despliegue
 let GRUPO_SEL=localStorage.getItem('restaid_grupo_sel')||'';  // '' = este local
 let GRUPO_AVISO='';
 const _pass=()=>localStorage.getItem('restaid_pass')||'';
+const _logueado=()=>localStorage.getItem('restaid_authed')==='1'&&!!_pass();
+// Llamada desde doLogin: resetea el estado (que puede llevar el 401 del fetch
+// pre-login) y recarga con la contraseña recién guardada.
+window.postLoginRefresh=function(){HOY_LIVE=null;GRUPO_AVISO='';renderHome();refreshHoyLive();cargarGrupo();};
 const _nombreLocal=id=>id==='todos'?'todos los negocios':((GRUPO_LOCALES.find(l=>l.id===id)||{}).nombre||id);
 async function cargarGrupo(){
+  if(!_logueado())return;
   try{
     const r=await fetch('/api/grupo',{headers:{'x-restaid-pass':_pass()}});
     const d=await r.json();
@@ -1294,6 +1303,7 @@ let HOY_LIVE=null;
 // así cada negocio del grupo trae el suyo. El 84 es el de Talabar por defecto.
 let AFORO_LOCAL=84;
 async function refreshHoyLive(){
+  if(!_logueado())return; // sin login no se pide nada (evita el 401 pre-login)
   try{
     // Sin selección de grupo se pide el propio local (igual que siempre).
     const url=GRUPO_SEL?('/api/grupo?local='+encodeURIComponent(GRUPO_SEL)):'/api/hoy_live';
