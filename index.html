@@ -701,6 +701,13 @@ nav {
   background: rgba(232,145,74,.10); border-radius: 8px;
   padding: 7px 12px; margin: 0 0 14px;
 }
+/* Nota informativa (no es un error): distinta del aviso ámbar a propósito. */
+.revo-grupo-nota {
+  text-align: center; font-size: 11.5px; line-height: 1.5;
+  color: var(--tx3); background: rgba(0,0,0,.03);
+  border-radius: 8px; padding: 7px 12px; margin: 0 0 14px;
+}
+.revo-grupo-nota b { color: var(--tx2); font-weight: 600; }
 
 /* Número estrella */
 .revo-hero {
@@ -1245,15 +1252,18 @@ let HOME_PERIOD='hoy';
 // deja elegir qué negocio mirar, o la suma de todos. Si no hay grupo, no
 // aparece nada y todo funciona exactamente como antes.
 let GRUPO_LOCALES=[];      // [{id,nombre}]
+let GRUPO_PROPIO='';       // id del local de ESTE despliegue
 let GRUPO_SEL=localStorage.getItem('restaid_grupo_sel')||'';  // '' = este local
 let GRUPO_AVISO='';
 const _pass=()=>localStorage.getItem('restaid_pass')||'';
+const _nombreLocal=id=>id==='todos'?'todos los negocios':((GRUPO_LOCALES.find(l=>l.id===id)||{}).nombre||id);
 async function cargarGrupo(){
   try{
     const r=await fetch('/api/grupo',{headers:{'x-restaid-pass':_pass()}});
     const d=await r.json();
     if(d&&d.ok&&Array.isArray(d.locales)&&d.locales.length>1){
       GRUPO_LOCALES=d.locales;
+      GRUPO_PROPIO=d.propio||'';
       if(GRUPO_SEL&&GRUPO_SEL!=='todos'&&!GRUPO_LOCALES.some(l=>l.id===GRUPO_SEL))GRUPO_SEL='';
       renderHome();
     }
@@ -1262,7 +1272,12 @@ async function cargarGrupo(){
 function setNegocio(id){
   GRUPO_SEL=(id===GRUPO_SEL)?'':id;
   try{localStorage.setItem('restaid_grupo_sel',GRUPO_SEL);}catch(e){}
-  HOY_LIVE=null;GRUPO_AVISO='';renderHome();refreshHoyLive();
+  HOY_LIVE=null; GRUPO_AVISO='';
+  // Repinta primero en estado "cargando" (datos a null) y luego con los reales.
+  // Sin esto, al cambiar de local en Ayer/Semana/Mes se ven datos del local anterior
+  // hasta que llega la respuesta, dando la sensación de que "se vuelve loco".
+  renderHome();
+  refreshHoyLive();
 }
 // Hoy en vivo (cerradas + mesas abiertas) desde /api/hoy_live, refrescado cada 60 s
 let HOY_LIVE=null;
@@ -1392,7 +1407,9 @@ function renderMesasModal(){
 }
 function setHomePeriod(p){
   HOME_PERIOD=p;
-  if(p==='hoy'||p==='semana'||p==='mes'||p==='ayer')refreshHoyLive();
+  // Siempre refresca: cada período usa datos distintos de hoy_live
+  // (ayer, semana, mes viajan en la misma respuesta que el hoy).
+  refreshHoyLive();
   renderHome();
 }
 
@@ -1550,6 +1567,16 @@ function afinarPrevisionIA(){
 }
 
 function renderHomeRevo(box,r,v,pub){
+  // Si estamos esperando datos de un local nuevo, mostrar spinner en vez de datos
+  // del local anterior mezclados con el selector del nuevo.
+  if(HOY_LIVE===null&&GRUPO_LOCALES.length>1){
+    const selNombre=GRUPO_SEL?_nombreLocal(GRUPO_SEL):(GRUPO_PROPIO?_nombreLocal(GRUPO_PROPIO):'');
+    box.innerHTML=`<div style="text-align:center;padding:60px 20px;color:var(--tx3)">
+      <div class="spin" style="width:28px;height:28px;border-width:3px;margin:0 auto 14px"></div>
+      <div style="font-size:13px">Cargando${selNombre?' '+selNombre:''}…</div>
+    </div>`;
+    return;
+  }
   // ── DATOS POR PERÍODO ──
   // Hoy: previsión del día (estimado, hasta conectar Revo). Semana/Mes/Año: datos reales del análisis.
   const lab=r.pctLaboral!=null?r.pctLaboral:null;
@@ -1989,6 +2016,12 @@ function renderHomeRevo(box,r,v,pub){
         <button class="revo-negocio ${GRUPO_SEL==='todos'?'active':''} todos" onclick="setNegocio('todos')">Σ Todos</button>
       </div>`:''}
       ${GRUPO_AVISO?`<div class="revo-grupo-aviso">${GRUPO_AVISO}</div>`:''}
+      ${(GRUPO_SEL&&GRUPO_PROPIO&&GRUPO_SEL!==GRUPO_PROPIO)?`
+      <!-- El selector solo cambia el Inicio: los módulos del menú leen la base
+           de datos de ESTE local. Se avisa para no dar gato por liebre. -->
+      <div class="revo-grupo-nota">
+        Estás viendo el Inicio de <b>${_nombreLocal(GRUPO_SEL)}</b>. El menú lateral (Ventas, Personal, Inventario, APPCC) sigue mostrando <b>${_nombreLocal(GRUPO_PROPIO)}</b>.
+      </div>`:''}
 
       <!-- Selector de período -->
       <div class="revo-periods">
