@@ -32,6 +32,9 @@
     },
     "api/limpiar_abiertas.js": {
       "maxDuration": 30
+    },
+    "api/grupo.js": {
+      "maxDuration": 30
     }
   }
 }
