@@ -40,6 +40,19 @@
 
 const crypto = require('crypto');
 
+// ── Mesas de control / fantasma ──────────────────────────────────────────
+// No se registran en revo_abiertas: no son servicio real y falsean el pulso
+// del dashboard (conteo, euros en curso, ocupación y alerta de tiempo).
+//   - "Barra 8": comodín para aparcar comandas equivocadas (control antifraude).
+//   - "MESA 24": orden zombi de Revo abierta desde 2025, nunca cerrada.
+// OJO: comparación EXACTA y sensible a mayúsculas. La mesa real de servicio
+// es "Mesa 24" y sigue funcionando con normalidad.
+// Esto NO afecta a las ventas: los order.closed se archivan igual que siempre.
+// Configurable en Vercel con MESAS_CONTROL="MESA 24,Barra 8".
+const MESAS_CONTROL = (process.env.MESAS_CONTROL || 'MESA 24,Barra 8')
+  .split(',').map(s => s.trim()).filter(Boolean);
+const esMesaControl = m => MESAS_CONTROL.includes(String(m || '').trim());
+
 // ── Núcleo puro (testeado en test_webhook_core.js) ──────────────────────
 
 const EVENTOS_ACEPTADOS = new Set(['order.closed']);
@@ -147,7 +160,7 @@ module.exports = async (req, res) => {
       'Content-Type': 'application/json', apikey: SUPABASE_KEY,
       Authorization: `Bearer ${SUPABASE_KEY}`,
     };
-    if (ABIERTA_UPSERT.has(evento.event) && d.id && d.status === 0 && !d.canceled) {
+    if (ABIERTA_UPSERT.has(evento.event) && d.id && d.status === 0 && !d.canceled && !esMesaControl(d.tableName)) {
       const aMadrid = s => {
         if (!s) return null;
         const dt = new Date(String(s).replace(' ', 'T') + 'Z');

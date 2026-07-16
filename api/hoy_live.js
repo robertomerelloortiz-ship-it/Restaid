@@ -12,6 +12,23 @@
 //   { ok, fecha, cerradas:{euros,n,comensales}, abiertas:{euros,n,comensales,mesas:[...]} }
 
 const TZ = 'Europe/Madrid';
+
+// ── Mesas de control / fantasma ──────────────────────────────────────────
+// Mesas que NO son servicio real y no deben contar en el pulso (ficha
+// "Abiertas", euros en curso, ocupación ni modal):
+//   - "Barra 8": comodín donde se aparcan las comandas equivocadas (control
+//     antifraude: se aparcan en vez de borrarlas).
+//   - "MESA 24": orden zombi heredada de Revo (abierta desde 2025 y nunca
+//     cerrada). OJO: en MAYÚSCULAS. La mesa real de servicio se llama
+//     "Mesa 24" y NO se toca — la diferencia de grafía es lo único que las
+//     separa.
+// La comparación es EXACTA y distingue mayúsculas, a propósito.
+// Esto solo afecta a la vista en vivo: las VENTAS no se tocan nunca.
+// Configurable en Vercel con MESAS_CONTROL="MESA 24,Barra 8".
+const MESAS_CONTROL = (process.env.MESAS_CONTROL || 'MESA 24,Barra 8')
+  .split(',').map(s => s.trim()).filter(Boolean);
+const esMesaControl = m => MESAS_CONTROL.includes(String(m || '').trim());
+
 const FMT = new Intl.DateTimeFormat('sv-SE', {
   timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit',
   hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
@@ -199,10 +216,22 @@ module.exports = async (req, res) => {
         .catch(() => {});
     }
 
+    // Mesas de control/comodín y zombis heredados: fuera del pulso. No son
+    // servicio real, así que falsean el conteo, los euros en curso y la
+    // ocupación, y disparan la alerta de "lleva mucho abierta" cada día.
+    // Se devuelven aparte por si se quieren consultar; las ventas no se tocan.
+    const controlFilas = abiertasFilas.filter(a => esMesaControl(a.mesa));
+    abiertasFilas = abiertasFilas.filter(a => !esMesaControl(a.mesa));
+
     const cerradas = {
       euros: Math.round(cerradasFilas.reduce((s, o) => s + num(o.total), 0) * 100) / 100,
       n: cerradasFilas.length,
       comensales: cerradasFilas.reduce((s, o) => s + (o.comensales || 0), 0),
+    };
+    const control = {
+      n: controlFilas.length,
+      euros: Math.round(controlFilas.reduce((s, o) => s + num(o.total), 0) * 100) / 100,
+      mesas: controlFilas.map(o => ({ mesa: o.mesa, total: num(o.total), abierta_desde: o.abierta_desde || null })),
     };
     const abiertas = {
       euros: Math.round(abiertasFilas.reduce((s, o) => s + num(o.total), 0) * 100) / 100,
@@ -274,7 +303,7 @@ module.exports = async (req, res) => {
     const jornadasSem = [...new Set(semFilas.map(o => o.jornada))].filter(Boolean).sort();
     const semana = { desde: lunesJ, jornadas: jornadasSem, ...suma(semFilas) };
     const mes = { desde: mesJ, jornadas: jornadasMes, ...suma(mesFilas) };
-    res.status(200).json({ ok: true, fecha, cerradas, abiertas, ayer, semana, mes, pulso: { porHora, top, rankingEuros, totalProductosEur: Math.round(totalLineasEur * 100) / 100, totalProductosUds: totalLineasUds } });
+    res.status(200).json({ ok: true, fecha, cerradas, abiertas, control, ayer, semana, mes, pulso: { porHora, top, rankingEuros, totalProductosEur: Math.round(totalLineasEur * 100) / 100, totalProductosUds: totalLineasUds } });
   } catch (e) {
     console.error('[hoy_live] fallo:', e.message || e);
     res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) });
