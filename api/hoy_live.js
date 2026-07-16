@@ -47,11 +47,19 @@ const NEGOCIO = {
 //   - x-restaid-grupo : el secreto compartido del grupo, para que el Inicio
 //     de un local hermano pueda leer estos totales de servidor a servidor.
 //     Nunca baja al navegador.
+// Las cabeceras HTTP viajan en Latin-1: una contraseña con ñ o tildes llega
+// alterada (p. ej. "caÃ±illa") aunque el login (que va en el cuerpo, UTF-8)
+// funcione. Se compara también la forma reparada y sin espacios sobrantes.
+function coincide(recibido, esperado) {
+  if (!esperado) return false;
+  const cands = new Set([recibido, String(recibido).trim()]);
+  try { cands.add(Buffer.from(recibido, 'latin1').toString('utf8')); } catch (e) {}
+  try { cands.add(decodeURIComponent(recibido)); } catch (e) {}
+  return cands.has(esperado) || cands.has(esperado.trim());
+}
 function autorizado(req) {
-  const pass = req.headers['x-restaid-pass'] || '';
-  if (process.env.RESTAID_PASS && pass === process.env.RESTAID_PASS) return true;
-  const grupo = req.headers['x-restaid-grupo'] || '';
-  if (process.env.GRUPO_TOKEN && grupo === process.env.GRUPO_TOKEN) return true;
+  if (coincide(req.headers['x-restaid-pass'] || '', process.env.RESTAID_PASS)) return true;
+  if (coincide(req.headers['x-restaid-grupo'] || '', process.env.GRUPO_TOKEN)) return true;
   return false;
 }
 

@@ -35,9 +35,17 @@ function locales() {
 }
 
 // El navegador se identifica con la contraseña de SU local.
+// Cabeceras HTTP = Latin-1: contraseñas con ñ/tildes llegan alteradas aunque
+// el login funcione. Comparación tolerante (cruda, reparada y recortada).
+function coincide(recibido, esperado) {
+  if (!esperado) return false;
+  const cands = new Set([recibido, String(recibido).trim()]);
+  try { cands.add(Buffer.from(recibido, 'latin1').toString('utf8')); } catch (e) {}
+  try { cands.add(decodeURIComponent(recibido)); } catch (e) {}
+  return cands.has(esperado) || cands.has(esperado.trim());
+}
 function autorizado(req) {
-  const pass = req.headers['x-restaid-pass'] || '';
-  return !!process.env.RESTAID_PASS && pass === process.env.RESTAID_PASS;
+  return coincide(req.headers['x-restaid-pass'] || '', process.env.RESTAID_PASS);
 }
 
 async function pedirLocal(l) {
