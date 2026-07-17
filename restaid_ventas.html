@@ -2228,7 +2228,16 @@ function renderEquipo(){
 
 // ── ZONAS ──────────────────────────────────────────────────
 function renderZonas(){
-  var g=G,zonas=Object.keys(g.zonaComMap).sort(function(a,b){return g.zonaComMap[b].euros-g.zonaComMap[a].euros;}),topZ=zonas[0]||'';
+  var g=G,zonas=Object.keys(g.zonaComMap).sort(function(a,b){return g.zonaComMap[b].euros-g.zonaComMap[a].euros;});
+  // Una zona con 0 asientos configurados no existe en este local (p. ej. La
+  // Canilla no tiene Sala ni Salón, solo Terraza y Barra), aunque Revo traiga
+  // tickets con esa etiqueta heredada de la plantilla. Se oculta del todo en
+  // vez de mostrar una ocupación absurda al dividir por una capacidad que no
+  // existe. Si TODAS las zonas están a 0 (nunca se configuró), no se oculta
+  // nada, para no dejar la pantalla vacía por una config a medias.
+  var algunaConAsientos=zonas.some(function(z){return (CFG.asientos[z]||0)>0;});
+  if(algunaConAsientos)zonas=zonas.filter(function(z){return (CFG.asientos[z]||0)>0;});
+  var topZ=zonas[0]||'';
   var tOrd=Object.keys(CFG.turnos);
   // Mesas de la zona: contador real; si no hay dato, estimación por asientos (~4 por mesa)
   function mesasNZ(z){
@@ -2238,7 +2247,7 @@ function renderZonas(){
   }
   function mesasReales(z){return (g.mesasZonaN&&g.mesasZonaN[z])||0;}
   // Ocupación = comensales / capacidad máxima (asientos × rotación ideal × días operados por turno)
-  function zonaOcup(z){var s=CFG.asientos[z]||10;return g.zonaComMap[z]?g.zonaComMap[z].com/capacidadMaxima(g,s)*100:0;}
+  function zonaOcup(z){var s=CFG.asientos[z]!=null?CFG.asientos[z]:10;return g.zonaComMap[z]?g.zonaComMap[z].com/capacidadMaxima(g,s)*100:0;}
   function zonaRot(z){var m=mesasNZ(z);var dias=(g.zonaDiasN&&g.zonaDiasN[z])||g.nDays||1;return g.zonaComMap[z]?g.zonaComMap[z].tickets/(m*dias):0;}
   function ocupColor(p){return p>=70?'#1D7A4A':p>=40?'#E8914A':'#C03020';}
   function subAnalisis(z){
