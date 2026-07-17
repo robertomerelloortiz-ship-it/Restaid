@@ -1001,7 +1001,21 @@ function getHour(v){return getHM(v)[0];}
 function turnoLabel(v){const h=getHour(v);if(h<0)return'N/D';for(const[name,t]of Object.entries(CFG.turnos)){if(h>=t.ini&&h<t.fin)return name;}return'Cena';}
 function dateStr(v){if(!v)return null;if(typeof v==='number')return new Date(Math.round((v-25569)*86400*1000)).toISOString().slice(0,10);const s=String(v).slice(0,10);return/\d{4}-\d{2}-\d{2}/.test(s)?s:null;}
 function parseDT(v){if(!v)return null;if(typeof v==='number')return new Date(Math.round((v-25569)*86400*1000));const d=new Date(String(v));return isNaN(d)?null:d;}
-function getZona(m){const n=parseInt(String(m||'').toLowerCase().replace('mesa','').trim());if(!isNaN(n)){for(const[z,nums]of Object.entries(CFG.zonaReglas)){if(nums.includes(n))return z;}return'Terraza';}return'Barra';}
+// zonaReal: valor de la columna Sala/Zona del CSV de Revo, si existe. Manda
+// sobre la heurística por nombre de mesa (que era el único criterio antes,
+// y adivinaba mal en cualquier local con nomenclatura distinta a Talabar).
+function getZona(m,zonaReal){
+  if(zonaReal!=null&&String(zonaReal).trim()!==''){
+    const zr=String(zonaReal).trim();
+    // Si el valor del CSV coincide (sin distinguir mayúsculas) con una zona
+    // ya configurada en CFG.asientos, se usa esa forma exacta para que las
+    // tarjetas y los filtros casen. Si no coincide con ninguna, se usa tal
+    // cual viene (con mayúscula inicial) — es un nombre de zona nuevo.
+    const match=Object.keys(CFG.asientos).find(z=>z.toLowerCase()===zr.toLowerCase());
+    return match||(zr.charAt(0).toUpperCase()+zr.slice(1));
+  }
+  const n=parseInt(String(m||'').toLowerCase().replace('mesa','').trim());if(!isNaN(n)){for(const[z,nums]of Object.entries(CFG.zonaReglas)){if(nums.includes(n))return z;}return'Terraza';}return'Barra';
+}
 function isDesc(p){const x=(p||'').toLowerCase().trim();return!x||x==='?'||x==='-'||x.startsWith('[')||x.includes('(baja)')||x.includes('*baja');}
 function normalStr(s){return(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim();}
 function matchesCarta(prod){if(!RESTAID.data.carta.length)return true;const np=normalStr(prod);return RESTAID.data.carta.some(item=>{const ni=normalStr(item);if(np===ni||np.includes(ni)||ni.includes(np))return true;const w=ni.split(' ').filter(x=>x.length>3);return w.length>0&&w.filter(x=>np.includes(x)).length>=Math.ceil(w.length*.5);});}
@@ -1105,11 +1119,15 @@ async function runAnalysis(){
   const os=ORD[0]||{};
   const oID=findKey(os,['ID','id','Orden','orden'])||'ID',oCom=findKey(os,['Comensales','comensales'])||'Comensales';
   const oAb=findKey(os,['Abierto','abierto'])||'Abierto',oCe=findKey(os,['Cerrado','cerrado'])||'Cerrado',oMesa=findKey(os,['Mesa','mesa'])||'Mesa';
-  RESTAID.data.columnas={kP,kC,kQ,kT,kDsc,kMe,kEm,kDt,kOr,oID,oCom,oAb,oCe,oMesa};
+  // Columna de zona real que trae el propio Revo (algunos locales la exportan
+  // como "Sala", otros como "Zona"). Si existe, manda sobre la heurística por
+  // nombre de mesa — que solo es un parche para cuando el CSV no la trae.
+  const oZona=findKey(os,['Sala','sala','Zona','zona'])||null;
+  RESTAID.data.columnas={kP,kC,kQ,kT,kDsc,kMe,kEm,kDt,kOr,oID,oCom,oAb,oCe,oMesa,oZona};
 
   // Mapa de órdenes
   const ordenMap={};
-  ORD.forEach(r=>{const id=String(r[oID]||'').trim();if(!id)return;const ab=parseDT(r[oAb]),ce=parseDT(r[oCe]);ordenMap[id]={comensales:Math.max(1,pn(r[oCom])),duracion:ab&&ce?Math.round((ce-ab)/60000):-1,zona:getZona(String(r[oMesa]||'')),mesa:String(r[oMesa]||'')};});
+  ORD.forEach(r=>{const id=String(r[oID]||'').trim();if(!id)return;const ab=parseDT(r[oAb]),ce=parseDT(r[oCe]);ordenMap[id]={comensales:Math.max(1,pn(r[oCom])),duracion:ab&&ce?Math.round((ce-ab)/60000):-1,zona:getZona(String(r[oMesa]||''),oZona?r[oZona]:null),mesa:String(r[oMesa]||'')};});
 
   // Acumuladores
   let totVen=0,totDes=0,totCocE=0,totBebE=0;
@@ -1191,12 +1209,13 @@ async function runAnalysis(){
 
   // Zona + mesa (desde órdenes)
   const zonaComMap={},mesaComMap={};
-  ORD.forEach(r=>{const zona=getZona(String(r[oMesa]||'')),mesa=String(r[oMesa]||'').trim(),com=Math.max(1,pn(r[oCom])),tot=pn(r[findKey(r,['Total','total'])||'Total']);const ab=parseDT(r[oAb]),ce=parseDT(r[oCe]),dur=ab&&ce?Math.round((ce-ab)/60000):-1;if(!zonaComMap[zona])zonaComMap[zona]={euros:0,com:0,tickets:0,durSum:0,durN:0};zonaComMap[zona].com+=com;zonaComMap[zona].euros+=tot;zonaComMap[zona].tickets++;if(dur>0&&dur<300){zonaComMap[zona].durSum+=dur;zonaComMap[zona].durN++;}if(mesa){if(!mesaComMap[mesa])mesaComMap[mesa]={euros:0,com:0,tickets:0};mesaComMap[mesa].com+=com;mesaComMap[mesa].euros+=tot;mesaComMap[mesa].tickets++;}});
+  const mesaZonaReal={};
+  ORD.forEach(r=>{const zona=getZona(String(r[oMesa]||''),oZona?r[oZona]:null),mesa=String(r[oMesa]||'').trim(),com=Math.max(1,pn(r[oCom])),tot=pn(r[findKey(r,['Total','total'])||'Total']);const ab=parseDT(r[oAb]),ce=parseDT(r[oCe]),dur=ab&&ce?Math.round((ce-ab)/60000):-1;if(!zonaComMap[zona])zonaComMap[zona]={euros:0,com:0,tickets:0,durSum:0,durN:0};zonaComMap[zona].com+=com;zonaComMap[zona].euros+=tot;zonaComMap[zona].tickets++;if(dur>0&&dur<300){zonaComMap[zona].durSum+=dur;zonaComMap[zona].durN++;}if(mesa){mesaZonaReal[mesa]=zona;if(!mesaComMap[mesa])mesaComMap[mesa]={euros:0,com:0,tickets:0};mesaComMap[mesa].com+=com;mesaComMap[mesa].euros+=tot;mesaComMap[mesa].tickets++;}});
 
   // ── Operativa ──
   // TTFO (tiempo hasta primer pedido)
   const ttfoZona={},ttfoEmp={};
-  ORD.forEach(r=>{const id=String(r[oID]||'').trim(),ab=parseDT(r[oAb]),zona=getZona(String(r[oMesa]||''));if(!ab||!firstLineTime[id])return;const diff=(firstLineTime[id]-ab)/60000;if(diff<0.5||diff>45)return;if(!ttfoZona[zona])ttfoZona[zona]={sum:0,n:0};ttfoZona[zona].sum+=diff;ttfoZona[zona].n++;});
+  ORD.forEach(r=>{const id=String(r[oID]||'').trim(),ab=parseDT(r[oAb]),zona=getZona(String(r[oMesa]||''),oZona?r[oZona]:null);if(!ab||!firstLineTime[id])return;const diff=(firstLineTime[id]-ab)/60000;if(diff<0.5||diff>45)return;if(!ttfoZona[zona])ttfoZona[zona]={sum:0,n:0};ttfoZona[zona].sum+=diff;ttfoZona[zona].n++;});
   // Rondas de bebida en tickets de comida
   const rondasDist={};let rondasSum=0,rondasN=0;
   Object.keys(ticketLines).forEach(ord=>{const t=ticketLines[ord];if(!t.hasFood)return;const times=(bevByOrd[ord]||[]).sort((a,b)=>a-b);let r=times.length>0?1:0;for(let i=1;i<times.length;i++)if(times[i]-times[i-1]>15*60*1000)r++;rondasDist[r]=(rondasDist[r]||0)+1;rondasSum+=r;rondasN++;});
@@ -1206,7 +1225,7 @@ async function runAnalysis(){
   // Euros por zona×turno (base para RevPASH, que se calcula al pintar según asientos)
   const eurosZT={};Object.values(ticketLines).forEach(t=>{eurosZT[t.zona+'|'+t.turno]=(eurosZT[t.zona+'|'+t.turno]||0)+t.total;});
   Object.values(ticketLines).forEach(t=>{var k=t.zona+'|'+t.turno;comZT[k]=(comZT[k]||0)+t.com;tickZT[k]=(tickZT[k]||0)+1;});
-  const mesasPorZona={};Object.keys(mesaComMap).forEach(m=>{var z=getZona(m);if(!mesasPorZona[z])mesasPorZona[z]=new Set();mesasPorZona[z].add(m);});
+  const mesasPorZona={};Object.keys(mesaComMap).forEach(m=>{var z=mesaZonaReal[m]||getZona(m);if(!mesasPorZona[z])mesasPorZona[z]=new Set();mesasPorZona[z].add(m);});
   // Contador numérico (los Set se pierden al guardar en BD)
   const mesasZonaN={};Object.keys(mesasPorZona).forEach(z=>mesasZonaN[z]=mesasPorZona[z].size);
 
@@ -1229,17 +1248,15 @@ async function runAnalysis(){
   const nTurnosActivos=Object.keys(CFG.turnos).length||2;
   // Ocupación real = comensales / capacidad máxima teórica (asientos × rotaciones ideales × días operados)
   //
-  // Zonas "fantasma": si el local no tiene Sala/Salón (asientos=0) pero Revo
-  // sigue trayendo tickets con esa etiqueta heredada de la plantilla, esos
-  // comensales no deben contar aquí — igual que esa zona no se muestra en la
-  // pestaña Zonas. Si no se filtrasen, el numerador (todos los comensales)
-  // se dividiría por una capacidad (solo zonas reales) que no los incluye,
-  // disparando el % muy por encima de 100 sin que signifique nada.
-  // Si NINGUNA zona tiene asientos configurados aún, no se filtra nada (evita
-  // dar 0% de ocupación real antes de que alguien configure los asientos).
+  // Zonas "fantasma": si el local no tiene Sala/Salón (asientos=0) pero algún
+  // ticket sigue cayendo ahí, esos comensales no deben contar aquí — igual
+  // que esa zona no se muestra en la pestaña Zonas. Si no se filtrasen, el
+  // numerador (todos los comensales) se dividiría por una capacidad (solo
+  // zonas reales) que no los incluye, disparando el % sin sentido.
+  // Si NINGUNA zona tiene asientos configurados aún, no se filtra nada.
   const zonasConAsientos=Object.keys(zonaComMap).filter(z=>(CFG.asientos[z]||0)>0);
-  const hayFiltro=zonasConAsientos.length>0;
-  const allComsVisibles=hayFiltro
+  const hayFiltroZonas=zonasConAsientos.length>0;
+  const allComsVisibles=hayFiltroZonas
     ? zonasConAsientos.reduce((s,z)=>s+(zonaComMap[z].com||0),0)
     : allComs;
   const ocupGlobal=allComsVisibles>0?allComsVisibles/capacidadMaxima({nDiasTurno,nDays},totalAsientos)*100:0;
@@ -1438,11 +1455,11 @@ function applySettings(){
     G.totalAsientos=Object.values(CFG.asientos).reduce((s,v)=>s+v,0)||1;
     // Mismo filtro de zonas visibles que en runAnalysis: si el local no tiene
     // una zona (asientos=0), sus comensales no cuentan en la ocupación global.
-    const zonasConAsientos=Object.keys(G.zonaComMap||{}).filter(z=>(CFG.asientos[z]||0)>0);
-    const allComsVisibles=zonasConAsientos.length>0
-      ?zonasConAsientos.reduce((s,z)=>s+((G.zonaComMap[z]||{}).com||0),0)
+    const zonasConAsientosAS=Object.keys(G.zonaComMap||{}).filter(z=>(CFG.asientos[z]||0)>0);
+    const allComsVisiblesAS=zonasConAsientosAS.length>0
+      ?zonasConAsientosAS.reduce((s,z)=>s+((G.zonaComMap[z]||{}).com||0),0)
       :G.allComs;
-    G.ocupGlobal=allComsVisibles>0?allComsVisibles/capacidadMaxima(G,G.totalAsientos)*100:0;
+    G.ocupGlobal=allComsVisiblesAS>0?allComsVisiblesAS/capacidadMaxima(G,G.totalAsientos)*100:0;
   }
   closeSettings();
   renderResumen();renderOperativa();renderZonas();renderAsistente();
@@ -1871,10 +1888,8 @@ function renderResumen(){
   const wkndE=(g.byDay['Vie']||0)+(g.byDay['Sáb']||0)+(g.byDay['Dom']||0);
   const wkndPct=g.totVen>0?wkndE/g.totVen*100:0;
   if(wkndPct>60)ins.push({type:'warn',label:'Fin de semana',txt:`El ${fc(wkndPct,0)}% de tus ingresos llega de viernes a domingo. Un mal fin de semana (lluvia, evento) golpea fuerte la caja.`});
-  // Zona líder: mismo filtro que la pestaña Zonas (una zona con 0 asientos
-  // no existe en este local, aunque Revo traiga tickets con esa etiqueta).
-  const zonasVisibles=(()=>{const zs=Object.keys(g.zonaComMap);const conAsientos=zs.filter(z=>(CFG.asientos[z]||0)>0);return conAsientos.length>0?conAsientos:zs;})();
-  const topZ=zonasVisibles.sort((a,b)=>g.zonaComMap[b].euros-g.zonaComMap[a].euros)[0];
+  const zonasVisiblesTop=(()=>{const zs=Object.keys(g.zonaComMap);const conAsientos=zs.filter(z=>(CFG.asientos[z]||0)>0);return conAsientos.length>0?conAsientos:zs;})();
+  const topZ=zonasVisiblesTop.sort((a,b)=>g.zonaComMap[b].euros-g.zonaComMap[a].euros)[0];
   if(topZ)ins.push({type:'good',label:'Zona líder',txt:`${topZ} genera el ${fc(g.zonaComMap[topZ].euros/g.totVen*100,0)}% de la facturación.`});
   if(g.concentracion>40)ins.push({type:'warn',label:'Carta concentrada',txt:`El ${fc(g.concentracion,0)}% de tus ventas dependen de solo 10 platos. Riesgo si alguno falla.`});
   const postRate=g.comidaN>0?g.postresN/g.comidaN*100:0;
@@ -2253,11 +2268,10 @@ function renderEquipo(){
 function renderZonas(){
   var g=G,zonas=Object.keys(g.zonaComMap).sort(function(a,b){return g.zonaComMap[b].euros-g.zonaComMap[a].euros;});
   // Una zona con 0 asientos configurados no existe en este local (p. ej. La
-  // Canilla no tiene Sala ni Salón, solo Terraza y Barra), aunque Revo traiga
-  // tickets con esa etiqueta heredada de la plantilla. Se oculta del todo en
-  // vez de mostrar una ocupación absurda al dividir por una capacidad que no
-  // existe. Si TODAS las zonas están a 0 (nunca se configuró), no se oculta
-  // nada, para no dejar la pantalla vacía por una config a medias.
+  // Canilla no tiene Sala ni Salón, solo Terraza y Barra). Se oculta del todo
+  // en vez de mostrar una ocupación absurda al dividir por una capacidad que
+  // no existe. Si TODAS las zonas están a 0 (nunca se configuró), no se
+  // oculta nada, para no dejar la pantalla vacía por una config a medias.
   var algunaConAsientos=zonas.some(function(z){return (CFG.asientos[z]||0)>0;});
   if(algunaConAsientos)zonas=zonas.filter(function(z){return (CFG.asientos[z]||0)>0;});
   var topZ=zonas[0]||'';
@@ -2602,10 +2616,10 @@ async function sincronizarVentasLive(){
 }
 
 async function loadVentasFromDB(){
-  const [rows,carta,escCloud,cfgKv]=await Promise.all([
-    sbGetV('ventas_productos'),sbGetOne('ventas_carta'),sbGetOne('ventas_escandallo'),
-    Promise.resolve(null) // reservado: asientos vienen de escCloud.__asientos__
+  const [rows,carta,escCloud]=await Promise.all([
+    sbGetV('ventas_productos'),sbGetOne('ventas_carta'),sbGetOne('ventas_escandallo')
   ]);
+  console.log('[RESTAID load] rows:',rows?.length,'carta:',!!carta,'escandallo:',!!escCloud);
   // Config de asientos: viajan como campos extra en ventas_escandallo.
   // La nube tiene prioridad sobre localStorage para persistir en todos los dispositivos.
   if(escCloud&&escCloud.__asientos__){
@@ -2617,7 +2631,6 @@ async function loadVentasFromDB(){
     }
     console.log('[RESTAID] config asientos desde nube:',CFG.asientos,'rotIdeal:',CFG.rotIdeal);
   }
-  console.log('[RESTAID load] rows:',rows?.length,'carta:',!!carta,'escandallo:',!!escCloud);
   // Escandallo: la nube es la verdad compartida; los platos solo-locales se conservan y se resuben
   if(escCloud&&escCloud.platos&&Object.keys(escCloud.platos).length){
     const localPlatos=(ESC&&ESC.platos)||{};
