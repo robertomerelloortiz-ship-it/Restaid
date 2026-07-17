@@ -708,6 +708,28 @@ nav {
   border-radius: 8px; padding: 7px 12px; margin: 0 0 14px;
 }
 .revo-grupo-nota b { color: var(--tx2); font-weight: 600; }
+/* Ruedecita de carga. Estaba en uso (el "Cargando…" del selector de negocio)
+   pero nunca llegó a declararse, así que no giraba nada. */
+.spin {
+  display: inline-block;
+  border: 2px solid var(--border, #e5e7eb);
+  border-top-color: var(--amber);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Aviso de dato en caché: se está enseñando la última foto conocida mientras
+   llega la de verdad. Discreto a propósito: el dato es bueno, solo no es de
+   este segundo. */
+.revo-cache-aviso {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  font-size: 11.5px; color: var(--tx3);
+  margin: 0 0 14px;
+}
+.revo-cache-aviso .spin {
+  width: 11px; height: 11px; border-width: 2px; flex-shrink: 0;
+}
 
 /* Número estrella */
 .revo-hero {
@@ -1264,11 +1286,34 @@ let GRUPO_LOCALES=[];      // [{id,nombre}]
 let GRUPO_PROPIO='';       // id del local de ESTE despliegue
 let GRUPO_SEL=localStorage.getItem('restaid_grupo_sel')||'';  // '' = este local
 let GRUPO_AVISO='';
+let DESDE_CACHE=false;   // lo pintado es la última foto guardada, no el dato fresco
+let REQ_TOKEN=0;         // descarta respuestas de un negocio que ya se abandonó
 const _pass=()=>localStorage.getItem('restaid_pass')||'';
 const _logueado=()=>localStorage.getItem('restaid_authed')==='1'&&!!_pass();
 // Llamada desde doLogin: resetea el estado (que puede llevar el 401 del fetch
 // pre-login) y recarga con la contraseña recién guardada.
-window.postLoginRefresh=function(){HOY_LIVE=null;GRUPO_AVISO='';renderHome();refreshHoyLive();cargarGrupo();};
+window.postLoginRefresh=function(){HOY_LIVE=null;GRUPO_AVISO='';DESDE_CACHE=false;renderHome();refreshHoyLive();cargarGrupo();};
+
+/* ── Caché de la última respuesta de cada negocio ──────────────────────────
+   Cambiar de local no es una lectura barata: el navegador pide a ESTE servidor,
+   que a su vez pide por red al despliegue del otro local, que arranca en frío,
+   procesa sus eventos pendientes y lanza sus consultas. De ahí los 5 s en blanco.
+   Guardar la última respuesta permite pintar al instante y refrescar por detrás:
+   el dato tarda lo mismo, pero deja de ser una espera mirando a la nada. */
+const CACHE_TTL=10*60*1000;   // pasados 10 min, la foto es demasiado vieja: mejor esperar
+const _cacheKey=sel=>'restaid_hoy_cache_'+(sel||'_propio');
+function cacheGuardar(sel,d){
+  try{localStorage.setItem(_cacheKey(sel),JSON.stringify({t:Date.now(),d}));}catch(e){}
+}
+function cacheLeer(sel){
+  try{
+    const o=JSON.parse(localStorage.getItem(_cacheKey(sel))||'null');
+    if(!o||!o.d||!o.t||Date.now()-o.t>CACHE_TTL)return null;
+    return o.d;
+  }catch(e){return null;}
+}
+// El propio local se pide directo; los demás, a través de la capa de grupo.
+const _urlNegocio=sel=>sel?('/api/grupo?local='+encodeURIComponent(sel)):'/api/hoy_live';
 const _nombreLocal=id=>id==='todos'?'todos los negocios':((GRUPO_LOCALES.find(l=>l.id===id)||{}).nombre||id);
 async function cargarGrupo(){
   if(!_logueado())return;
@@ -1290,10 +1335,14 @@ function setNegocio(id){
   if(sel&&GRUPO_PROPIO&&sel===GRUPO_PROPIO)sel='';
   GRUPO_SEL=sel;
   try{localStorage.setItem('restaid_grupo_sel',GRUPO_SEL);}catch(e){}
-  HOY_LIVE=null; GRUPO_AVISO='';
-  // Repinta primero en estado "cargando" (datos a null) y luego con los reales.
-  // Sin esto, al cambiar de local en Ayer/Semana/Mes se ven datos del local anterior
-  // hasta que llega la respuesta, dando la sensación de que "se vuelve loco".
+  GRUPO_AVISO='';
+  // Se pinta de inmediato la última foto conocida de ESTE negocio (nunca la del
+  // anterior: eso era lo que hacía que "se volviera loco"). Si no hay foto
+  // reciente, HOY_LIVE=null y sale el spinner, como hasta ahora.
+  const c=cacheLeer(sel);
+  HOY_LIVE=c||null;
+  DESDE_CACHE=!!c;
+  if(c&&c.negocio&&c.negocio.aforo>0)AFORO_LOCAL=c.negocio.aforo;
   renderHome();
   refreshHoyLive();
 }
@@ -1304,13 +1353,19 @@ let HOY_LIVE=null;
 let AFORO_LOCAL=84;
 async function refreshHoyLive(){
   if(!_logueado())return; // sin login no se pide nada (evita el 401 pre-login)
+  // Se anota a qué negocio corresponde ESTA petición. Si mientras viaja se
+  // cambia de negocio, su respuesta ya no vale y se tira: sin esto, una
+  // respuesta lenta del local anterior podía aterrizar encima de la nueva.
+  const sel=GRUPO_SEL;
+  const tok=++REQ_TOKEN;
   try{
-    // Sin selección de grupo se pide el propio local (igual que siempre).
-    const url=GRUPO_SEL?('/api/grupo?local='+encodeURIComponent(GRUPO_SEL)):'/api/hoy_live';
-    const r=await fetch(url,{headers:{'x-restaid-pass':_pass()}});
+    const r=await fetch(_urlNegocio(sel),{headers:{'x-restaid-pass':_pass()}});
     const d=await r.json();
+    if(tok!==REQ_TOKEN)return;   // llegó tarde: ya se está mirando otro negocio
     if(d&&d.ok){
       HOY_LIVE=d;
+      DESDE_CACHE=false;
+      cacheGuardar(sel,d);
       if(d.negocio&&d.negocio.aforo>0)AFORO_LOCAL=d.negocio.aforo;
       // Una suma incompleta se avisa: es peor un total silenciosamente corto.
       GRUPO_AVISO='';
@@ -1320,20 +1375,54 @@ async function refreshHoyLive(){
       }
       renderHome(); // SIEMPRE: cada período usa datos de esta respuesta
     }else{
-      // Error del servidor: salir del spinner y mostrar el aviso.
-      HOY_LIVE={ok:false};
+      // Error del servidor. Si en pantalla hay una foto guardada, se deja: vale
+      // más un dato de hace un rato, bien etiquetado, que un hueco vacío.
+      if(!DESDE_CACHE)HOY_LIVE={ok:false};
       GRUPO_AVISO='⚠ '+((d&&d.error)||'No se pudieron cargar los datos');
       renderHome();
     }
   }catch(e){
+    if(tok!==REQ_TOKEN)return;
     // Sin red o respuesta ilegible: salir del spinner con aviso.
     if(HOY_LIVE===null){HOY_LIVE={ok:false};GRUPO_AVISO='⚠ Sin conexión con el servidor';renderHome();}
-    /* si ya había datos, se conservan */
+    /* si ya había datos (frescos o de caché), se conservan */
   }
 }
+
+/* ── Precarga silenciosa del resto de negocios ─────────────────────────────
+   Se piden los demás locales por detrás, sin tocar la pantalla. Hace dos cosas:
+   deja su dato ya en caché para que el selector responda al instante, y mantiene
+   despierto el despliegue vecino, que es lo que provoca el arranque en frío. */
+async function precargarOtros(){
+  if(!_logueado()||GRUPO_LOCALES.length<2)return;
+  const otros=[...new Set(GRUPO_LOCALES.map(l=>(GRUPO_PROPIO&&l.id===GRUPO_PROPIO)?'':l.id))]
+    .filter(s=>s!==GRUPO_SEL);
+  // En serie: son peticiones de fondo, no hay prisa y así no se satura la red
+  // del despliegue vecino mientras el usuario está mirando otra cosa.
+  for(const sel of otros){
+    try{
+      const r=await fetch(_urlNegocio(sel),{headers:{'x-restaid-pass':_pass()}});
+      const d=await r.json();
+      if(d&&d.ok)cacheGuardar(sel,d);
+    }catch(e){/* la precarga nunca molesta: si falla, silencio */}
+  }
+}
+
+// Al abrir la app, arrancar ya con la última foto del negocio seleccionado en
+// vez de con un spinner: el dato fresco llega igual, unos segundos después.
+(function(){
+  const c=cacheLeer(GRUPO_SEL);
+  if(!c)return;
+  HOY_LIVE=c; DESDE_CACHE=true;
+  if(c.negocio&&c.negocio.aforo>0)AFORO_LOCAL=c.negocio.aforo;
+})();
 setTimeout(refreshHoyLive,500);
 setTimeout(cargarGrupo,700);
 setInterval(refreshHoyLive,60000);
+// Arranca tras cargarGrupo (necesita GRUPO_LOCALES) y se repite cada 5 min para
+// que los vecinos no se duerman entre vistazo y vistazo.
+setTimeout(precargarOtros,3000);
+setInterval(precargarOtros,5*60*1000);
 function _minsDesde(ts){
   if(!ts)return null;
   const d=new Date(String(ts).replace(' ','T'));
@@ -2051,6 +2140,7 @@ function renderHomeRevo(box,r,v,pub){
         <button class="revo-negocio ${GRUPO_SEL==='todos'?'active':''} todos" onclick="setNegocio('todos')">Σ Todos</button>
       </div>`:''}
       ${GRUPO_AVISO?`<div class="revo-grupo-aviso">${GRUPO_AVISO}</div>`:''}
+      ${DESDE_CACHE?`<div class="revo-cache-aviso"><span class="spin"></span>Última foto guardada · actualizando…</div>`:''}
       ${(GRUPO_SEL&&GRUPO_PROPIO&&GRUPO_SEL!==GRUPO_PROPIO)?`
       <!-- El selector solo cambia el Inicio: los módulos del menú leen la base
            de datos de ESTE local. Se avisa para no dar gato por liebre. -->
