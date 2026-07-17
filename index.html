@@ -1790,7 +1790,13 @@ function renderHomeRevo(box,r,v,pub){
             const P=HOY_LIVE.pulso||{};const ph=P.porHora||{};
             const ahora=new Date();let hFin=ahora.getHours();if(hFin<4)hFin=24+hFin;
             hFin=Math.max(hFin,15);
-            const horas=[];for(let h=12;h<=Math.min(hFin,27);h++)horas.push(h%24);
+            // Antes empezaba fijo a las 12h (encajaba con Talabar, no con
+            // negocios que abren antes). Ahora usa la primera hora de
+            // actividad real que manda el servidor; 12 es solo el último
+            // recurso si aún no hay ningún dato (p.ej. el primer instante
+            // tras desplegar este cambio, antes de que llegue un hoy_live nuevo).
+            const hIni=(P.horaInicio!=null&&P.horaInicio>=0&&P.horaInicio<24)?P.horaInicio:12;
+            const horas=[];for(let h=hIni;h<=Math.min(hFin,27);h++)horas.push(h%24);
             const vals=horas.map(h=>ph[String(h).padStart(2,'0')]||0);
             const maxV=Math.max(...vals,1);
             const barras=horas.map((h,i)=>{
