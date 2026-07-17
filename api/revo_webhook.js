@@ -6,6 +6,14 @@
 // leen de ahí; si algo falla en el procesado posterior, el dato nunca
 // se pierde.
 //
+// v4 (17-jul-2026): además de archivar el crudo, TRADUCE el cierre a Piso 2
+// (ventas_ordenes + ventas_lineas) en el acto. Antes esa traducción la pagaba
+// quien abriera el Inicio, que se comía hasta 50 eventos en serie antes de
+// pintar un número. Ahora la espera la pone Revo, que no está mirando la
+// pantalla. Si la traducción falla, el evento queda pendiente y lo recogen la
+// red de seguridad del Inicio o el cron diario de /api/revo_traductor: NUNCA
+// devuelve error por eso (ver la nota sobre el retry count, más abajo).
+//
 // Variables de entorno (Vercel):
 //   REVO_WEBHOOK_SECRET   — la clave secreta que genera Revo al crear el
 //                           primer webhook (página account/webhooks)
@@ -39,6 +47,10 @@
 // DESACTIVA el webhook. Vigilar en el dashboard que siguen llegando eventos.
 
 const crypto = require('crypto');
+// Núcleo compartido: la misma regla de "qué es una venta" que usan el traductor
+// y el Inicio. Traducir aquí con una copia propia sería garantizar que un día
+// el webhook y el histórico cuenten cosas distintas.
+const CORE = require('./_revo_core.js');
 
 // ── Mesas de control / fantasma ──────────────────────────────────────────
 // No se registran en revo_abiertas: no son servicio real y falsean el pulso
@@ -205,13 +217,16 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/revo_eventos`, {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/revo_eventos?select=id`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         apikey: SUPABASE_KEY,
         Authorization: `Bearer ${SUPABASE_KEY}`,
-        Prefer: 'return=minimal',
+        // Se pide que devuelva la fila para saber su id exacto y poder marcarla
+        // procesada tras traducirla. Buscarla luego por el id de la orden sería
+        // dar un rodeo y arriesgarse a marcar la fila equivocada.
+        Prefer: 'return=representation',
       },
       body: JSON.stringify({
         tenant: evento.tenant,
@@ -225,8 +240,46 @@ module.exports = async (req, res) => {
       res.status(500).json({ ok: false, error: 'Fallo al guardar', detalle: detalle.slice(0, 200) });
       return;
     }
-    console.log('[revo_webhook] guardado:', evento.event, '| tenant:', evento.tenant);
-    res.status(200).json({ ok: true });
+
+    // ── Traducción al vuelo: Piso 1 → Piso 2 ──────────────────────────────
+    // Antes, el evento se quedaba en crudo hasta que alguien abría el Inicio, y
+    // era ESA pantalla la que pagaba el traducir (hasta 50 eventos en serie
+    // antes de enseñar un solo número). Traducirlo aquí cuesta lo mismo, pero
+    // lo espera Revo, no el que mira el dashboard. Además el Piso 2 queda al
+    // día solo, sin depender de que nadie abra nada.
+    //
+    // Reglas de oro de este bloque:
+    //   1. Va DESPUÉS de archivar el crudo: si falla, el dato no se pierde.
+    //   2. No puede cambiar la respuesta. Un fallo aquí deja el evento con
+    //      procesado=false y lo recogen la red de seguridad del Inicio o el
+    //      cron diario. Si esto devolviera 500, Revo reintentaría un evento YA
+    //      archivado y, a las cinco tandas, desactivaría el webhook: perderíamos
+    //      las ventas por no saber traducir una.
+    // El id de la fila recién archivada, para marcarla procesada al traducirla.
+    const filaId = await r.json().then(a => (Array.isArray(a) && a[0] ? a[0].id : null)).catch(() => null);
+
+    let traducido = false;
+    try {
+      const t = CORE.transformarEvento(evento.data);
+      // Si t es null, es un cierre intermedio o una cancelada: no entra al
+      // histórico, pero se marca procesada para que nadie la revise eternamente.
+      if (t) await CORE.guardarOrden(SUPABASE_URL, SUPABASE_KEY, t);
+      traducido = true;
+      if (filaId != null) {
+        await fetch(`${SUPABASE_URL}/rest/v1/revo_eventos?id=eq.${filaId}`, {
+          method: 'PATCH',
+          headers: { ...CORE.sbHeaders(SUPABASE_KEY), Prefer: 'return=minimal' },
+          body: JSON.stringify({ procesado: true }),
+        });
+      }
+    } catch (e) {
+      traducido = false;
+      console.warn('[revo_webhook] traducción al vuelo falló (queda pendiente):',
+        String(e.message || e).slice(0, 150));
+    }
+
+    console.log('[revo_webhook] guardado:', evento.event, '| tenant:', evento.tenant, '| traducido:', traducido);
+    res.status(200).json({ ok: true, traducido });
   } catch (e) {
     res.status(500).json({ ok: false, error: 'Excepción al guardar', detalle: String(e).slice(0, 200) });
   }
