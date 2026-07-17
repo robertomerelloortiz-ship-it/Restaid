@@ -963,6 +963,26 @@ function publishPub(g){
     localStorage.setItem('restaid_pub_v1',JSON.stringify(pub));
     // Enviar al shell por postMessage (necesario en file:// donde el localStorage del iframe está aislado)
     try{ window.parent.postMessage({type:'restaid_pub',key:'restaid_pub_v1',value:JSON.stringify(pub)},'*'); }catch(e){}
+    // Guardar también en el servidor el resumen anual (solo lo que usa la
+    // pestaña "Año" del Inicio: porAño, per cápita, totales del período). Es
+    // lo que permite que OTRO negocio del grupo pueda ver "Año" de este sin
+    // rehacer aquí mismo todo el cálculo — que mezcla Supabase con el CSV
+    // histórico, que solo vive en este navegador. Nunca bloquea ni avisa si
+    // falla: es una mejora, no algo de lo que dependa esta pantalla.
+    try{
+      fetch('/api/ventas_live',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','x-restaid-pass':localStorage.getItem('restaid_pass')||''},
+        body:JSON.stringify({resumen:{
+          porAño,
+          perCapita:pub.ventas.perCapita,
+          ventasPeriodo:pub.ventas.ventasPeriodo,
+          nComensales:pub.ventas.nComensales,
+          nTickets:pub.ventas.nTickets,
+          periodo:pub.ventas.periodo,
+        }}),
+      }).catch(()=>{});
+    }catch(e){}
     console.log('[RESTAID ventas] Histórico publicado para otros módulos');
   }catch(e){console.warn('[RESTAID ventas] pub error',e);}
 }

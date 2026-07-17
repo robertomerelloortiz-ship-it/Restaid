@@ -1270,7 +1270,17 @@ function renderHome(){
   // coste laboral, materia prima, medias históricas… Si se está mirando OTRO
   // local (o la suma), esos datos no aplican y mostrarlos sería mezclar
   // negocios (la previsión de Talabar sobre las ventas de La Canilla).
-  if(GRUPO_SEL){r={};v={};}
+  if(GRUPO_SEL){
+    r={};
+    // "v" también alimenta la pestaña "Año". Antes se vaciaba sin más al
+    // mirar otro negocio (o la suma) para no mezclar el histórico de uno con
+    // la etiqueta del otro — acertado para RRHH/previsión, pero de paso dejó
+    // "Año" siempre en guiones. Ahora usa el resumen anual que ESE negocio
+    // publicó en su propio servidor (llega aquí vía /api/grupo). Si aún no
+    // lo ha publicado (o falló al pedirlo), se queda vacío — guiones, nunca
+    // el dato equivocado.
+    v=(HOY_LIVE&&HOY_LIVE.ok&&HOY_LIVE.ventasResumen)?HOY_LIVE.ventasResumen:{};
+  }
   if(!HOME_PERIOD)HOME_PERIOD='semana';
   renderHomeRevo(box,r,v,pub);
 }
