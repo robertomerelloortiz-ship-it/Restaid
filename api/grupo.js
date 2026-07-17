@@ -59,6 +59,22 @@ async function pedirLocal(l) {
     if (!r.ok) return { ...l, ok: false, error: 'HTTP ' + r.status };
     const d = await r.json();
     if (!d || !d.ok) return { ...l, ok: false, error: (d && d.error) || 'respuesta no válida' };
+    // El resumen anual de Ventas es un añadido MENOR (para la pestaña "Año"):
+    // si falla o tarda, no debe tirar abajo el resto del Inicio del grupo,
+    // que es lo importante. Se pide con su propio margen corto y en paralelo,
+    // nunca bloqueando ni pudiendo hacer fallar la petición principal.
+    try {
+      const ctrl2 = new AbortController();
+      const t2 = setTimeout(() => ctrl2.abort(), 4000);
+      const rv = await fetch(l.url + '/api/ventas_live?resumen=1', {
+        headers: { 'x-restaid-grupo': process.env.GRUPO_TOKEN || '' },
+        signal: ctrl2.signal,
+      }).finally(() => clearTimeout(t2));
+      if (rv.ok) {
+        const dv = await rv.json();
+        if (dv && dv.ok && dv.resumen) d.ventasResumen = dv.resumen;
+      }
+    } catch (e) { /* sin resumen anual esta vez; "Año" caerá a su respaldo local */ }
     return { ...l, ok: true, datos: d };
   } catch (e) {
     return { ...l, ok: false, error: String(e.name === 'AbortError' ? 'sin respuesta (9s)' : e.message).slice(0, 120) };
@@ -135,7 +151,47 @@ function consolidar(oks) {
     fecha: ds[0].fecha,
     cerradas, abiertas, control, colgadas, ayer, semana, mes,
     pulso: { porHora, top, rankingEuros, totalProductosEur, totalProductosUds },
+    ventasResumen: consolidarVentasResumen(oks),
   };
+}
+
+// Consolida el resumen anual (Ventas) de varios negocios en uno solo, con la
+// MISMA forma que usa cada negocio por separado, para que "Año" y "Σ Todos"
+// se pinten sin cambiar el código que ya los muestra. Deliberadamente NO
+// incluye topPlatos/evolucionPorPlato/byDate: la pestaña "Año" del Inicio no
+// los usa, y sumarlos entre negocios sería un desarrollo mucho más grande
+// para un beneficio que hoy no hace falta.
+function consolidarVentasResumen(oks) {
+  const rs = oks.map(o => (o.datos && o.datos.ventasResumen) || null).filter(Boolean);
+  if (!rs.length) return null;
+
+  const porAño = {};
+  rs.forEach(r => {
+    Object.entries(r.porAño || {}).forEach(([año, a]) => {
+      if (!porAño[año]) porAño[año] = { facturacion: 0, tickets: 0, comensales: 0, evolucionMensual: {} };
+      porAño[año].facturacion += a.facturacion || 0;
+      porAño[año].tickets += a.tickets || 0;
+      porAño[año].comensales += a.comensales || 0;
+      Object.entries(a.evolucionMensual || {}).forEach(([m, eur]) => {
+        porAño[año].evolucionMensual[m] = (porAño[año].evolucionMensual[m] || 0) + (Number(eur) || 0);
+      });
+    });
+  });
+  Object.values(porAño).forEach(a => {
+    a.facturacion = r2(a.facturacion);
+    a.ticketMedio = a.tickets > 0 ? r2(a.facturacion / a.tickets) : 0;
+    Object.keys(a.evolucionMensual).forEach(m => { a.evolucionMensual[m] = Math.round(a.evolucionMensual[m]); });
+  });
+
+  const ventasPeriodo = r2(rs.reduce((s, r) => s + (r.ventasPeriodo || 0), 0));
+  const nComensales = rs.reduce((s, r) => s + (r.nComensales || 0), 0);
+  const nTickets = rs.reduce((s, r) => s + (r.nTickets || 0), 0);
+  // El per cápita del grupo se recalcula sobre el TOTAL sumado, nunca
+  // promediando los per cápita de cada negocio (eso falsearía el resultado
+  // si un negocio tiene mucho más volumen que el otro).
+  const perCapita = nComensales > 0 ? r2(ventasPeriodo / nComensales) : null;
+
+  return { porAño, perCapita, ventasPeriodo, nComensales, nTickets, periodo: rs[0].periodo || '' };
 }
 
 module.exports = async (req, res) => {
@@ -181,3 +237,5 @@ module.exports = async (req, res) => {
     res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) });
   }
 };
+
+module.exports.consolidarVentasResumen = consolidarVentasResumen;

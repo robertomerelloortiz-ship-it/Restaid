@@ -163,16 +163,65 @@ function autorizado(req) {
 
 module.exports = async (req, res) => {
   if (!autorizado(req)) { res.status(401).json({ ok: false, error: 'No autorizado' }); return; }
-  if (req.method !== 'GET') {
-    res.status(405).json({ ok: false, error: 'Solo GET' });
-    return;
-  }
+
   const URL_SB = process.env.SUPABASE_URL;
   const KEY_SB = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY;
   if (!URL_SB || !KEY_SB) {
     res.status(500).json({ ok: false, error: 'Supabase no configurado' });
     return;
   }
+
+  // POST: el módulo de Ventas publica aquí su resumen anual (porAño,
+  // perCapita, ventasPeriodo...) cada vez que termina de calcularlo. Así
+  // otro negocio del grupo puede leerlo por red (vía /api/grupo) para la
+  // pestaña "Año" del Inicio, sin tener que rehacer el cálculo — que mezcla
+  // Supabase con históricos en CSV que solo vive en ESTE navegador.
+  if (req.method === 'POST') {
+    try {
+      let body = req.body;
+      if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { body = {}; } }
+      const resumen = body && body.resumen;
+      if (!resumen || typeof resumen !== 'object') {
+        res.status(400).json({ ok: false, error: 'Falta "resumen"' });
+        return;
+      }
+      const r = await fetch(`${URL_SB}/rest/v1/ventas_resumen?on_conflict=id`, {
+        method: 'POST',
+        headers: { ...sbHeaders(KEY_SB), Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify([{ id: 'actual', datos: resumen, actualizado_en: new Date().toISOString() }]),
+      });
+      if (!r.ok) throw new Error('guardando resumen: HTTP ' + r.status + ' ' + (await r.text().catch(() => '')));
+      res.status(200).json({ ok: true });
+    } catch (e) {
+      console.error('[ventas_live] fallo guardando resumen:', e.message || e);
+      res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) });
+    }
+    return;
+  }
+
+  if (req.method !== 'GET') {
+    res.status(405).json({ ok: false, error: 'Solo GET o POST' });
+    return;
+  }
+
+  // Modo ligero: solo el resumen anual ya guardado, sin tocar órdenes/líneas.
+  // Lo usa /api/grupo para traer "Año" de otro negocio del grupo sin pagar el
+  // coste de procesar pendientes ni leer hasta 20.000 órdenes por red — eso
+  // volvería a hacer lento el cambio de negocio, justo lo que se arregló hoy.
+  if (String((req.query && req.query.resumen) || '') === '1') {
+    try {
+      const r = await fetch(`${URL_SB}/rest/v1/ventas_resumen?id=eq.actual&select=datos&limit=1`, { headers: sbHeaders(KEY_SB) });
+      if (!r.ok) throw new Error('leyendo resumen: HTTP ' + r.status);
+      const filas = await r.json();
+      const resumen = filas && filas[0] ? filas[0].datos : null;
+      res.status(200).json({ ok: true, resumen });
+    } catch (e) {
+      console.error('[ventas_live] fallo leyendo resumen:', e.message || e);
+      res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) });
+    }
+    return;
+  }
+
   try {
     // 1. Poner el piso 2 al día
     const traductor = await procesarPendientes(URL_SB, KEY_SB);
