@@ -1228,7 +1228,21 @@ async function runAnalysis(){
   const totalAsientos=Object.values(CFG.asientos).reduce((s,v)=>s+v,0)||1;
   const nTurnosActivos=Object.keys(CFG.turnos).length||2;
   // Ocupación real = comensales / capacidad máxima teórica (asientos × rotaciones ideales × días operados)
-  const ocupGlobal=allComs>0?allComs/capacidadMaxima({nDiasTurno,nDays},totalAsientos)*100:0;
+  //
+  // Zonas "fantasma": si el local no tiene Sala/Salón (asientos=0) pero Revo
+  // sigue trayendo tickets con esa etiqueta heredada de la plantilla, esos
+  // comensales no deben contar aquí — igual que esa zona no se muestra en la
+  // pestaña Zonas. Si no se filtrasen, el numerador (todos los comensales)
+  // se dividiría por una capacidad (solo zonas reales) que no los incluye,
+  // disparando el % muy por encima de 100 sin que signifique nada.
+  // Si NINGUNA zona tiene asientos configurados aún, no se filtra nada (evita
+  // dar 0% de ocupación real antes de que alguien configure los asientos).
+  const zonasConAsientos=Object.keys(zonaComMap).filter(z=>(CFG.asientos[z]||0)>0);
+  const hayFiltro=zonasConAsientos.length>0;
+  const allComsVisibles=hayFiltro
+    ? zonasConAsientos.reduce((s,z)=>s+(zonaComMap[z].com||0),0)
+    : allComs;
+  const ocupGlobal=allComsVisibles>0?allComsVisibles/capacidadMaxima({nDiasTurno,nDays},totalAsientos)*100:0;
   // Días con actividad por zona (para rotación justa)
   const zonaDiasN={};{const zd={};Object.values(ticketLines).forEach(t=>{if(t.fecha)(zd[t.zona]=zd[t.zona]||new Set()).add(t.fecha);});Object.keys(zd).forEach(z=>zonaDiasN[z]=zd[z].size);}
 
@@ -1422,7 +1436,13 @@ function applySettings(){
   // Recalcular las métricas de G que dependen de los asientos y la rotación ideal
   if(G){
     G.totalAsientos=Object.values(CFG.asientos).reduce((s,v)=>s+v,0)||1;
-    G.ocupGlobal=G.allComs>0?G.allComs/capacidadMaxima(G,G.totalAsientos)*100:0;
+    // Mismo filtro de zonas visibles que en runAnalysis: si el local no tiene
+    // una zona (asientos=0), sus comensales no cuentan en la ocupación global.
+    const zonasConAsientos=Object.keys(G.zonaComMap||{}).filter(z=>(CFG.asientos[z]||0)>0);
+    const allComsVisibles=zonasConAsientos.length>0
+      ?zonasConAsientos.reduce((s,z)=>s+((G.zonaComMap[z]||{}).com||0),0)
+      :G.allComs;
+    G.ocupGlobal=allComsVisibles>0?allComsVisibles/capacidadMaxima(G,G.totalAsientos)*100:0;
   }
   closeSettings();
   renderResumen();renderOperativa();renderZonas();renderAsistente();
@@ -1851,7 +1871,10 @@ function renderResumen(){
   const wkndE=(g.byDay['Vie']||0)+(g.byDay['Sáb']||0)+(g.byDay['Dom']||0);
   const wkndPct=g.totVen>0?wkndE/g.totVen*100:0;
   if(wkndPct>60)ins.push({type:'warn',label:'Fin de semana',txt:`El ${fc(wkndPct,0)}% de tus ingresos llega de viernes a domingo. Un mal fin de semana (lluvia, evento) golpea fuerte la caja.`});
-  const topZ=Object.keys(g.zonaComMap).sort((a,b)=>g.zonaComMap[b].euros-g.zonaComMap[a].euros)[0];
+  // Zona líder: mismo filtro que la pestaña Zonas (una zona con 0 asientos
+  // no existe en este local, aunque Revo traiga tickets con esa etiqueta).
+  const zonasVisibles=(()=>{const zs=Object.keys(g.zonaComMap);const conAsientos=zs.filter(z=>(CFG.asientos[z]||0)>0);return conAsientos.length>0?conAsientos:zs;})();
+  const topZ=zonasVisibles.sort((a,b)=>g.zonaComMap[b].euros-g.zonaComMap[a].euros)[0];
   if(topZ)ins.push({type:'good',label:'Zona líder',txt:`${topZ} genera el ${fc(g.zonaComMap[topZ].euros/g.totVen*100,0)}% de la facturación.`});
   if(g.concentracion>40)ins.push({type:'warn',label:'Carta concentrada',txt:`El ${fc(g.concentracion,0)}% de tus ventas dependen de solo 10 platos. Riesgo si alguno falla.`});
   const postRate=g.comidaN>0?g.postresN/g.comidaN*100:0;
