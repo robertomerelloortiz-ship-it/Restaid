@@ -141,7 +141,7 @@ async function guardarOrden(URL_SB, KEY_SB, t) {
       headers: { ...sbHeaders(KEY_SB), Prefer: 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify(t.lineas),
     });
-    if (!rL.ok) throw new Error('lineas orden ' + t.orden.orden_id + ': HTTP ' + rL.status);
+    if (!rL.ok) throw new Error('lineas orden ' + t.orden.orden_id + ': HTTP ' + rL.status + ' ' + (await rL.text().catch(() => '')));
   }
 }
 
