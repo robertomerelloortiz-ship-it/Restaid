@@ -192,8 +192,37 @@ async function procesarPendientes(URL_SB, KEY_SB, limite = 200) {
   return { procesados, descartados, errores };
 }
 
+// Hora de inicio real de la "curva del día" (gráfico de facturación por hora
+// en el Inicio). Antes estaba fijada a las 12h en el HTML — encajaba con
+// Talabar (abre justo a esa hora) pero no con negocios que abren antes, como
+// La Canilla. Se calcula como la hora más temprana entre: el cierre de
+// cualquier pedido ya cerrado hoy, o la apertura de cualquier mesa que siga
+// en curso. Así funciona igual para cualquier negocio del grupo, presente o
+// futuro, sin tener que tocar código cada vez que cambie el horario de uno.
+//
+// Nota deliberada: un cierre de madrugada (p. ej. 01:30, cena que se alarga)
+// puede salir como "la hora más baja" tal cual, aunque en la curva esa franja
+// se pinte al final (con +24h). Es un caso raro — normalmente lo primero del
+// día es una apertura o un cierre de la mañana — y de momento se deja así,
+// documentado, en vez de complicar el cálculo para un caso que casi no ocurre.
+function horaInicioActividad(cerradasFilas, abiertasFilas) {
+  let hora = null;
+  const considerar = (filas, campo) => {
+    for (const o of filas || []) {
+      const v = o && o[campo];
+      if (!v) continue;
+      const h = parseInt(String(v).slice(11, 13), 10);
+      if (!isNaN(h) && (hora === null || h < hora)) hora = h;
+    }
+  };
+  considerar(cerradasFilas, 'cerrado');
+  considerar(abiertasFilas, 'abierta_desde');
+  return hora;
+}
+
 module.exports = {
   TZ, CORTE_JORNADA_H,
   utcAMadrid, jornadaDe, num, transformarEvento,
   sbHeaders, guardarOrden, procesarPendientes,
+  horaInicioActividad,
 };

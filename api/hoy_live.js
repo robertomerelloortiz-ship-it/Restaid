@@ -43,7 +43,7 @@ const NEGOCIO = {
 // Núcleo compartido: la regla de qué es una venta, la jornada de servicio y
 // el traductor viven en UN solo sitio (_revo_core.js), no copiados por fichero.
 const CORE = require('./_revo_core.js');
-const { num, sbHeaders, jornadaDe, CORTE_JORNADA_H } = CORE;
+const { num, sbHeaders, jornadaDe, CORTE_JORNADA_H, horaInicioActividad } = CORE;
 
 // ── Autorización ─────────────────────────────────────────────────────────
 // Este endpoint expone ventas del día, mesas abiertas y nombres de personal:
@@ -209,6 +209,11 @@ module.exports = async (req, res) => {
       const k = String(h).padStart(2, '0');
       porHora[k] = Math.round(((porHora[k] || 0) + num(o.total)) * 100) / 100;
     }
+    // Antes el HTML fijaba el arranque de la curva a las 12h, pensado para
+    // Talabar. Con negocios que abren antes (La Canilla, sobre las 8), la
+    // curva se comía toda la mañana. Se calcula aquí, con datos reales, para
+    // que sirva igual para cualquier negocio sin tocar código cada vez.
+    const horaInicio = horaInicioActividad(cerradasFilas, abiertasFilas);
     // Top productos: líneas de las órdenes cerradas de la jornada
     const idsCerradas = new Set(cerradasFilas.map(o => o.orden_id));
     const lineasFilas = rL && rL.ok ? await rL.json() : [];
@@ -249,7 +254,7 @@ module.exports = async (req, res) => {
     const jornadasSem = [...new Set(semFilas.map(o => o.jornada))].filter(Boolean).sort();
     const semana = { desde: lunesJ, jornadas: jornadasSem, ...suma(semFilas) };
     const mes = { desde: mesJ, jornadas: jornadasMes, ...suma(mesFilas) };
-    res.status(200).json({ ok: true, negocio: NEGOCIO, fecha, cerradas, abiertas, control, colgadas, ayer, semana, mes, pulso: { porHora, top, rankingEuros, totalProductosEur: Math.round(totalLineasEur * 100) / 100, totalProductosUds: totalLineasUds } });
+    res.status(200).json({ ok: true, negocio: NEGOCIO, fecha, cerradas, abiertas, control, colgadas, ayer, semana, mes, pulso: { porHora, horaInicio, top, rankingEuros, totalProductosEur: Math.round(totalLineasEur * 100) / 100, totalProductosUds: totalLineasUds } });
   } catch (e) {
     console.error('[hoy_live] fallo:', e.message || e);
     res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) });
