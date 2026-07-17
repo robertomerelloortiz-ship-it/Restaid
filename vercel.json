@@ -13,7 +13,7 @@
       "maxDuration": 30
     },
     "api/revo_webhook.js": {
-      "maxDuration": 30
+      "maxDuration": 60
     },
     "api/revo_traductor.js": {
       "maxDuration": 60
@@ -36,5 +36,11 @@
     "api/grupo.js": {
       "maxDuration": 30
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/revo_traductor",
+      "schedule": "0 5 * * *"
+    }
+  ]
 }
