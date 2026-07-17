@@ -1415,9 +1415,10 @@ function applySettings(){
   Object.keys(CFG.asientos).forEach(z=>{const v=parseInt($('seat-'+z).value);if(v>0)CFG.asientos[z]=v;});
   const ri=parseFloat($('seat-rotideal')?$('seat-rotideal').value:'');if(ri>=0.5&&ri<=10)CFG.rotIdeal=ri;
   try{localStorage.setItem('restaid_asientos',JSON.stringify(CFG.asientos));localStorage.setItem('restaid_rotideal',String(CFG.rotIdeal));}catch(e){}
-  // Persistir también en Supabase para que sobreviva a recargas en cualquier
-  // dispositivo y en despliegues nuevos (La Canilla, etc.) sin localStorage.
-  sbUpsert('ventas_carta',{periodo:'__config_asientos__',datos:{asientos:CFG.asientos,rotIdeal:CFG.rotIdeal}}).catch(e=>console.warn('[RESTAID] config asientos no guardada en nube:',e.message||e));
+  // Persistir en ventas_escandallo como campos extra (misma fila, sin coste).
+  // Se carga junto al escandallo al arrancar — sin llamada adicional.
+  sbUpsert('ventas_escandallo',{datos:{...(ESC||{}),__asientos__:CFG.asientos,__rotIdeal__:CFG.rotIdeal}})
+    .catch(e=>console.warn('[RESTAID] config asientos no guardada en nube:',e.message||e));
   // Recalcular las métricas de G que dependen de los asientos y la rotación ideal
   if(G){
     G.totalAsientos=Object.values(CFG.asientos).reduce((s,v)=>s+v,0)||1;
@@ -2569,20 +2570,17 @@ async function sincronizarVentasLive(){
 }
 
 async function loadVentasFromDB(){
-  const [rows,carta,escCloud,cfgRows]=await Promise.all([
+  const [rows,carta,escCloud,cfgKv]=await Promise.all([
     sbGetV('ventas_productos'),sbGetOne('ventas_carta'),sbGetOne('ventas_escandallo'),
-    // Config de asientos: todas las filas de ventas_carta, filtramos en cliente
-    sbGetV('ventas_carta')
+    Promise.resolve(null) // reservado: asientos vienen de escCloud.__asientos__
   ]);
-  // Config de asientos: la nube tiene prioridad sobre localStorage (permite
-  // cambiar desde cualquier dispositivo y persiste en despliegues nuevos).
-  const cfgRow=cfgRows&&cfgRows.find(r=>r.periodo==='__config_asientos__');
-  const cfgCloud=cfgRow?cfgRow.datos:null;
-  if(cfgCloud&&cfgCloud.asientos){
-    Object.assign(CFG.asientos,cfgCloud.asientos);
+  // Config de asientos: viajan como campos extra en ventas_escandallo.
+  // La nube tiene prioridad sobre localStorage para persistir en todos los dispositivos.
+  if(escCloud&&escCloud.__asientos__){
+    Object.assign(CFG.asientos,escCloud.__asientos__);
     try{localStorage.setItem('restaid_asientos',JSON.stringify(CFG.asientos));}catch(e){}
-    if(cfgCloud.rotIdeal>=0.5&&cfgCloud.rotIdeal<=10){
-      CFG.rotIdeal=cfgCloud.rotIdeal;
+    if(escCloud.__rotIdeal__>=0.5&&escCloud.__rotIdeal__<=10){
+      CFG.rotIdeal=escCloud.__rotIdeal__;
       try{localStorage.setItem('restaid_rotideal',String(CFG.rotIdeal));}catch(e){}
     }
     console.log('[RESTAID] config asientos desde nube:',CFG.asientos,'rotIdeal:',CFG.rotIdeal);
