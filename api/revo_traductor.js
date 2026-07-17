@@ -61,6 +61,13 @@ module.exports = async (req, res) => {
     // Máx 200 por pasada para no eternizar la función.
     const r = await CORE.procesarPendientes(URL_SB, KEY_SB, 200);
     console.log(`[revo_traductor] procesados=${r.procesados} descartados=${r.descartados} errores=${r.errores.length}`);
+    // El conteo solo no dice nada quien va a depurar esto. Se listan los
+    // primeros (todos, si son pocos) con su motivo real: sin esto, un fallo
+    // sistemático y 41 fallos distintos se ven exactamente igual en el log.
+    if (r.errores.length) {
+      r.errores.slice(0, 10).forEach(e => console.log(`[revo_traductor]   evento ${e.evento_id}: ${e.error}`));
+      if (r.errores.length > 10) console.log(`[revo_traductor]   ...y ${r.errores.length - 10} más`);
+    }
     res.status(200).json({ ok: true, ...r });
   } catch (e) {
     console.error('[revo_traductor] fallo:', e.message || e);
