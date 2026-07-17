@@ -1848,7 +1848,11 @@ function renderHomeRevo(box,r,v,pub){
     // día entero sale siempre en rojo aunque el día vaya bien. La previsión se
     // mantiene como referencia informativa debajo del número grande.
     varAnual=null;
-    perComensal=capRef;
+    // Antes esta línea pisaba SIEMPRE el cálculo real (línea de arriba) con la
+    // referencia histórica, así que "Hoy" nunca mostraba el €/comensal de hoy,
+    // solo la media de siempre. Ahora, igual que en Ayer/Semana/Mes: la
+    // referencia histórica es solo el último recurso, no la última palabra.
+    if(perComensal==null)perComensal=capRef;
   } else if(HOME_PERIOD==='ayer'){
     const ayerISO=(()=>{const d=new Date();d.setDate(d.getDate()-1);return isoLocal(d);})();
     const vr=v.ventasRecientes;
