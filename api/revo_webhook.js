@@ -189,6 +189,10 @@ module.exports = async (req, res) => {
           comensales: Math.max(1, numV(d.guests) || 1),
           empleado: d.tenantUserName || null,
           total: numV(d.sum || d.total),
+          // Desglose de lo marcado hasta ahora, para poder pulsarla en el
+          // Inicio y ver qué lleva la mesa sin ir a Revo. Cada order.updated
+          // trae el contenido completo, así que la última foto siempre gana.
+          lineas: CORE.lineasAbiertas(d),
           abierta_desde: aMadrid(d.opened || d.created_at),
           actualizada_en: new Date().toISOString(),
         }]),

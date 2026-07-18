@@ -115,7 +115,7 @@ module.exports = async (req, res) => {
     const diaSiguiente = (() => { const d = new Date(fecha + 'T12:00:00'); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })();
     const [rC, rA, rY, rS, rM, rL] = await Promise.all([
       fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=orden_id,total,comensales,cerrado&jornada=eq.${fecha}&limit=2000`, { headers: sbHeaders(KEY_SB) }),
-      fetch(`${URL_SB}/rest/v1/revo_abiertas?select=orden_id,mesa,comensales,empleado,total,abierta_desde&order=abierta_desde.asc&limit=200`, { headers: sbHeaders(KEY_SB) }),
+      fetch(`${URL_SB}/rest/v1/revo_abiertas?select=orden_id,mesa,comensales,empleado,total,lineas,abierta_desde&order=abierta_desde.asc&limit=200`, { headers: sbHeaders(KEY_SB) }),
       fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales&jornada=eq.${ayerJ}&limit=2000`, { headers: sbHeaders(KEY_SB) }),
       fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales,jornada&jornada=gte.${lunesJ}&jornada=lte.${fecha}&limit=5000`, { headers: sbHeaders(KEY_SB) }),
       fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales,jornada&jornada=gte.${mesJ}&jornada=lte.${fecha}&limit=10000`, { headers: sbHeaders(KEY_SB) }),
@@ -191,6 +191,10 @@ module.exports = async (req, res) => {
           empleado: o.empleado || null,
           desde: o.abierta_desde ? String(o.abierta_desde).slice(11, 16) : null,
           abierta_desde: o.abierta_desde || null,
+          // Desglose para el modal del Inicio (pulsar la mesa). Puede ser
+          // null en mesas abiertas ANTES de desplegar esta versión: el
+          // detalle solo llega con el siguiente marcaje de esa mesa.
+          lineas: Array.isArray(o.lineas) ? o.lineas : null,
         })),
     };
     const ayer = {

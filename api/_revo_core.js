@@ -200,19 +200,22 @@ async function procesarPendientes(URL_SB, KEY_SB, limite = 200) {
 // en curso. Así funciona igual para cualquier negocio del grupo, presente o
 // futuro, sin tener que tocar código cada vez que cambie el horario de uno.
 //
-// Nota deliberada: un cierre de madrugada (p. ej. 01:30, cena que se alarga)
-// puede salir como "la hora más baja" tal cual, aunque en la curva esa franja
-// se pinte al final (con +24h). Es un caso raro — normalmente lo primero del
-// día es una apertura o un cierre de la mañana — y de momento se deja así,
-// documentado, en vez de complicar el cálculo para un caso que casi no ocurre.
+// Escala de JORNADA, no de reloj: las horas anteriores al corte (04:00) son
+// el FINAL de la jornada anterior (Talabar cierra a la 01:00: hay cierres a
+// las 00h cada noche), así que cuentan como hora+24 — igual que hace
+// jornadaDe y que la curva las pinta. Sin esto, cualquier cierre de
+// madrugada arrastraba el arranque de la curva a las 0h y duplicaba horas.
+// Devuelve un valor 4..27, o null si no hay actividad.
 function horaInicioActividad(cerradasFilas, abiertasFilas) {
   let hora = null;
   const considerar = (filas, campo) => {
     for (const o of filas || []) {
       const v = o && o[campo];
       if (!v) continue;
-      const h = parseInt(String(v).slice(11, 13), 10);
-      if (!isNaN(h) && (hora === null || h < hora)) hora = h;
+      let h = parseInt(String(v).slice(11, 13), 10);
+      if (isNaN(h)) continue;
+      if (h < CORTE_JORNADA_H) h += 24; // madrugada = final de jornada
+      if (hora === null || h < hora) hora = h;
     }
   };
   considerar(cerradasFilas, 'cerrado');
@@ -220,9 +223,23 @@ function horaInicioActividad(cerradasFilas, abiertasFilas) {
   return hora;
 }
 
+// Desglose ligero de una mesa ABIERTA, a partir del orderContents que Revo
+// incluye en cada order.created/updated. Solo lo que sala necesita ver al
+// pulsar la mesa (producto, cantidad, importe) — nada de ids ni impuestos:
+// esto viaja en cada refresco del Inicio y se guarda en cada marcaje, así
+// que se mantiene deliberadamente pequeño (tope de 50 líneas por mesa).
+function lineasAbiertas(data) {
+  const contents = (data && Array.isArray(data.orderContents)) ? data.orderContents : [];
+  return contents.slice(0, 50).map(c => ({
+    producto: c.itemName || '?',
+    cantidad: num(c.quantity),
+    total: num(c.total),
+  }));
+}
+
 module.exports = {
   TZ, CORTE_JORNADA_H,
   utcAMadrid, jornadaDe, num, transformarEvento,
   sbHeaders, guardarOrden, procesarPendientes,
-  horaInicioActividad,
+  horaInicioActividad, lineasAbiertas,
 };
