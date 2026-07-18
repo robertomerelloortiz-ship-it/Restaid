@@ -1501,10 +1501,34 @@ function cerrarMesasModal(){
   const el=document.getElementById('mesas-modal');
   if(el)el.style.display='none';
 }
+// ── Desglose por mesa (pulsar la tarjeta) ─────────────────────────────────
+// Estado de qué mesas están desplegadas; la clave mesa+apertura sobrevive a
+// los re-renders del modal (el refresco de 60s no lo cierra ni lo colapsa).
+const MESAS_DESPLEGADAS=new Set();
+function _mesaKey(m){return (m.mesa||'')+'|'+(m.abierta_desde||'');}
+function toggleMesaDesglose(idx){
+  const m=(window._MESAS_MODAL||[])[idx];
+  if(!m)return;
+  const k=_mesaKey(m);
+  MESAS_DESPLEGADAS.has(k)?MESAS_DESPLEGADAS.delete(k):MESAS_DESPLEGADAS.add(k);
+  renderMesasModal();
+}
+function _htmlDesglose(m){
+  if(!Array.isArray(m.lineas)){
+    // Mesa abierta antes de desplegar esta versión: el detalle llega con el
+    // siguiente marcaje en Revo. Se dice tal cual, sin fingir que está vacía.
+    return '<div style="font-size:11.5px;color:var(--tx3);padding:8px 2px 2px">Detalle disponible a partir del próximo marcaje en Revo</div>';
+  }
+  if(!m.lineas.length)return '<div style="font-size:11.5px;color:var(--tx3);padding:8px 2px 2px">Sin comanda todavía</div>';
+  return '<div style="border-top:1px dashed var(--bd,#e5e7eb);margin-top:9px;padding-top:7px">'+
+    m.lineas.map(l=>`<div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--tx2);padding:3px 2px"><span>${l.cantidad>1?'×'+l.cantidad+' ':''}${l.producto}</span><b style="font-variant-numeric:tabular-nums">${fmtE(l.total||0)}</b></div>`).join('')+
+    '</div>';
+}
 function renderMesasModal(){
   const a=(HOY_LIVE&&HOY_LIVE.abiertas)||{};
   const cg=(HOY_LIVE&&HOY_LIVE.colgadas)||{};
   const mesas=(a.mesas||[]).slice();
+  window._MESAS_MODAL=mesas;
   const sub=document.getElementById('mesas-modal-sub');
   const body=document.getElementById('mesas-modal-body');
   if(!body)return;
@@ -1519,13 +1543,15 @@ function renderMesasModal(){
     </div>`:'';
   if(!mesas.length){body.innerHTML='<div style="text-align:center;color:var(--tx3);padding:24px 0">No hay mesas abiertas ahora mismo.</div>'+colgadasHtml;return;}
   // Ya vienen ordenadas por antigüedad desde el endpoint; recalculamos minutos en vivo
-  body.innerHTML=mesas.map(m=>{
+  body.innerHTML=mesas.map((m,idx)=>{
     const min=_minsDesde(m.abierta_desde);
     const alerta=min!=null&&min>=90; // 90+ min abierta: candidata a revisar
     const sinConsumo=(m.total||0)===0;
-    return `<div style="border:1px solid ${alerta?'rgba(220,38,38,.3)':'var(--bd,#e5e7eb)'};border-radius:12px;padding:12px 14px;margin-bottom:8px;background:${alerta?'rgba(220,38,38,.03)':'transparent'}">
+    const abierto=MESAS_DESPLEGADAS.has(_mesaKey(m));
+    const tieneDetalle=Array.isArray(m.lineas)&&m.lineas.length>0;
+    return `<div onclick="toggleMesaDesglose(${idx})" style="cursor:pointer;border:1px solid ${alerta?'rgba(220,38,38,.3)':'var(--bd,#e5e7eb)'};border-radius:12px;padding:12px 14px;margin-bottom:8px;background:${alerta?'rgba(220,38,38,.03)':'transparent'}">
       <div style="display:flex;justify-content:space-between;align-items:baseline">
-        <div style="font-size:15px;font-weight:700;color:var(--tx1)">${m.mesa||'—'}</div>
+        <div style="font-size:15px;font-weight:700;color:var(--tx1)">${m.mesa||'—'} <span style="font-size:11px;font-weight:400;color:var(--tx3)">${abierto?'▾':'▸'}</span></div>
         <div style="font-size:16px;font-weight:700;color:${sinConsumo?'var(--tx3)':'#d97706'}">${fmtE(m.total||0)}</div>
       </div>
       <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--tx3);margin-top:6px">
@@ -1534,7 +1560,9 @@ function renderMesasModal(){
         ${m.empleado?`<span>🧑‍🍳 ${m.empleado}</span>`:''}
         ${m.comensales>0&&m.total>0?`<span>· ${fmtE((m.total/m.comensales))}/pax</span>`:''}
       </div>
-      ${sinConsumo?'<div style="font-size:11px;color:#d97706;margin-top:6px">Sin comanda todavía</div>':''}
+      ${!abierto&&tieneDetalle?`<div style="font-size:11px;color:var(--tx3);margin-top:6px">${m.lineas.length} línea${m.lineas.length===1?'':'s'} · toca para ver el desglose</div>`:''}
+      ${abierto?_htmlDesglose(m):''}
+      ${sinConsumo&&!abierto?'<div style="font-size:11px;color:#d97706;margin-top:6px">Sin comanda todavía</div>':''}
       ${alerta?'<div style="font-size:11px;color:#dc2626;margin-top:4px">Lleva un buen rato abierta — ¿revisar?</div>':''}
     </div>`;
   }).join('')+colgadasHtml;
@@ -1802,10 +1830,12 @@ function renderHomeRevo(box,r,v,pub){
             hFin=Math.max(hFin,15);
             // Antes empezaba fijo a las 12h (encajaba con Talabar, no con
             // negocios que abren antes). Ahora usa la primera hora de
-            // actividad real que manda el servidor; 12 es solo el último
-            // recurso si aún no hay ningún dato (p.ej. el primer instante
-            // tras desplegar este cambio, antes de que llegue un hoy_live nuevo).
-            const hIni=(P.horaInicio!=null&&P.horaInicio>=0&&P.horaInicio<24)?P.horaInicio:12;
+            // actividad real que manda el servidor, en escala de JORNADA
+            // (4..27): la madrugada llega como hora+24 porque pertenece al
+            // final del día anterior (corte a las 04:00), igual que la pinta
+            // esta misma curva. 12 es solo el último recurso sin dato.
+            let hIni=(P.horaInicio!=null&&P.horaInicio>=0&&P.horaInicio<28)?P.horaInicio:12;
+            if(hIni>hFin)hIni=hFin;
             const horas=[];for(let h=hIni;h<=Math.min(hFin,27);h++)horas.push(h%24);
             const vals=horas.map(h=>ph[String(h).padStart(2,'0')]||0);
             const maxV=Math.max(...vals,1);
