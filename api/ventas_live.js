@@ -161,6 +161,27 @@ function autorizado(req) {
   return false;
 }
 
+// ── Servicios del día (turnos) por local ──────────────────────────────────
+// Cada negocio define los suyos en la variable de entorno TURNOS_SERVICIOS
+// de SU despliegue de Vercel (JSON, mismo formato que CFG.turnos del módulo):
+//   {"Desayuno":{"ini":6,"fin":12,"horas":4},"Comida":{"ini":12,"fin":17,"horas":5},"Cena":{"ini":17,"fin":24,"horas":5}}
+// Sin variable (o con JSON inválido) se devuelve null y el módulo de Ventas
+// usa su defecto de siempre (Comida/Cena) — Talabar no necesita configurar nada.
+function parsearTurnosEnv(raw) {
+  if (!raw) return null;
+  try {
+    const t = JSON.parse(raw);
+    if (!t || typeof t !== 'object' || Array.isArray(t)) return null;
+    const nombres = Object.keys(t);
+    if (!nombres.length) return null;
+    for (const n of nombres) {
+      const f = t[n];
+      if (!f || typeof f.ini !== 'number' || typeof f.fin !== 'number') return null;
+    }
+    return t;
+  } catch (e) { return null; }
+}
+
 module.exports = async (req, res) => {
   if (!autorizado(req)) { res.status(401).json({ ok: false, error: 'No autorizado' }); return; }
 
@@ -249,9 +270,15 @@ module.exports = async (req, res) => {
       } catch (_) { categorias = {}; }
     }
     console.log(`[ventas_live] traductor=${JSON.stringify(traductor)} ordenes=${ordenes.length} lineas=${lineas.length} categorias=${Object.keys(categorias).length} desde=${desde || '(todo)'}`);
-    res.status(200).json({ ok: true, ordenes, lineas, categorias, traductor });
+    res.status(200).json({
+      ok: true, ordenes, lineas, categorias, traductor,
+      // Servicios del día de ESTE local (o null → el módulo usa su defecto).
+      turnos: parsearTurnosEnv(process.env.TURNOS_SERVICIOS),
+    });
   } catch (e) {
     console.error('[ventas_live] fallo:', e.message || e);
     res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) });
   }
 };
+
+module.exports.parsearTurnosEnv = parsearTurnosEnv;
