@@ -494,6 +494,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
 .mb-curve-bars{display:flex;align-items:flex-end;gap:2px;height:56px}
 .mb-cbar{flex:1;min-width:0;border-radius:2px 2px 0 0;background:var(--navy)}
 .mb-cbar.cena{background:var(--amber,#E8914A)}
+.mb-cbar.desayuno{background:#7c9885}
+.mb-turno.desayuno{border-left:3px solid #7c9885}
 .mb-cbar.peak{outline:2px solid var(--tx);outline-offset:-1px}
 .mb-curve-lbls{display:flex;margin-top:4px}
 .mb-curve-lbls span{flex:1;font-size:9.5px;color:var(--tx3);text-align:left;white-space:nowrap}
@@ -1018,7 +1020,11 @@ const initials=n=>n.split(' ').slice(0,2).map(w=>(w[0]||'').toUpperCase()).join(
 function findKey(obj,words){const k=Object.keys(obj);for(const w of words){const f=k.find(x=>x.toLowerCase().trim()===w.toLowerCase());if(f)return f;}for(const w of words){const f=k.find(x=>x.toLowerCase().includes(w.toLowerCase()));if(f)return f;}return null;}
 function dayLabel(v){const D=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];if(!v)return'N/D';if(typeof v==='number')return D[new Date(Math.round((v-25569)*86400*1000)).getUTCDay()];const d=new Date(String(v));return isNaN(d)?'N/D':D[d.getDay()];}
 function getHour(v){return getHM(v)[0];}
-function turnoLabel(v){const h=getHour(v);if(h<0)return'N/D';for(const[name,t]of Object.entries(CFG.turnos)){if(h>=t.ini&&h<t.fin)return name;}return'Cena';}
+function turnoLabel(v){const h=getHour(v);if(h<0)return'N/D';for(const[name,t]of Object.entries(CFG.turnos)){if(h>=t.ini&&h<t.fin)return name;}
+  // Fuera de toda franja (madrugada de cierre): pertenece al ÚLTIMO servicio
+  // del día. Antes decía 'Cena' a pelo — con servicios configurables por
+  // local (p.ej. Desayuno/Comida/Cena) el literal dejaría de ser fiable.
+  const _es=Object.entries(CFG.turnos);return _es.length?_es.reduce((a,b)=>(b[1].fin>a[1].fin?b:a))[0]:'N/D';}
 function dateStr(v){if(!v)return null;if(typeof v==='number')return new Date(Math.round((v-25569)*86400*1000)).toISOString().slice(0,10);const s=String(v).slice(0,10);return/\d{4}-\d{2}-\d{2}/.test(s)?s:null;}
 function parseDT(v){if(!v)return null;if(typeof v==='number')return new Date(Math.round((v-25569)*86400*1000));const d=new Date(String(v));return isNaN(d)?null:d;}
 // zonaReal: valor de la columna Sala/Zona del CSV de Revo, si existe. Manda
@@ -1592,18 +1598,27 @@ function renderMobile(){
   // Top 5 productos por euros
   const topProd=Object.keys(g.byPE||{}).sort((a,b)=>g.byPE[b]-g.byPE[a]).slice(0,5);
 
-  // Comida vs Cena (dos servicios): euros, % y €/día de cada uno
+  // Servicios del día (N turnos, configurables por local): euros, % y €/día
+  // de cada uno. Antes era un bloque fijo Comida/Cena; ahora recorre
+  // CFG.turnos, así La Canilla enseña también su Desayuno sin tocar código.
   let turnosHtml='';
-  const tCom=(g.byTurno&&g.byTurno['Comida'])||0, tCen=(g.byTurno&&g.byTurno['Cena'])||0;
-  if(tCom+tCen>0){
-    const tot=tCom+tCen;
-    const dCom=(g.nDiasTurno&&g.nDiasTurno['Comida'])||g.nDays||1;
-    const dCen=(g.nDiasTurno&&g.nDiasTurno['Cena'])||g.nDays||1;
+  const _tNombres=Object.keys(CFG.turnos);
+  const _tVals=_tNombres.map(n=>(g.byTurno&&g.byTurno[n])||0);
+  const _tTot=_tVals.reduce((s,x)=>s+x,0);
+  if(_tTot>0){
+    // Emojis por posición desde el FINAL (el último servicio conserva la
+    // luna y el anterior el sol, como siempre; el desayuno estrena el café).
+    const _tEmojis=['☕','☀️','🌙'];
+    const _tClases=['desayuno','comida','cena'];
     turnosHtml=`
-    <div class="mb-section-t">Comida vs Cena</div>
+    <div class="mb-section-t">${_tNombres.join(' vs ')}</div>
     <div class="mb-turnos">
-      <div class="mb-turno comida"><div class="mb-t-lbl">☀️ Comida</div><div class="mb-t-val">${fk(tCom)} €</div><div class="mb-t-sub">${fc(tCom/dCom,0)} €/día</div><div class="mb-t-pct">${fc(tCom/tot*100,0)}%</div></div>
-      <div class="mb-turno cena"><div class="mb-t-lbl">🌙 Cena</div><div class="mb-t-val">${fk(tCen)} €</div><div class="mb-t-sub">${fc(tCen/dCen,0)} €/día</div><div class="mb-t-pct">${fc(tCen/tot*100,0)}%</div></div>
+      ${_tNombres.map((n,i)=>{
+        const val=_tVals[i];
+        const dias=(g.nDiasTurno&&g.nDiasTurno[n])||g.nDays||1;
+        const pos=Math.max(0,_tEmojis.length-(_tNombres.length-i));
+        return `<div class="mb-turno ${_tClases[pos]}"><div class="mb-t-lbl">${_tEmojis[pos]} ${n}</div><div class="mb-t-val">${fk(val)} €</div><div class="mb-t-sub">${fc(val/dias,0)} €/día</div><div class="mb-t-pct">${fc(val/_tTot*100,0)}%</div></div>`;
+      }).join('')}
     </div>`;
   }
 
@@ -1615,14 +1630,25 @@ function renderMobile(){
   if(hhKeys.length>=4){
     const maxHH=Math.max(...hhKeys.map(k=>g.halfHour[k]));
     const peakHH=hhKeys.slice().sort((a,b)=>g.halfHour[b]-g.halfHour[a])[0];
-    const esCena=k=>{const h=parseInt(k);for(const[name,t]of Object.entries(CFG.turnos)){if(h>=t.ini&&h<t.fin)return name==='Cena';}return true;};
+    // Clase CSS por servicio, alineada por el FINAL: el último servicio del
+    // día conserva el naranja de siempre y el penúltimo el azul; con tres
+    // servicios, el primero (Desayuno) estrena el verde. Talabar se ve igual.
+    const claseServicio=k=>{
+      const h=parseInt(k);const noms=Object.keys(CFG.turnos);
+      let i=-1;let j=0;
+      for(const[,t]of Object.entries(CFG.turnos)){if(h>=t.ini&&h<t.fin){i=j;break;}j++;}
+      if(i<0)i=noms.length-1; // madrugada → último servicio
+      const clases=['desayuno','','cena']; // '' = navy por defecto del CSS
+      const pos=Math.max(0,clases.length-(noms.length-i));
+      return clases[Math.min(pos,clases.length-1)];
+    };
     // Etiquetas: solo horas en punto pares, para no saturar
     const lbl=k=>{const[h,m]=k.split(':');return m==='00'&&parseInt(h)%2===0?parseInt(h)+'h':'';};
     curvaHtml=`
     <div class="mb-section-t">¿A qué hora entra el dinero?</div>
     <div class="mb-curve">
       ${peakHH?`<div class="mb-curve-peak">Hora punta: <b>${peakHH}</b> · ${fk(g.halfHour[peakHH])} € en el período</div>`:''}
-      <div class="mb-curve-bars">${hhKeys.map(k=>`<i class="mb-cbar${esCena(k)?' cena':''}${k===peakHH?' peak':''}" style="height:${Math.max(4,Math.round(g.halfHour[k]/maxHH*100))}%"></i>`).join('')}</div>
+      <div class="mb-curve-bars">${hhKeys.map(k=>`<i class="mb-cbar${claseServicio(k)?' '+claseServicio(k):''}${k===peakHH?' peak':''}" style="height:${Math.max(4,Math.round(g.halfHour[k]/maxHH*100))}%"></i>`).join('')}</div>
       <div class="mb-curve-lbls">${hhKeys.map(k=>`<span>${lbl(k)}</span>`).join('')}</div>
       <div class="mb-curve-leg"><span><i style="background:var(--navy)"></i>Comida</span><span><i style="background:var(--amber,#E8914A)"></i>Cena</span></div>
     </div>`;
@@ -2224,7 +2250,7 @@ function renderOperativa(){
     </div>
   </div>`;
 
-  mkChart('cDemanda','bar',hhKeys,[{data:hhKeys.map(k=>g.halfHour[k]),backgroundColor:hhKeys.map(k=>{const h=parseInt(k);for(const[name,t]of Object.entries(CFG.turnos)){if(h>=t.ini&&h<t.fin)return name==='Cena'?'#E8914A':'#1A2B3C';}return '#E8914A';}),borderRadius:3,barPercentage:.85,categoryPercentage:.95}],{plugins:{tooltip:{callbacks:{label:c=>fc(c.parsed.y)+' €'}}}});
+  mkChart('cDemanda','bar',hhKeys,[{data:hhKeys.map(k=>g.halfHour[k]),backgroundColor:hhKeys.map(k=>{/* color por servicio, paleta alineada por el final: último=naranja, penúltimo=navy, desayuno=verde; con 2 servicios se ve como siempre */const h=parseInt(k);const noms=Object.keys(CFG.turnos);let i=-1,j=0;for(const[,t]of Object.entries(CFG.turnos)){if(h>=t.ini&&h<t.fin){i=j;break;}j++;}if(i<0)i=noms.length-1;const pal=['#7c9885','#1A2B3C','#E8914A'];const idx=pal.length-(noms.length-i);return pal[Math.max(0,Math.min(pal.length-1,idx))];}),borderRadius:3,barPercentage:.85,categoryPercentage:.95}],{plugins:{tooltip:{callbacks:{label:c=>fc(c.parsed.y)+' €'}}}});
 }
 
 // ── TEMPORAL ─────────────────────────────────────────
@@ -2612,6 +2638,14 @@ async function sincronizarVentasLive(){
     d=await r.json();
   }catch(e){console.warn('[RESTAID live] sin conexión con /api/ventas_live',e);return null;}
   if(!d||!d.ok){console.warn('[RESTAID live] respuesta no OK',d&&d.error);return null;}
+  // Servicios del día de ESTE local (TURNOS_SERVICIOS en su Vercel). Talabar
+  // no define la variable y sigue con el defecto Comida/Cena de siempre; La
+  // Canilla trae Desayuno/Comida/Cena. Se aplica ANTES de analizar, porque
+  // turnoLabel() clasifica cada ticket según estas franjas.
+  if(d.turnos&&typeof d.turnos==='object'&&Object.keys(d.turnos).length){
+    CFG.turnos=d.turnos;
+    console.log('[RESTAID live] servicios del local:',Object.keys(d.turnos).join(' / '));
+  }
   const ord=(d.ordenes||[]).filter(o=>o.fecha&&o.fecha.slice(0,4)===hoyAño&&(!corte||o.fecha>corte));
   if(!ord.length){console.log('[RESTAID live] al día: sin ventas nuevas desde',corte||'(inicio)');return null;}
   const ids=new Set(ord.map(o=>o.orden_id));
