@@ -1521,7 +1521,10 @@ function _htmlDesglose(m){
   }
   if(!m.lineas.length)return '<div style="font-size:11.5px;color:var(--tx3);padding:8px 2px 2px">Sin comanda todavía</div>';
   return '<div style="border-top:1px dashed var(--bd,#e5e7eb);margin-top:9px;padding-top:7px">'+
-    m.lineas.map(l=>`<div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--tx2);padding:3px 2px"><span>${l.cantidad>1?'×'+l.cantidad+' ':''}${l.producto}</span><b style="font-variant-numeric:tabular-nums">${fmtE(l.total||0)}</b></div>`).join('')+
+    // Con céntimos a propósito: en un desglose línea a línea, "7 €" para algo
+    // de 6,60 € chirría y hace dudar del dato. Los totales grandes del
+    // Inicio siguen redondeados (ahí el céntimo es ruido); aquí es precisión.
+    m.lineas.map(l=>`<div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--tx2);padding:3px 2px"><span>${l.cantidad>1?'×'+l.cantidad+' ':''}${l.producto}</span><b style="font-variant-numeric:tabular-nums">${fmtE2(l.total||0)}</b></div>`).join('')+
     '</div>';
 }
 function renderMesasModal(){
