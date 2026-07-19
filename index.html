@@ -1259,6 +1259,19 @@ function showHome(el){
 }
 
 function fmtE(n){return (Math.round(Number(n)||0)).toLocaleString('es-ES')+' €';}
+// Fecha de referencia de la JORNADA (corte 04:00) para todos los períodos
+// del Inicio. Manda la del servidor (HOY_LIVE.fecha); sin ella, ahora − 4h.
+// Motivo: los datos siguen la jornada de servicio, pero las etiquetas y las
+// previsiones se anclaban al calendario — y entre las 00:00 y las 04:00 iban
+// un día descolgadas: "Ayer 18/07" enseñaba la jornada del 17 comparada con
+// la previsión del 18 (un sábado), fabricando un −27% que no existía.
+function fechaJornadaRef(){
+  if(HOY_LIVE&&HOY_LIVE.ok&&HOY_LIVE.fecha){
+    const p=String(HOY_LIVE.fecha).split('-').map(Number);
+    if(p.length===3&&!p.some(isNaN))return new Date(p[0],p[1]-1,p[2]);
+  }
+  const d=new Date(Date.now()-4*3600*1000);d.setHours(0,0,0,0);return d;
+}
 function fmtE2(n){return (Number(n)||0).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';}
 function semColor(p,verde,ambar){return p==null?'#94a3b8':p<verde?'#16a34a':p<ambar?'#d97706':'#dc2626';}
 
@@ -1790,7 +1803,7 @@ function renderHomeRevo(box,r,v,pub){
   }catch(e){}
   let heroExtra='';
   if(HOME_PERIOD==='hoy'){
-    const hoyISO=isoLocal(new Date());
+    const hoyISO=isoLocal(fechaJornadaRef()); // jornada, no calendario
     const vh=v.ventasHoy;
     // Previsión: año pasado (mismo día, alineado por día de semana) × crecimiento; si no hay datos, media histórica
     const prevNueva=previsionDia(v,hoyISO,gf);
@@ -1897,7 +1910,7 @@ function renderHomeRevo(box,r,v,pub){
     // referencia histórica es solo el último recurso, no la última palabra.
     if(perComensal==null)perComensal=capRef;
   } else if(HOME_PERIOD==='ayer'){
-    const ayerISO=(()=>{const d=new Date();d.setDate(d.getDate()-1);return isoLocal(d);})();
+    const ayerISO=(()=>{const d=fechaJornadaRef();d.setDate(d.getDate()-1);return isoLocal(d);})(); // jornada anterior, no calendario
     const vr=v.ventasRecientes;
     // Previsión: año pasado (mismo día) × crecimiento; fallback a media histórica del día de semana
     const prevNueva=previsionDia(v,ayerISO,gf);
@@ -1927,7 +1940,7 @@ function renderHomeRevo(box,r,v,pub){
     periodoLbl='Ayer '+ayerISO.split('-').reverse().slice(0,2).join('/');
   } else if(HOME_PERIOD==='semana'){
     // Semana actual: lunes a hoy (real desde ventasRecientes)
-    const hoyS=new Date(); hoyS.setHours(0,0,0,0);
+    const hoyS=fechaJornadaRef(); // jornada: a las 2 de la madrugada del lunes, la semana aún es la anterior
     const dowHoy=hoyS.getDay();
     const lunesOffset=dowHoy===0?-6:(1-dowHoy);
     const lunes=new Date(hoyS.getTime()+lunesOffset*86400000);
@@ -2019,7 +2032,7 @@ function renderHomeRevo(box,r,v,pub){
       }
     }
   } else if(HOME_PERIOD==='mes'){
-    const hoyM=new Date(); hoyM.setHours(0,0,0,0);
+    const hoyM=fechaJornadaRef(); // jornada: la madrugada del día 1 aún pertenece al mes anterior
     const hoyMISO=isoLocal(hoyM);
     const mesISO=hoyMISO.slice(0,7);
     const diasEnMes=new Date(hoyM.getFullYear(),hoyM.getMonth()+1,0).getDate();
