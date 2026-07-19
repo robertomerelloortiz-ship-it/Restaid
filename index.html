@@ -1535,14 +1535,14 @@ function renderMesasModal(){
   const sub=document.getElementById('mesas-modal-sub');
   const body=document.getElementById('mesas-modal-body');
   if(!body)return;
-  if(sub)sub.textContent=`${mesas.length} abierta${mesas.length===1?'':'s'} · ${fmtE(a.euros||0)} en curso`;
+  if(sub)sub.textContent=`${mesas.length} abierta${mesas.length===1?'':'s'} · ${fmtE2(a.euros||0)} en curso`;
   // Órdenes colgadas de jornadas anteriores: no son servicio de hoy, pero se
   // enseñan para que se anulen en Revo (si alguien las cerrara, entrarían
   // como venta del día y descuadrarían la paridad con Revo).
   const colgadasHtml=(cg.n>0)?`
     <div style="border-top:1px dashed var(--bd,#e5e7eb);margin-top:14px;padding-top:12px">
       <div style="font-size:12px;font-weight:700;color:#b45309;margin-bottom:8px">⚠ ${cg.n} orden${cg.n===1?'':'es'} colgada${cg.n===1?'':'s'} de otro día · ${fmtE(cg.euros||0)} — anular en Revo</div>
-      ${(cg.mesas||[]).map(m=>`<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--tx3);padding:4px 2px"><span>${m.mesa||'—'} · desde ${String(m.abierta_desde||'').slice(0,10)}</span><b>${fmtE(m.total||0)}</b></div>`).join('')}
+      ${(cg.mesas||[]).map(m=>`<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--tx3);padding:4px 2px"><span>${m.mesa||'—'} · desde ${String(m.abierta_desde||'').slice(0,10)}</span><b>${fmtE2(m.total||0)}</b></div>`).join('')}
     </div>`:'';
   if(!mesas.length){body.innerHTML='<div style="text-align:center;color:var(--tx3);padding:24px 0">No hay mesas abiertas ahora mismo.</div>'+colgadasHtml;return;}
   // Ya vienen ordenadas por antigüedad desde el endpoint; recalculamos minutos en vivo
@@ -1555,7 +1555,7 @@ function renderMesasModal(){
     return `<div onclick="toggleMesaDesglose(${idx})" style="cursor:pointer;border:1px solid ${alerta?'rgba(220,38,38,.3)':'var(--bd,#e5e7eb)'};border-radius:12px;padding:12px 14px;margin-bottom:8px;background:${alerta?'rgba(220,38,38,.03)':'transparent'}">
       <div style="display:flex;justify-content:space-between;align-items:baseline">
         <div style="font-size:15px;font-weight:700;color:var(--tx1)">${m.mesa||'—'} <span style="font-size:11px;font-weight:400;color:var(--tx3)">${abierto?'▾':'▸'}</span></div>
-        <div style="font-size:16px;font-weight:700;color:${sinConsumo?'var(--tx3)':'#d97706'}">${fmtE(m.total||0)}</div>
+        <div style="font-size:16px;font-weight:700;color:${sinConsumo?'var(--tx3)':'#d97706'}">${fmtE2(m.total||0)}</div>
       </div>
       <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--tx3);margin-top:6px">
         <span>👥 ${m.comensales||'—'} pax</span>
@@ -1810,12 +1810,12 @@ function renderHomeRevo(box,r,v,pub){
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
             <div style="background:rgba(22,163,74,.06);border:1px solid rgba(22,163,74,.18);border-radius:12px;padding:12px 8px">
               <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#16a34a;font-weight:600">Cerradas</div>
-              <div style="font-size:20px;font-weight:700;color:var(--tx1);margin-top:2px">${fmtE(c.euros)}</div>
+              <div style="font-size:20px;font-weight:700;color:var(--tx1);margin-top:2px">${fmtE2(c.euros)}</div>
               <div style="font-size:11px;color:var(--tx3);margin-top:2px">${c.n} órdenes${c.n>0?` · ticket ${fmtE2(c.euros/c.n)}`:''}</div>
             </div>
             <div onclick="${a.n>0?'abrirMesasModal()':''}" style="background:rgba(217,119,6,.06);border:1px solid rgba(217,119,6,.2);border-radius:12px;padding:12px 8px;${a.n>0?'cursor:pointer':''}">
               <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#d97706;font-weight:600">Abiertas${a.n>0?' <span style="opacity:.7">›</span>':''}</div>
-              <div style="font-size:20px;font-weight:700;color:var(--tx1);margin-top:2px">${fmtE(a.euros)}</div>
+              <div style="font-size:20px;font-weight:700;color:var(--tx1);margin-top:2px">${fmtE2(a.euros)}</div>
               <div style="font-size:11px;color:var(--tx3);margin-top:2px">${a.n} mesa${a.n===1?'':'s'} en sala${a.n>0?' · ver detalle':''}</div>
             </div>
           </div>
@@ -1823,7 +1823,7 @@ function renderHomeRevo(box,r,v,pub){
             const conConsumo=(a.mesas||[]).filter(m=>(m.total||0)>0);
             if(!conConsumo.length)return '';
             return `<div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:10px">
-              ${conConsumo.slice(0,6).map(m=>`<span style="font-size:11px;color:var(--tx3);background:var(--bg2,#fff);border:1px solid var(--bd,#e5e7eb);border-radius:999px;padding:3px 10px">${m.mesa||'?'} · <b style="color:var(--tx1)">${fmtE(m.total)}</b></span>`).join('')}
+              ${conConsumo.slice(0,6).map(m=>`<span style="font-size:11px;color:var(--tx3);background:var(--bg2,#fff);border:1px solid var(--bd,#e5e7eb);border-radius:999px;padding:3px 10px">${m.mesa||'?'} · <b style="color:var(--tx1)">${fmtE2(m.total)}</b></span>`).join('')}
               ${conConsumo.length>6?`<span style="font-size:11px;color:var(--tx3);padding:3px 6px">+${conConsumo.length-6}</span>`:''}
             </div>`;
           })()}
@@ -2182,7 +2182,11 @@ function renderHomeRevo(box,r,v,pub){
   const estado=prime==null?null:prime<60?{txt:'Prime cost sano',col:'#16a34a'}:prime<65?{txt:'Prime cost ajustado',col:'#d97706'}:{txt:'Prime cost alto',col:'#dc2626'};
 
   // Formateo del número estrella
-  const ventasStr=ventas!=null?fmtE(ventas):'—';
+  // Céntimos solo en Hoy con dato en vivo (es dinero contado, no estimado).
+  // El resto de períodos siguen redondeados: mezclan estimaciones y meses ya
+  // redondeados, y los decimales fingirían una precisión que no existe.
+  const _hoyVivo=(HOME_PERIOD==='hoy'&&HOY_LIVE&&HOY_LIVE.ok);
+  const ventasStr=ventas!=null?(_hoyVivo?fmtE2(ventas):fmtE(ventas)):'—';
 
   box.innerHTML=`
     <div class="revo-home">
