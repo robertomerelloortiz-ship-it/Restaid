@@ -1993,6 +1993,18 @@ function renderHomeRevo(box,r,v,pub){
     if(HOY_LIVE&&HOY_LIVE.ok&&HOY_LIVE.semana&&HOY_LIVE.semana.euros>0){
       const S=HOY_LIVE.semana;
       ventas=S.euros;
+      // El badge "vs previsión acumulada" se recalcula desde el VIVO: real
+      // hasta ayer = semana en vivo menos lo cerrado hoy. Antes lo calculaba
+      // el pub del navegador (ventasRecientes), que solo se refresca al abrir
+      // Ventas: si llevaba días parado, salían disparates (un −92,9% con la
+      // semana a −7% real). El número grande y su % beben ahora de la misma
+      // fuente; si no hay comparación fiable, mejor sin badge que uno falso.
+      {
+        const _realHastaAyerVivo=Math.max(0,S.euros-((HOY_LIVE.cerradas&&HOY_LIVE.cerradas.euros)||0));
+        varAnual=(estHastaHoy>0&&_realHastaAyerVivo>0)
+          ?{pct:Math.round((_realHastaAyerVivo-estHastaHoy)/estHastaHoy*1000)/10,añoPrev:'',nota:'vs previsión acumulada (días completados)'}
+          :null;
+      }
       estimado=false;
       if(S.comensales){comensales=S.comensales;perComensal=S.euros/S.comensales;}
       if(S.n>0){const _tm=`<div style="font-size:12px;color:var(--tx3);margin-top:6px">${S.n} órdenes · ticket medio ${fmtE2(S.euros/S.n)}</div>`;heroExtra=_tm+heroExtra;}
@@ -2059,6 +2071,16 @@ function renderHomeRevo(box,r,v,pub){
     if(HOY_LIVE&&HOY_LIVE.ok&&HOY_LIVE.mes&&HOY_LIVE.mes.euros>0){
       const M=HOY_LIVE.mes;
       ventas=M.euros;
+      // Mismo criterio que en Semana: el badge se recalcula desde el vivo
+      // (mes − cerrado hoy) para que número y porcentaje compartan fuente.
+      // El control de "mes incompleto" de más abajo puede anularlo después,
+      // y hace bien: sin todas las jornadas, ningún % es honesto.
+      {
+        const _realHastaAyerVivoM=Math.max(0,M.euros-((HOY_LIVE.cerradas&&HOY_LIVE.cerradas.euros)||0));
+        varAnual=(estHastaHoyM&&estHastaHoyM>0&&_realHastaAyerVivoM>0)
+          ?{pct:Math.round((_realHastaAyerVivoM-estHastaHoyM)/estHastaHoyM*1000)/10,añoPrev:'',nota:'vs previsión acumulada'}
+          :null;
+      }
       estimado=false;
       if(M.comensales){comensales=M.comensales;perComensal=M.euros/M.comensales;}
       if(M.n>0){const _tm=`<div style="font-size:12px;color:var(--tx3);margin-top:6px">${M.n} órdenes · ticket medio ${fmtE2(M.euros/M.n)}</div>`;heroExtra=_tm+heroExtra;}
