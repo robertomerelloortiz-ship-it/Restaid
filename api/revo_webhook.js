@@ -62,8 +62,8 @@ const CORE = require('./_revo_core.js');
 // Esto NO afecta a las ventas: los order.closed se archivan igual que siempre.
 // Configurable en Vercel con MESAS_CONTROL="MESA 24,Barra 8".
 const MESAS_CONTROL = (process.env.MESAS_CONTROL || 'MESA 24,Barra 8')
-  .split(',').map(s => s.trim()).filter(Boolean);
-const esMesaControl = m => MESAS_CONTROL.includes(String(m || '').trim());
+  .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+const esMesaControl = m => MESAS_CONTROL.includes(String(m || '').trim().toLowerCase());
 
 // ── Núcleo puro (testeado en test_webhook_core.js) ──────────────────────
 

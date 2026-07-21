@@ -26,8 +26,8 @@ const TZ = 'Europe/Madrid';
 // Esto solo afecta a la vista en vivo: las VENTAS no se tocan nunca.
 // Configurable en Vercel con MESAS_CONTROL="MESA 24,Barra 8".
 const MESAS_CONTROL = (process.env.MESAS_CONTROL || 'MESA 24,Barra 8')
-  .split(',').map(s => s.trim()).filter(Boolean);
-const esMesaControl = m => MESAS_CONTROL.includes(String(m || '').trim());
+  .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+const esMesaControl = m => MESAS_CONTROL.includes(String(m || '').trim().toLowerCase());
 
 // ── Identidad del negocio ────────────────────────────────────────────────
 // Cada despliegue (= cada local) se describe a sí mismo. Así el Inicio no
