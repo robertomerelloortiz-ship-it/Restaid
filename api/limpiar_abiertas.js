@@ -2,18 +2,25 @@
 //
 // Una mesa se queda "colgada" si el webhook recibió su apertura pero no el
 // evento que la cierra/anula (order.closed/cancelled/merged/deleted). Causas:
-// esos webhooks no estaban dados de alta, o el borrado cayó en un redespliegue.
+// esos webhooks no estaban dados de alta, el borrado cayó en un redespliegue,
+// o —lo más común— fue un PAGO RÁPIDO: Revo lo cobra y lo saca de su lista de
+// abiertas SIN emitir order.closed, así que nuestra fila nunca se borra.
 //
 // Este barrido quita de revo_abiertas:
 //   1. Las que YA están cerradas en el histórico (existe la orden en ventas_ordenes).
 //   2. Las que ya se archivaron como order.closed en revo_eventos.
-//   3. Las "rancias": total 0 y sin actualizarse desde hace más de N horas
-//      (aperturas abandonadas/anuladas cuyo evento de borrado nunca llegó).
+//   3. Las "rancias": total 0 y sin actualizarse desde hace más de `horas` (por
+//      defecto 6) — aperturas abandonadas/anuladas cuyo borrado nunca llegó.
+//   4. Las "fantasma con dinero": CUALQUIER total pero sin una sola
+//      actualización desde hace más de `horasFantasma` (por defecto 3). Una mesa
+//      viva recibe order.updated cada vez que se le añade algo; si lleva horas
+//      congelada es un pago rápido que ya se fue de Revo. El umbral de 3h deja
+//      margen de sobra para una comida larga real (que sí genera updates).
 //
 // Uso:
 //   ENSAYO: GET /api/limpiar_abiertas?key=LA_LLAVE&dry=1
 //   REAL:   GET /api/limpiar_abiertas?key=LA_LLAVE
-//   (horas de rancidez configurable con &horas=6, por defecto 6)
+//   (umbrales configurables: &horas=6 para rancias, &horasFantasma=3 para fantasmas)
 
 function sbHeaders(key) {
   return { 'Content-Type': 'application/json', apikey: key, Authorization: `Bearer ${key}` };
@@ -27,6 +34,9 @@ module.exports = async (req, res) => {
   }
   const dry = String((req.query && req.query.dry) || '') === '1';
   const horas = Math.max(1, parseInt((req.query && req.query.horas) || '6', 10) || 6);
+  // Umbral para mesas fantasma con dinero. Nunca por debajo de 2h, para no
+  // pillar mesas activas que solo llevan un rato sin comanda nueva.
+  const horasFantasma = Math.max(2, parseInt((req.query && req.query.horasFantasma) || '3', 10) || 3);
 
   const URL = process.env.SUPABASE_URL;
   const KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY;
@@ -60,13 +70,15 @@ module.exports = async (req, res) => {
     const aBorrar = [];
     for (const a of abiertas) {
       let motivo = null;
+      const ref = a.actualizada_en || a.abierta_desde;
+      const edadH = ref ? (ahora - new Date(ref).getTime()) / 3600000 : 999;
+      const tot = parseFloat(a.total) || 0;
+
       if (cerradasHist.has(a.orden_id)) motivo = 'ya cerrada (histórico)';
       else if (cerradasEvento.has(a.orden_id)) motivo = 'ya cerrada (evento archivado)';
-      else {
-        const ref = a.actualizada_en || a.abierta_desde;
-        const edadH = ref ? (ahora - new Date(ref).getTime()) / 3600000 : 999;
-        if ((parseFloat(a.total) || 0) === 0 && edadH >= horas) motivo = `rancia (${Math.round(edadH)}h sin consumo)`;
-      }
+      else if (tot === 0 && edadH >= horas) motivo = `rancia (${Math.round(edadH)}h sin consumo)`;
+      else if (edadH >= horasFantasma) motivo = `fantasma (${edadH.toFixed(1)}h sin actividad, ${tot.toFixed(2)}€ sin cierre)`;
+
       if (motivo) aBorrar.push({ orden_id: a.orden_id, mesa: a.mesa, total: a.total, motivo });
     }
 
