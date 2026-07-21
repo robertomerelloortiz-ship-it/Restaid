@@ -115,7 +115,7 @@ module.exports = async (req, res) => {
     const diaSiguiente = (() => { const d = new Date(fecha + 'T12:00:00'); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })();
     const [rC, rA, rY, rS, rM, rL] = await Promise.all([
       fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=orden_id,total,comensales,cerrado&jornada=eq.${fecha}&limit=2000`, { headers: sbHeaders(KEY_SB) }),
-      fetch(`${URL_SB}/rest/v1/revo_abiertas?select=orden_id,mesa,comensales,empleado,total,lineas,abierta_desde&order=abierta_desde.asc&limit=200`, { headers: sbHeaders(KEY_SB) }),
+      fetch(`${URL_SB}/rest/v1/revo_abiertas?select=orden_id,mesa,comensales,empleado,total,lineas,abierta_desde,actualizada_en&order=abierta_desde.asc&limit=200`, { headers: sbHeaders(KEY_SB) }),
       fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales&jornada=eq.${ayerJ}&limit=2000`, { headers: sbHeaders(KEY_SB) }),
       fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales,jornada&jornada=gte.${lunesJ}&jornada=lte.${fecha}&limit=5000`, { headers: sbHeaders(KEY_SB) }),
       fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales,jornada&jornada=gte.${mesJ}&jornada=lte.${fecha}&limit=10000`, { headers: sbHeaders(KEY_SB) }),
@@ -126,14 +126,27 @@ module.exports = async (req, res) => {
     let abiertasFilas = rA.ok ? await rA.json() : [];
     const ayerFilas = rY.ok ? await rY.json() : [];
 
-    // Autolimpieza de mesas fantasma: aperturas rancias (0 € y >6 h sin
-    // actualizarse) cuyo evento de cierre/anulación nunca llegó. Se excluyen
-    // del conteo y se borran en segundo plano (sin bloquear la respuesta).
+    // Autolimpieza de mesas fantasma cuyo evento de cierre/anulación nunca
+    // llegó. Se excluyen del conteo y se borran en segundo plano (sin bloquear
+    // la respuesta). Dos casos:
+    //   (1) Aperturas rancias: 0 € y >6 h sin actualizarse (aperturas vacías
+    //       abandonadas/anuladas).
+    //   (2) Fantasmas con dinero: importe > 0 pero SIN una sola actualización
+    //       en 3 h+, dentro de la jornada de hoy. Es el pago rápido que Revo
+    //       cobra sin emitir order.closed: la mesa se fue de Revo pero la fila
+    //       sigue aquí. Una mesa viva recibe order.updated al añadirle cosas;
+    //       3 h congelada = ya no está. Se limita a la jornada actual para no
+    //       pisar el guardarraíl de jornada (las de días anteriores salen como
+    //       "colgadas", que el dueño revisa y anula a mano).
     const AHORA = Date.now();
     const esFantasma = a => {
       const ref = a.actualizada_en || a.abierta_desde;
       const edadH = ref ? (AHORA - new Date(ref).getTime()) / 3600000 : 999;
-      return (num(a.total) || 0) === 0 && edadH >= 6;
+      const tot = num(a.total) || 0;
+      if (tot === 0 && edadH >= 6) return true;
+      const jorn = a.abierta_desde ? jornadaDe(String(a.abierta_desde)) : null;
+      if (tot > 0 && edadH >= 3 && jorn === fecha) return true;
+      return false;
     };
     const fantasmas = abiertasFilas.filter(esFantasma);
     abiertasFilas = abiertasFilas.filter(a => !esFantasma(a));
