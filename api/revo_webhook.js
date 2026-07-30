@@ -61,7 +61,12 @@ const CORE = require('./_revo_core.js');
 // es "Mesa 24" y sigue funcionando con normalidad.
 // Esto NO afecta a las ventas: los order.closed se archivan igual que siempre.
 // Configurable en Vercel con MESAS_CONTROL="MESA 24,Barra 8".
-const MESAS_CONTROL = (process.env.MESAS_CONTROL || 'MESA 24,Barra 8')
+// Mesas de control: el "cajón" donde los camareros meten errores en vez de
+// borrar líneas (para evitar robos). Nunca cuentan en el pulso ni salen como
+// mesas abiertas. Lista base fija (siempre activa) + lo que añada la variable
+// de entorno MESAS_CONTROL, por si algún local necesita sumar más.
+const CONTROL_BASE = 'MESA 22,MESA 24,MESA 25,Barra 8';
+const MESAS_CONTROL = (CONTROL_BASE + ',' + (process.env.MESAS_CONTROL || ''))
   .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
 const esMesaControl = m => MESAS_CONTROL.includes(String(m || '').trim().toLowerCase());
 
