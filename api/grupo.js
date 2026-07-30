@@ -157,10 +157,9 @@ function consolidar(oks) {
 
 // Consolida el resumen anual (Ventas) de varios negocios en uno solo, con la
 // MISMA forma que usa cada negocio por separado, para que "Año" y "Σ Todos"
-// se pinten sin cambiar el código que ya los muestra. Deliberadamente NO
-// incluye topPlatos/evolucionPorPlato/byDate: la pestaña "Año" del Inicio no
-// los usa, y sumarlos entre negocios sería un desarrollo mucho más grande
-// para un beneficio que hoy no hace falta.
+// se pinten sin cambiar el código que ya los muestra. Suma facturación,
+// tickets, comensales, evolución mensual y byDate (día a día). No incluye
+// topPlatos/evolucionPorPlato porque la pestaña "Año" del Inicio no los usa.
 function consolidarVentasResumen(oks) {
   const rs = oks.map(o => (o.datos && o.datos.ventasResumen) || null).filter(Boolean);
   if (!rs.length) return null;
@@ -168,12 +167,20 @@ function consolidarVentasResumen(oks) {
   const porAño = {};
   rs.forEach(r => {
     Object.entries(r.porAño || {}).forEach(([año, a]) => {
-      if (!porAño[año]) porAño[año] = { facturacion: 0, tickets: 0, comensales: 0, evolucionMensual: {} };
+      if (!porAño[año]) porAño[año] = { facturacion: 0, tickets: 0, comensales: 0, evolucionMensual: {}, byDate: {} };
       porAño[año].facturacion += a.facturacion || 0;
       porAño[año].tickets += a.tickets || 0;
       porAño[año].comensales += a.comensales || 0;
       Object.entries(a.evolucionMensual || {}).forEach(([m, eur]) => {
         porAño[año].evolucionMensual[m] = (porAño[año].evolucionMensual[m] || 0) + (Number(eur) || 0);
+      });
+      // byDate se suma día a día entre negocios (viene solo en año actual y
+      // anterior). Es lo que permite que "Σ Todos → Año" recorte al mismo
+      // tramo del calendario igual que un local; sin esto, el grupo comparaba
+      // el año en curso (parcial) contra el año anterior ENTERO y daba un %
+      // negativo absurdo.
+      Object.entries(a.byDate || {}).forEach(([d, eur]) => {
+        porAño[año].byDate[d] = (porAño[año].byDate[d] || 0) + (Number(eur) || 0);
       });
     });
   });
@@ -181,6 +188,7 @@ function consolidarVentasResumen(oks) {
     a.facturacion = r2(a.facturacion);
     a.ticketMedio = a.tickets > 0 ? r2(a.facturacion / a.tickets) : 0;
     Object.keys(a.evolucionMensual).forEach(m => { a.evolucionMensual[m] = Math.round(a.evolucionMensual[m]); });
+    Object.keys(a.byDate).forEach(d => { a.byDate[d] = Math.round(a.byDate[d]); });
   });
 
   const ventasPeriodo = r2(rs.reduce((s, r) => s + (r.ventasPeriodo || 0), 0));
