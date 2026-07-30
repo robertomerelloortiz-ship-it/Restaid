@@ -252,23 +252,47 @@ module.exports = async (req, res) => {
     const desde = (req.query && req.query.desde) || '';
     const filtro = /^\d{4}-\d{2}-\d{2}$/.test(desde) ? `&fecha=gt.${desde}` : '';
     const cols = 'select=*';
-    const [rO, rL, rC] = await Promise.all([
-      fetch(`${URL_SB}/rest/v1/ventas_ordenes?${cols}${filtro}&order=fecha.asc&limit=20000`, { headers: sbHeaders(KEY_SB) }),
-      fetch(`${URL_SB}/rest/v1/ventas_lineas?${cols}${filtro}&order=fecha.asc&limit=100000`, { headers: sbHeaders(KEY_SB) }),
-      fetch(`${URL_SB}/rest/v1/revo_catalogo?select=producto,categoria&limit=10000`, { headers: sbHeaders(KEY_SB) }),
-    ]);
-    if (!rO.ok || !rL.ok) throw new Error('leyendo piso 2: HTTP ' + rO.status + '/' + rL.status);
-    const ordenes = await rO.json();
-    const lineas = await rL.json();
+
+    // Supabase/PostgREST recorta cada respuesta a `max-rows` (1000 en este
+    // proyecto) aunque pidas limit=20000. En un local con volumen (Talabar)
+    // eso truncaba las ventas: la fusión se quedaba clavada en el primer tramo
+    // de 1000 filas y perdía todos los días posteriores. Por eso paginamos:
+    // pedimos de 1000 en 1000 con offset hasta que una página venga incompleta.
+    // El `order` incluye un desempate único (orden_id / linea_id) para que la
+    // paginación por offset sea determinista y no salte ni duplique filas.
+    const PAG = 1000;
+    async function leerTodo(urlBase) {
+      let out = [], offset = 0;
+      for (;;) {
+        const r = await fetch(`${urlBase}&limit=${PAG}&offset=${offset}`, { headers: sbHeaders(KEY_SB) });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const chunk = await r.json();
+        out = out.concat(chunk);
+        if (chunk.length < PAG) break;      // última página
+        offset += PAG;
+        if (offset > 1000000) break;        // guardarraíl anti-bucle
+      }
+      return out;
+    }
+
+    let ordenes, lineas, rowsCat;
+    try {
+      [ordenes, lineas] = await Promise.all([
+        leerTodo(`${URL_SB}/rest/v1/ventas_ordenes?${cols}${filtro}&order=fecha.asc,orden_id.asc`),
+        leerTodo(`${URL_SB}/rest/v1/ventas_lineas?${cols}${filtro}&order=fecha.asc,linea_id.asc`),
+      ]);
+    } catch (e) {
+      throw new Error('leyendo piso 2: ' + (e.message || e));
+    }
+
     // El catálogo es opcional: si la tabla no existe aún, seguimos sin él
     let categorias = {};
-    if (rC.ok) {
-      try {
-        for (const c of await rC.json()) {
-          if (c.producto && c.categoria) categorias[c.producto] = c.categoria;
-        }
-      } catch (_) { categorias = {}; }
-    }
+    try {
+      rowsCat = await leerTodo(`${URL_SB}/rest/v1/revo_catalogo?select=producto,categoria`);
+      for (const c of rowsCat) {
+        if (c.producto && c.categoria) categorias[c.producto] = c.categoria;
+      }
+    } catch (_) { categorias = {}; }
     console.log(`[ventas_live] traductor=${JSON.stringify(traductor)} ordenes=${ordenes.length} lineas=${lineas.length} categorias=${Object.keys(categorias).length} desde=${desde || '(todo)'}`);
     res.status(200).json({
       ok: true, ordenes, lineas, categorias, traductor,
