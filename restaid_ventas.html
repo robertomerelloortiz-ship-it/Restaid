@@ -2019,9 +2019,27 @@ function drawComparativaAnual(g,gAnt){
   const dataAnt=idx.map(i=>sAnt[i]>0?sAnt[i]:null);
   const añoActual=g.d0?g.d0.slice(0,4):'Actual';
   const añoAnt=gAnt.d0?gAnt.d0.slice(0,4):'Anterior';
-  // Resumen: en cuántos meses comparables vas por encima
-  let mejor=0,peor=0,sumAct=0,sumAnt=0;
-  idx.forEach(i=>{if(sAct[i]>0&&sAnt[i]>0){if(sAct[i]>=sAnt[i])mejor++;else peor++;sumAct+=sAct[i];sumAnt+=sAnt[i];}});
+  // ¿Qué mes está incompleto? (el del último día con datos, si no llega a fin
+  // de mes). Se excluye del recuento "X de Y por encima" para no contar como
+  // "derrota" un mes en curso a medias frente al mes entero del año pasado.
+  let mesIncompleto=-1;
+  if(g.d1){
+    const [Y,M,D]=g.d1.split('-').map(Number);
+    const ultimoDiaMes=new Date(Y,M,0).getDate();
+    if(D<ultimoDiaMes) mesIncompleto=M-1; // índice 0-11
+  }
+  // Recuento de meses por encima (excluyendo el incompleto)
+  let mejor=0,peor=0;
+  idx.forEach(i=>{if(i!==mesIncompleto&&sAct[i]>0&&sAnt[i]>0){if(sAct[i]>=sAnt[i])mejor++;else peor++;}});
+  // El % resumen se calcula al MISMO tramo día a día (como en el titular de
+  // Ventas), no sumando meses: así el mes en curso a medias no se compara
+  // contra el mes entero del año pasado, que hundía el porcentaje.
+  let sumAct=0,sumAnt=0;
+  if(g.byDate&&gAnt.byDate){
+    const corte=(g.d1||'').slice(5)||'12-31';
+    Object.keys(g.byDate).forEach(d=>{ if(d.slice(5)<=corte) sumAct+=g.byDate[d]||0; });
+    Object.keys(gAnt.byDate).forEach(d=>{ if(d.slice(5)<=corte) sumAnt+=gAnt.byDate[d]||0; });
+  }
   const box=$('cmpAnualResumen');
   if(box&&(mejor+peor)>0){
     const difPct=sumAnt>0?(sumAct-sumAnt)/sumAnt*100:0;

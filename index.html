@@ -2129,23 +2129,18 @@ function renderHomeRevo(box,r,v,pub){
           const enCurso=(parseInt(añoAct)===new Date().getFullYear());
           let ventasPrevComparar=aPrev.facturacion;
           let ventasActComparar=a.facturacion;
-          if(enCurso&&aPrev.evolucionMensual&&a.evolucionMensual){
-            // Mes actual del calendario (ej: '2026-06' si estamos en junio 2026)
-            const hoy=new Date();
-            const mesActualCal=añoAct+'-'+(String(hoy.getMonth()+1).padStart(2,'0'));
-            // Meses del año actual ordenados
-            const mesesAct=Object.keys(a.evolucionMensual).sort();
-            // ¿El último mes con datos está incompleto? (coincide con el mes natural actual)
-            const ultimoMes=mesesAct[mesesAct.length-1]||'';
-            const ultimoIncompleto=(ultimoMes===mesActualCal);
-            // Meses a comparar: todos los del año actual excepto el último si está incompleto
-            const mesesComparar=ultimoIncompleto?mesesAct.slice(0,-1):mesesAct;
-            if(mesesComparar.length>0){
-              const sumAct=mesesComparar.reduce((s,m)=>s+(a.evolucionMensual[m]||0),0);
-              const sumPrev=mesesComparar.reduce((s,m)=>{
-                const mm=añoPrev+m.slice(4);
-                return s+(aPrev.evolucionMensual[mm]||0);
-              },0);
+          // Recorte día a día al MISMO tramo del calendario cuando el año en
+          // curso está incompleto — idéntico método que usa Ventas (1 ene–hoy
+          // en ambos años). Antes se comparaban solo meses COMPLETOS, lo que
+          // descartaba el mes en curso entero y daba un % distinto (e inflado)
+          // al del titular, que sí incluye el mes en curso.
+          if(enCurso&&a.byDate&&aPrev.byDate){
+            const fechasAct=Object.keys(a.byDate).sort();
+            const corte=fechasAct.length?fechasAct[fechasAct.length-1].slice(5):'12-31'; // 'MM-DD' del último día con datos
+            if(corte<'12-31'){
+              let sumAct=0,sumPrev=0;
+              Object.keys(a.byDate).forEach(d=>{ if(d.slice(5)<=corte) sumAct+=a.byDate[d]||0; });
+              Object.keys(aPrev.byDate).forEach(d=>{ if(d.slice(5)<=corte) sumPrev+=aPrev.byDate[d]||0; });
               if(sumAct>0&&sumPrev>0){
                 ventasActComparar=sumAct;
                 ventasPrevComparar=sumPrev;
