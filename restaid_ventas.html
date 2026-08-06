@@ -319,7 +319,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);heigh
 .ia-chip.warnchip:hover{border-color:var(--amber);color:var(--amber-dk)}
 /* Modal */
 .modal-overlay{position:fixed;inset:0;background:rgba(26,43,60,.4);display:flex;align-items:center;justify-content:center;z-index:100;backdrop-filter:blur(2px)}
-.modal{background:var(--surf);border-radius:var(--rlg);padding:1.75rem;max-width:420px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.modal{background:var(--surf);border-radius:var(--rlg);padding:1.75rem;max-width:440px;width:90%;max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)}
 .modal h3{font-family:'DM Serif Display';font-size:19px;margin-bottom:.4rem}
 .modal-desc{font-size:12.5px;color:var(--tx2);line-height:1.6;margin-bottom:1.25rem}
 .seat-inputs{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.5rem}
@@ -960,7 +960,7 @@ function publishPub(g){
       halfHourCurvaPorDia,
       permanenciaPorDiaTurno,
       aforo:(g.totalAsientos>0?g.totalAsientos:null),
-      mesas:(g.mesasZonaN?Object.values(g.mesasZonaN).reduce((s,v)=>s+(v||0),0):0)||null,
+      mesas:(CFG.totalMesas>0?CFG.totalMesas:(g.mesasZonaN?Object.values(g.mesasZonaN).reduce((s,v)=>s+(v||0),0):0))||null,
       _ts:Date.now()
     };
     localStorage.setItem('restaid_pub_v1',JSON.stringify(pub));
@@ -994,6 +994,9 @@ try{const _sv=JSON.parse(localStorage.getItem('restaid_asientos')||'null');if(_s
 // Rotaciones ideales esperadas por turno (media del sector ≈ 1,5 sentadas por asiento y turno)
 CFG.rotIdeal=1.5;
 try{const _ri=parseFloat(localStorage.getItem('restaid_rotideal')||'');if(_ri>=0.5&&_ri<=10)CFG.rotIdeal=_ri;}catch(e){}
+// Total de mesas de servicio del local — lo usa el Inicio para la ocupación real (mesas ocupadas / total)
+CFG.totalMesas=0;
+try{const _tm=parseInt(localStorage.getItem('restaid_totalmesas')||'');if(_tm>0)CFG.totalMesas=_tm;}catch(e){}
 function rotIdealTurno(t){return CFG.rotIdeal||1.5;}
 // Capacidad máxima teórica del período = asientos × Σ(días operados de cada turno × rotación ideal del turno)
 function capacidadMaxima(g,asientos){
@@ -1464,7 +1467,10 @@ function iaAlerta(i){
 
 // ── SETTINGS (asientos + rotación ideal para ocupación/RevPASH) ──
 function initSeatInputs(){
-  $('seat-inputs').innerHTML=Object.keys(CFG.asientos).map(z=>`<div class="seat-field"><label>${z}</label><input type="number" id="seat-${z}" value="${CFG.asientos[z]}" min="0"></div><div style="grid-column:1/-1;font-size:10px;color:var(--tx3);margin:-6px 0 4px">Pon 0 si tu local no tiene esta zona.</div>`).join('')
+  $('seat-inputs').innerHTML=`<div class="seat-sec" style="grid-column:1/-1;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--tx3);margin-bottom:-4px">Asientos por zona</div>`
+  +Object.keys(CFG.asientos).map(z=>`<div class="seat-field"><label>${z}</label><input type="number" id="seat-${z}" value="${CFG.asientos[z]}" min="0"></div>`).join('')
+  +`<div style="grid-column:1/-1;font-size:10.5px;color:var(--tx3);margin:-2px 0 2px">Pon 0 en las zonas que tu local no tenga.</div>`
+  +`<div class="seat-field" style="grid-column:1/-1"><label>Total de mesas del local</label><input type="number" id="seat-totalmesas" value="${CFG.totalMesas||''}" min="0" placeholder="p. ej. 22"><div style="font-size:10.5px;color:var(--tx3);margin-top:4px;line-height:1.5">Número de mesas de servicio reales. Es lo que usa el Inicio para la ocupación (mesas ocupadas / total).</div></div>`
   +`<div class="seat-field" style="grid-column:1/-1"><label>Rotaciones ideales por turno</label><input type="number" id="seat-rotideal" value="${CFG.rotIdeal||1.5}" min="0.5" max="10" step="0.1"><div style="font-size:10.5px;color:var(--tx3);margin-top:4px;line-height:1.5">Cuántas veces esperas llenar cada asiento en un turno. La media del sector ronda 1,5x. Capacidad máxima = asientos × rotaciones; la ocupación se mide contra ella.</div></div>`;
 }
 function openSettings(){initSeatInputs();$('settings-modal').style.display='flex';}
@@ -1472,10 +1478,11 @@ function closeSettings(){$('settings-modal').style.display='none';}
 function applySettings(){
   Object.keys(CFG.asientos).forEach(z=>{const v=parseInt($('seat-'+z).value);if(v>=0)CFG.asientos[z]=v;});
   const ri=parseFloat($('seat-rotideal')?$('seat-rotideal').value:'');if(ri>=0.5&&ri<=10)CFG.rotIdeal=ri;
-  try{localStorage.setItem('restaid_asientos',JSON.stringify(CFG.asientos));localStorage.setItem('restaid_rotideal',String(CFG.rotIdeal));}catch(e){}
+  const tm=parseInt($('seat-totalmesas')?$('seat-totalmesas').value:'');CFG.totalMesas=(tm>0)?tm:0;
+  try{localStorage.setItem('restaid_asientos',JSON.stringify(CFG.asientos));localStorage.setItem('restaid_rotideal',String(CFG.rotIdeal));localStorage.setItem('restaid_totalmesas',String(CFG.totalMesas));}catch(e){}
   // Persistir en ventas_escandallo como campos extra (misma fila, sin coste).
   // Se carga junto al escandallo al arrancar — sin llamada adicional.
-  sbUpsert('ventas_escandallo',{datos:{...(ESC||{}),__asientos__:CFG.asientos,__rotIdeal__:CFG.rotIdeal}})
+  sbUpsert('ventas_escandallo',{datos:{...(ESC||{}),__asientos__:CFG.asientos,__rotIdeal__:CFG.rotIdeal,__totalMesas__:CFG.totalMesas}})
     .catch(e=>console.warn('[RESTAID] config asientos no guardada en nube:',e.message||e));
   // Recalcular las métricas de G que dependen de los asientos y la rotación ideal
   if(G){
@@ -1487,6 +1494,7 @@ function applySettings(){
       ?zonasConAsientosAS.reduce((s,z)=>s+((G.zonaComMap[z]||{}).com||0),0)
       :G.allComs;
     G.ocupGlobal=allComsVisiblesAS>0?allComsVisiblesAS/capacidadMaxima(G,G.totalAsientos)*100:0;
+    try{publishPub(G);}catch(e){}
   }
   closeSettings();
   renderResumen();renderOperativa();renderZonas();renderAsistente();
@@ -2702,7 +2710,11 @@ async function loadVentasFromDB(){
       CFG.rotIdeal=escCloud.__rotIdeal__;
       try{localStorage.setItem('restaid_rotideal',String(CFG.rotIdeal));}catch(e){}
     }
-    console.log('[RESTAID] config asientos desde nube:',CFG.asientos,'rotIdeal:',CFG.rotIdeal);
+    if(escCloud.__totalMesas__>0){
+      CFG.totalMesas=escCloud.__totalMesas__;
+      try{localStorage.setItem('restaid_totalmesas',String(CFG.totalMesas));}catch(e){}
+    }
+    console.log('[RESTAID] config asientos desde nube:',CFG.asientos,'rotIdeal:',CFG.rotIdeal,'totalMesas:',CFG.totalMesas);
   }
   // Escandallo: la nube es la verdad compartida; los platos solo-locales se conservan y se resuben
   if(escCloud&&escCloud.platos&&Object.keys(escCloud.platos).length){
