@@ -147,6 +147,7 @@ function consolidar(oks) {
     negocio: {
       id: 'grupo', nombre: 'Todos',
       aforo: ds.reduce((s, d) => s + ((d.negocio && d.negocio.aforo) || 0), 0),
+      mesas: ds.reduce((s, d) => s + ((d.negocio && d.negocio.mesas) || 0), 0) || null,
     },
     fecha: ds[0].fecha,
     cerradas, abiertas, control, colgadas, ayer, semana, mes,

@@ -118,18 +118,25 @@ module.exports = async (req, res) => {
     const lunesJ = new Date(dJ.getTime() + lunesOff * 86400000).toISOString().slice(0, 10);
     const mesJ = fecha.slice(0, 7) + '-01';
     const diaSiguiente = (() => { const d = new Date(fecha + 'T12:00:00'); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })();
-    const [rC, rA, rY, rS, rM, rL] = await Promise.all([
+    const [rC, rA, rY, rS, rM, rL, rE] = await Promise.all([
       fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=orden_id,total,comensales,cerrado&jornada=eq.${fecha}&limit=2000`, { headers: sbHeaders(KEY_SB) }),
       fetch(`${URL_SB}/rest/v1/revo_abiertas?select=orden_id,mesa,comensales,empleado,total,lineas,abierta_desde,actualizada_en&order=abierta_desde.asc&limit=200`, { headers: sbHeaders(KEY_SB) }),
       fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales&jornada=eq.${ayerJ}&limit=2000`, { headers: sbHeaders(KEY_SB) }),
       fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales,jornada&jornada=gte.${lunesJ}&jornada=lte.${fecha}&limit=5000`, { headers: sbHeaders(KEY_SB) }),
       fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales,jornada&jornada=gte.${mesJ}&jornada=lte.${fecha}&limit=10000`, { headers: sbHeaders(KEY_SB) }),
       fetch(`${URL_SB}/rest/v1/ventas_lineas?select=producto,cantidad,total,orden_id&fecha=gte.${fecha}&fecha=lte.${diaSiguiente}&limit=5000`, { headers: sbHeaders(KEY_SB) }),
+      // Total de mesas del local: lo configura el usuario en Ventas (⚙) y se
+      // guarda en ventas_escandallo.datos.__totalMesas__. Va con los datos del
+      // local, NO con el navegador, para que sea correcto sea cual sea el link.
+      fetch(`${URL_SB}/rest/v1/ventas_escandallo?select=datos&limit=1`, { headers: sbHeaders(KEY_SB) }),
     ]);
     if (!rC.ok) throw new Error('cerradas: HTTP ' + rC.status);
     const cerradasFilas = await rC.json();
     let abiertasFilas = rA.ok ? await rA.json() : [];
     const ayerFilas = rY.ok ? await rY.json() : [];
+    // Total de mesas configurado en Ventas (0/ausente si aún no se ha puesto).
+    let mesasLocal = 0;
+    try { if (rE && rE.ok) { const _e = await rE.json(); const _d = _e && _e[0] && _e[0].datos; if (_d && _d.__totalMesas__ > 0) mesasLocal = _d.__totalMesas__; } } catch (e) {}
 
     // Autolimpieza de mesas fantasma cuyo evento de cierre/anulación nunca
     // llegó. Se excluyen del conteo y se borran en segundo plano (sin bloquear
@@ -276,7 +283,7 @@ module.exports = async (req, res) => {
     const jornadasSem = [...new Set(semFilas.map(o => o.jornada))].filter(Boolean).sort();
     const semana = { desde: lunesJ, jornadas: jornadasSem, ...suma(semFilas) };
     const mes = { desde: mesJ, jornadas: jornadasMes, ...suma(mesFilas) };
-    res.status(200).json({ ok: true, negocio: NEGOCIO, fecha, cerradas, abiertas, control, colgadas, ayer, semana, mes, pulso: { porHora, horaInicio, top, rankingEuros, totalProductosEur: Math.round(totalLineasEur * 100) / 100, totalProductosUds: totalLineasUds } });
+    res.status(200).json({ ok: true, negocio: { ...NEGOCIO, mesas: mesasLocal || null }, fecha, cerradas, abiertas, control, colgadas, ayer, semana, mes, pulso: { porHora, horaInicio, top, rankingEuros, totalProductosEur: Math.round(totalLineasEur * 100) / 100, totalProductosUds: totalLineasUds } });
   } catch (e) {
     console.error('[hoy_live] fallo:', e.message || e);
     res.status(500).json({ ok: false, error: String(e.message || e).slice(0, 300) });
