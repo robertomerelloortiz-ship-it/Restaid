@@ -1878,10 +1878,11 @@ function renderHomeRevo(box,r,v,pub){
             ${(()=>{
               const mesasOcup=a.n||0;
               const com=a.comensales||0;
-              // Mesas totales del local: primero el conteo real que publica el
-              // módulo de Ventas (pub.ventas.mesas); si aún no lo ha publicado,
-              // respaldo a MESAS_LOCAL (negocio.mesas o el defecto).
-              const mesasTot=(()=>{try{const pv=(JSON.parse(localStorage.getItem('restaid_pub_v1')||'{}')||{}).ventas;return(pv&&pv.mesas>0)?pv.mesas:MESAS_LOCAL;}catch(e){return MESAS_LOCAL;}})();
+              // Total de mesas del LOCAL mostrado: viaja en HOY_LIVE.negocio
+              // (por local, sacado de la config de Ventas de ESE local). NO se
+              // lee de localStorage, que sería por link y daría un número
+              // distinto según el dominio. Respaldo a MESAS_LOCAL si no viene.
+              const mesasTot=(HOY_LIVE&&HOY_LIVE.negocio&&HOY_LIVE.negocio.mesas>0)?HOY_LIVE.negocio.mesas:MESAS_LOCAL;
               const pct=Math.min(100,Math.round(mesasOcup/mesasTot*100));
               const col=pct>85?'#dc2626':pct>60?'#d97706':'#16a34a';
               return `<div>
