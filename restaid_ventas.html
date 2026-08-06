@@ -960,6 +960,7 @@ function publishPub(g){
       halfHourCurvaPorDia,
       permanenciaPorDiaTurno,
       aforo:(g.totalAsientos>0?g.totalAsientos:null),
+      mesas:(g.mesasZonaN?Object.values(g.mesasZonaN).reduce((s,v)=>s+(v||0),0):0)||null,
       _ts:Date.now()
     };
     localStorage.setItem('restaid_pub_v1',JSON.stringify(pub));

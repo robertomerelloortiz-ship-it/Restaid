@@ -1366,6 +1366,7 @@ function setNegocio(id){
   HOY_LIVE=c||null;
   DESDE_CACHE=!!c;
   if(c&&c.negocio&&c.negocio.aforo>0)AFORO_LOCAL=c.negocio.aforo;
+  if(c&&c.negocio&&c.negocio.mesas>0)MESAS_LOCAL=c.negocio.mesas;
   renderHome();
   refreshHoyLive();
 }
@@ -1374,6 +1375,7 @@ let HOY_LIVE=null;
 // Aforo del local. Lo declara el servidor (variable AFORO de cada despliegue),
 // así cada negocio del grupo trae el suyo. El 84 es el de Talabar por defecto.
 let AFORO_LOCAL=84;
+let MESAS_LOCAL=20;
 async function refreshHoyLive(){
   if(!_logueado())return; // sin login no se pide nada (evita el 401 pre-login)
   // Se anota a qué negocio corresponde ESTA petición. Si mientras viaja se
@@ -1390,6 +1392,7 @@ async function refreshHoyLive(){
       DESDE_CACHE=false;
       cacheGuardar(sel,d);
       if(d.negocio&&d.negocio.aforo>0)AFORO_LOCAL=d.negocio.aforo;
+      if(d.negocio&&d.negocio.mesas>0)MESAS_LOCAL=d.negocio.mesas;
       // Una suma incompleta se avisa: es peor un total silenciosamente corto.
       GRUPO_AVISO='';
       if(d.parcial&&Array.isArray(d.locales)){
@@ -1438,6 +1441,7 @@ async function precargarOtros(){
   if(!c)return;
   HOY_LIVE=c; DESDE_CACHE=true;
   if(c.negocio&&c.negocio.aforo>0)AFORO_LOCAL=c.negocio.aforo;
+  if(c.negocio&&c.negocio.mesas>0)MESAS_LOCAL=c.negocio.mesas;
 })();
 setTimeout(refreshHoyLive,500);
 setTimeout(cargarGrupo,700);
@@ -1872,13 +1876,18 @@ function renderHomeRevo(box,r,v,pub){
           })()}
           <div style="margin-top:20px;display:grid;grid-template-columns:1fr;gap:12px">
             ${(()=>{
+              const mesasOcup=a.n||0;
               const com=a.comensales||0;
-              const pct=Math.min(100,Math.round(com/AFORO_LOCAL*100));
+              // Mesas totales del local: primero el conteo real que publica el
+              // módulo de Ventas (pub.ventas.mesas); si aún no lo ha publicado,
+              // respaldo a MESAS_LOCAL (negocio.mesas o el defecto).
+              const mesasTot=(()=>{try{const pv=(JSON.parse(localStorage.getItem('restaid_pub_v1')||'{}')||{}).ventas;return(pv&&pv.mesas>0)?pv.mesas:MESAS_LOCAL;}catch(e){return MESAS_LOCAL;}})();
+              const pct=Math.min(100,Math.round(mesasOcup/mesasTot*100));
               const col=pct>85?'#dc2626':pct>60?'#d97706':'#16a34a';
               return `<div>
                 <div style="display:flex;justify-content:space-between;max-width:300px;margin:0 auto;font-size:11px;color:var(--tx3)">
                   <span style="letter-spacing:.08em;text-transform:uppercase;font-size:10px">Ocupación</span>
-                  <span><b style="color:var(--tx1)">${com}/${AFORO_LOCAL}</b> · ${pct}%</span>
+                  <span><b style="color:var(--tx1)">${mesasOcup}/${mesasTot}</b> mesas · ${pct}%${com>0?` · ${com} pax`:''}</span>
                 </div>
                 <div style="height:6px;background:var(--bd,#e5e7eb);border-radius:3px;margin:6px auto 0;max-width:300px">
                   <div style="height:6px;width:${pct}%;border-radius:3px;background:${col};transition:width .4s"></div>
