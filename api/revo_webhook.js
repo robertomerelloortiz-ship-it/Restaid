@@ -66,9 +66,12 @@ const CORE = require('./_revo_core.js');
 // mesas abiertas. Lista base fija (siempre activa) + lo que añada la variable
 // de entorno MESAS_CONTROL, por si algún local necesita sumar más.
 const CONTROL_BASE = 'MESA 22,MESA 24,MESA 25,Barra 8';
+// Comparación EXACTA, distinguiendo mayúsculas: "MESA 24" es el cajón de
+// control, "Mesa 24" es una mesa real de terraza. Antes se pasaba todo a
+// minúsculas y se ocultaban también las mesas reales 22, 24 y 25.
 const MESAS_CONTROL = (CONTROL_BASE + ',' + (process.env.MESAS_CONTROL || ''))
-  .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
-const esMesaControl = m => MESAS_CONTROL.includes(String(m || '').trim().toLowerCase());
+  .split(',').map(s => s.trim()).filter(Boolean);
+const esMesaControl = m => MESAS_CONTROL.includes(String(m || '').trim());
 
 // ── Núcleo puro (testeado en test_webhook_core.js) ──────────────────────
 

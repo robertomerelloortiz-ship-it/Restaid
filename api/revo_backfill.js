@@ -122,10 +122,12 @@ function parsearCSVOrdenes(texto) {
   const filas = String(texto || '').replace(/^\uFEFF/, '').split(/\r?\n/).filter(l => l.trim());
   if (!filas.length) return { error: 'CSV vacío' };
   const cab = filas[0].split(';').map(c => c.trim().toLowerCase());
-  const col = n => cab.indexOf(n);
-  const iID = col('id'), iMesa = col('mesa'), iEmp = col('empleado'), iCom = col('comensales'),
+  // Acepta los dos formatos de Revo: «Órdenes» (ID, Empleado, Impuesto total)
+  // y «Órdenes abiertas» (Orden, Usuario, Impuesto).
+  const col = (...ns) => { for (const n of ns) { const i = cab.indexOf(n); if (i >= 0) return i; } return -1; };
+  const iID = col('id', 'orden'), iMesa = col('mesa'), iEmp = col('empleado', 'usuario'), iCom = col('comensales'),
         iAb = col('abierto'), iCe = col('cerrado'), iDes = col('descuento'),
-        iSub = col('subtotal'), iImp = col('impuesto total'), iTot = col('total');
+        iSub = col('subtotal'), iImp = col('impuesto total', 'impuesto'), iTot = col('total');
   if (iID < 0 || iCe < 0 || iTot < 0) return { error: 'No parece el CSV «Órdenes» de Revo (faltan ID/Cerrado/Total)' };
   const limpio = v => { const t = (v == null ? '' : String(v)).trim(); return (t === '--' || t === '') ? null : t; };
   const out = [];
@@ -235,6 +237,51 @@ async function importarCSVProductos(texto, res, dry, URL_SB, KEY_SB) {
     tickets_ya_con_detalle: yaTenian, sin_ticket_en_restaid: sinTicket, por_jornada: porJornada, errores });
 }
 
+
+// ── Informe «Órdenes abiertas» de Revo → cuadra revo_abiertas SIN token.
+//    Revo es la verdad: toda mesa de una jornada ANTERIOR que RESTAID tiene
+//    como abierta y que NO aparece en el informe, está cerrada en Revo (su
+//    aviso se perdió) → se borra. Las del día de hoy no se tocan (las gestiona
+//    el webhook en vivo). Las del informe que falten en RESTAID se añaden.
+async function sincronizarAbiertas(ordenes, res, dry, URL_SB, KEY_SB) {
+  { const vistos = new Set(); ordenes = ordenes.filter(o => { const k = String(o.id); if (vistos.has(k)) return false; vistos.add(k); return true; }); }
+  const enRevo = new Set(ordenes.map(o => String(o.id)));
+  const r = await fetch(`${URL_SB}/rest/v1/revo_abiertas?select=orden_id,mesa,total,abierta_desde&limit=1000`, { headers: sbHeaders(KEY_SB) });
+  if (!r.ok) { res.status(500).json({ ok: false, error: 'Leyendo revo_abiertas: HTTP ' + r.status }); return; }
+  const locales = await r.json();
+  const ahora = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Madrid' }));
+  const p2 = n => String(n).padStart(2, '0');
+  const hoyTs = `${ahora.getFullYear()}-${p2(ahora.getMonth() + 1)}-${p2(ahora.getDate())} ${p2(ahora.getHours())}:${p2(ahora.getMinutes())}:00`;
+  const jHoy = jornadaDe(hoyTs);
+  const esDeHoy = a => a.abierta_desde && jornadaDe(String(a.abierta_desde).replace('T', ' ').slice(0, 19)) >= jHoy;
+
+  const aBorrar = locales.filter(a => !enRevo.has(String(a.orden_id)) && !esDeHoy(a));
+  const idsLocales = new Set(locales.map(a => String(a.orden_id)));
+  const aAnadir = ordenes.filter(o => !idsLocales.has(String(o.id))).map(o => ({
+    orden_id: o.id, mesa: o.taula, comensales: Math.max(1, parseInt(o.comensals, 10) || 1),
+    empleado: o.usuari, total: num(o.total), lineas: null,
+    abierta_desde: normTS(o.oberta), actualizada_en: new Date().toISOString(),
+  }));
+  const resumen = {
+    tipo: 'abiertas', abiertas_en_revo: ordenes.length,
+    se_borrarian: aBorrar.map(a => ({ mesa: a.mesa, total: num(a.total), desde: String(a.abierta_desde || '').slice(0, 10) })),
+    se_anadirian: aAnadir.map(a => ({ mesa: a.mesa, total: a.total, desde: String(a.abierta_desde || '').slice(0, 10) })),
+  };
+  if (dry) { res.status(200).json({ ok: true, modo: 'ENSAYO (no se ha escrito nada)', ...resumen }); return; }
+  const errores = [];
+  if (aBorrar.length) {
+    const rD = await fetch(`${URL_SB}/rest/v1/revo_abiertas?orden_id=in.(${aBorrar.map(a => a.orden_id).join(',')})`, { method: 'DELETE', headers: sbHeaders(KEY_SB) });
+    if (!rD.ok) errores.push('borrando: HTTP ' + rD.status);
+  }
+  if (aAnadir.length) {
+    const rI = await fetch(`${URL_SB}/rest/v1/revo_abiertas?on_conflict=orden_id`, {
+      method: 'POST', headers: { ...sbHeaders(KEY_SB), Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(aAnadir),
+    });
+    if (!rI.ok) errores.push('añadiendo: HTTP ' + rI.status);
+  }
+  res.status(200).json({ ok: errores.length === 0, modo: 'REAL', ...resumen, errores });
+}
+
 async function importarCSV(req, res, dry) {
   const URL_SB = process.env.SUPABASE_URL;
   const KEY_SB = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY;
@@ -246,6 +293,10 @@ async function importarCSV(req, res, dry) {
   const p = parsearCSVOrdenes(body && body.csv);
   if (p.error) { res.status(400).json({ ok: false, error: p.error }); return; }
 
+  // ¿Es el informe «Órdenes abiertas» de Revo? (todas las filas sin cerrar)
+  if (p.ordenes.length && p.ordenes.every(o => !o.tancada)) {
+    await sincronizarAbiertas(p.ordenes, res, dry, URL_SB, KEY_SB); return;
+  }
   let abiertas = 0, descartadas = 0;
   const transformadas = [];
   for (const o of p.ordenes) {

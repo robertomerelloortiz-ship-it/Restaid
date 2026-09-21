@@ -30,9 +30,12 @@ const TZ = 'Europe/Madrid';
 // mesas abiertas. Lista base fija (siempre activa) + lo que añada la variable
 // de entorno MESAS_CONTROL, por si algún local necesita sumar más.
 const CONTROL_BASE = 'MESA 22,MESA 24,MESA 25,Barra 8';
+// Comparación EXACTA, distinguiendo mayúsculas: "MESA 24" es el cajón de
+// control, "Mesa 24" es una mesa real de terraza. Antes se pasaba todo a
+// minúsculas y se ocultaban también las mesas reales 22, 24 y 25.
 const MESAS_CONTROL = (CONTROL_BASE + ',' + (process.env.MESAS_CONTROL || ''))
-  .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
-const esMesaControl = m => MESAS_CONTROL.includes(String(m || '').trim().toLowerCase());
+  .split(',').map(s => s.trim()).filter(Boolean);
+const esMesaControl = m => MESAS_CONTROL.includes(String(m || '').trim());
 
 // ── Identidad del negocio ────────────────────────────────────────────────
 // Cada despliegue (= cada local) se describe a sí mismo. Así el Inicio no
@@ -292,13 +295,17 @@ module.exports = async (req, res) => {
     //       pisar el guardarraíl de jornada (las de días anteriores salen como
     //       "colgadas", que el dueño revisa y anula a mano).
     const AHORA = Date.now();
+    const cerradasHoy = new Set(cerradasFilas.map(o => String(o.orden_id)));
     const esFantasma = a => {
       const ref = a.actualizada_en || a.abierta_desde;
       const edadH = ref ? (AHORA - new Date(ref).getTime()) / 3600000 : 999;
       const tot = num(a.total) || 0;
       if (tot === 0 && edadH >= 6) return true;
       const jorn = a.abierta_desde ? jornadaDe(String(a.abierta_desde)) : null;
-      if (tot > 0 && edadH >= 3 && jorn === fecha) return true;
+      // Con dinero: SOLO se quita si su ticket ya consta cerrado hoy (prueba
+      // real). Antes bastaba con 3 h sin pedir nada y desaparecían las
+      // sobremesas largas, dejando RESTAID con menos mesas que Revo.
+      if (tot > 0 && cerradasHoy.has(String(a.orden_id))) return true;
       return false;
     };
     const fantasmas = reconciliado ? [] : abiertasFilas.filter(esFantasma);
@@ -327,8 +334,47 @@ module.exports = async (req, res) => {
       const j = jornadaDe(String(a.abierta_desde));
       return j && j < fecha; // `fecha` es la jornada de servicio actual
     };
-    const colgadasFilas = abiertasFilas.filter(esDeJornadaAnterior);
+    let colgadasFilas = abiertasFilas.filter(esDeJornadaAnterior);
     abiertasFilas = abiertasFilas.filter(a => !esDeJornadaAnterior(a));
+
+    // Limpieza SIN token de Revo: una colgada cuyo ticket ya consta como
+    // CERRADO en ventas_ordenes (llegó el cierre por otra vía, backfill o
+    // importación CSV) no está colgada: se perdió su aviso de cierre. Fuera.
+    if (colgadasFilas.length) {
+      try {
+        const idsC = colgadasFilas.map(a => a.orden_id).filter(x => x != null);
+        const rCo = await fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=orden_id&orden_id=in.(${idsC.join(',')})&limit=1000`, { headers: sbHeaders(KEY_SB) });
+        if (rCo.ok) {
+          const cerr = new Set((await rCo.json()).map(x => String(x.orden_id)));
+          const yaCerradas = colgadasFilas.filter(a => cerr.has(String(a.orden_id)));
+          if (yaCerradas.length) {
+            colgadasFilas = colgadasFilas.filter(a => !cerr.has(String(a.orden_id)));
+            const ids = yaCerradas.map(a => a.orden_id);
+            fetch(`${URL_SB}/rest/v1/revo_abiertas?orden_id=in.(${ids.join(',')})`, { method: 'DELETE', headers: sbHeaders(KEY_SB) })
+              .then(() => console.log('[hoy_live] colgadas ya cerradas limpiadas:', ids.join(',')))
+              .catch(() => {});
+          }
+        }
+      } catch (e) {}
+    }
+    // Caducidad automática (funciona SIN token de Revo): una colgada de una
+    // jornada anterior que lleva 24 h+ sin NINGÚN movimiento no es una mesa de
+    // servicio real: es un cierre cuyo aviso se perdió. Se retira sola para que
+    // el Inicio no se llene de fantasmas. (Si alguna siguiera abierta de verdad
+    // en Revo, sería un olvido a anular allí; no afecta al servicio de hoy.)
+    if (colgadasFilas.length) {
+      const caducadas = colgadasFilas.filter(a => {
+        const ref = a.actualizada_en || a.abierta_desde;
+        return ref && (Date.now() - new Date(String(ref).replace(' ', 'T')).getTime()) / 3600000 >= 24;
+      });
+      if (caducadas.length) {
+        const idsK = new Set(caducadas.map(a => String(a.orden_id)));
+        colgadasFilas = colgadasFilas.filter(a => !idsK.has(String(a.orden_id)));
+        fetch(`${URL_SB}/rest/v1/revo_abiertas?orden_id=in.(${[...idsK].join(',')})`, { method: 'DELETE', headers: sbHeaders(KEY_SB) })
+          .then(() => console.log('[hoy_live] colgadas caducadas (24h sin movimiento):', [...idsK].join(',')))
+          .catch(() => {});
+      }
+    }
     const colgadas = {
       n: colgadasFilas.length,
       euros: Math.round(colgadasFilas.reduce((s, o) => s + num(o.total), 0) * 100) / 100,
