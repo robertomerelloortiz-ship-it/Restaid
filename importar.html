@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RESTAID · Importar órdenes de Revo</title>
+<style>
+  body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#f3f4f6;color:#1f2937;margin:0;padding:32px 16px}
+  .card{max-width:560px;margin:0 auto;background:#fff;border-radius:14px;padding:28px;box-shadow:0 4px 20px rgba(0,0,0,.06)}
+  h1{font-size:20px;margin:0 0 6px}
+  p.sub{color:#6b7280;font-size:13.5px;line-height:1.5;margin:0 0 22px}
+  label{display:block;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;margin:16px 0 6px}
+  input[type=password],input[type=file]{width:100%;box-sizing:border-box;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;background:#fff}
+  .btns{display:flex;gap:10px;margin-top:22px}
+  button{flex:1;padding:12px;border:0;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer}
+  #ensayo{background:#e5e7eb;color:#111827}
+  #real{background:#e8893a;color:#fff}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  #out{margin-top:22px;font-size:13.5px;line-height:1.6}
+  table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}
+  td,th{padding:6px 4px;border-bottom:1px solid #eee;text-align:left}
+  td.n,th.n{text-align:right}
+  .ok{color:#15803d;font-weight:600}.err{color:#b91c1c;font-weight:600}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Importar órdenes de Revo</h1>
+  <p class="sub">Recupera días cuyos avisos de Revo no llegaron. En Revo, exporta para las mismas fechas <b>Órdenes</b> y <b>Productos</b>. Sube <b>primero Órdenes</b> (los tickets) y <b>después Productos</b> (qué se vendió en cada uno). Lo que RESTAID ya tiene no se toca.</p>
+
+  <label>Llave (RESTAID_TRADUCTOR_KEY)</label>
+  <input type="password" id="key" autocomplete="off">
+
+  <label>Fichero de Revo: «Órdenes» o «Productos» (.csv)</label>
+  <input type="file" id="file" accept=".csv,text/csv">
+
+  <div class="btns">
+    <button id="ensayo">1 · Ensayo</button>
+    <button id="real" disabled>2 · Guardar</button>
+  </div>
+  <div id="out"></div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const eur = n => (n||0).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
+let csvTexto = null;
+
+$('file').addEventListener('change', async e => {
+  csvTexto = null; $('real').disabled = true; $('out').innerHTML = '';
+  const f = e.target.files[0]; if (!f) return;
+  const buf = await f.arrayBuffer();
+  try { csvTexto = new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+  catch (_) { csvTexto = new TextDecoder('windows-1252').decode(buf); }
+});
+
+async function enviar(dry) {
+  const key = $('key').value.trim();
+  if (!key) { $('out').innerHTML = '<span class="err">Falta la llave.</span>'; return; }
+  if (!csvTexto) { $('out').innerHTML = '<span class="err">Elige primero el fichero.</span>'; return; }
+  $('ensayo').disabled = $('real').disabled = true;
+  $('out').textContent = dry ? 'Analizando…' : 'Guardando…';
+  try {
+    const r = await fetch('/api/revo_backfill?key=' + encodeURIComponent(key) + (dry ? '&dry=1' : ''), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ csv: csvTexto })
+    });
+    const j = await r.json();
+    if (!j.ok) { $('out').innerHTML = '<span class="err">Error: ' + (j.error || (j.errores||[]).join(' · ') || r.status) + '</span>'; $('ensayo').disabled = false; return; }
+    const pj = j.por_jornada || {};
+    const filas = Object.keys(pj).sort().map(d => `<tr><td>${d}</td><td class="n">${pj[d].tickets}</td><td class="n">${eur(pj[d].euros)}</td></tr>`).join('');
+    const tabla = filas ? `<table><tr><th>Jornada</th><th class="n">Tickets</th><th class="n">Importe</th></tr>${filas}</table>` : '';
+    if (dry) {
+      const rg = j.rango ? `Del <b>${j.rango.desde}</b> al <b>${j.rango.hasta}</b>: ` : '';
+      $('out').innerHTML = j.tipo === 'productos'
+        ? `<div><b>Fichero de productos.</b> ${rg}se añadirían <b>${j.se_guardarian}</b> líneas. Tickets que ya tenían detalle: ${j.tickets_ya_con_detalle || 0}. Líneas sin ticket en RESTAID (se ignoran): ${j.sin_ticket_en_restaid || 0}${j.sin_ticket_en_restaid > 50 ? ' — <span class="err">¿has importado antes el de Órdenes?</span>' : ''}.</div>${tabla}`
+        : `<div><b>Fichero de órdenes.</b> ${rg}se añadirían <b>${j.se_guardarian}</b> tickets. Ya estaban en RESTAID: ${j.ya_en_restaid || 0}. Sin cerrar (se ignoran): ${j.sin_cerrar || 0}.</div>${tabla}`;
+      $('real').disabled = !(j.se_guardarian > 0);
+    } else {
+      $('out').innerHTML = `<div class="ok">✓ Guardadas ${j.guardadas} ${j.tipo === 'productos' ? 'líneas de producto' : 'órdenes'}.</div><div>Recarga el Inicio para verlos.</div>${tabla}`;
+    }
+  } catch (e) {
+    $('out').innerHTML = '<span class="err">No se pudo conectar: ' + e.message + '</span>';
+  }
+  $('ensayo').disabled = false;
+}
+$('ensayo').onclick = () => enviar(true);
+$('real').onclick = () => { if (confirm('¿Guardar estos tickets en RESTAID?')) enviar(false); };
+</script>
+</body>
+</html>
