@@ -50,6 +50,52 @@ const NEGOCIO = {
 const CORE = require('./_revo_core.js');
 const { num, sbHeaders, jornadaDe, CORTE_JORNADA_H, horaInicioActividad } = CORE;
 
+// ── Fuente de verdad: la lista real de mesas abiertas de Revo ──────────────
+// El stream de webhooks es lossy: si se pierde un cierre, la fila zombi se queda
+// para siempre (mesa "colgada" que en Revo no existe); si se pierde un alta, la
+// mesa abierta nunca aparece. Aquí preguntamos a Revo su lista real de abiertas
+// y cuadramos revo_abiertas con ella en cada refresco (auto-curación, sin
+// depender de eventos ni de un barrido manual). Mismo dialecto catalán que
+// reports/orders (id, taula, comensals, oberta, total) y misma auth que revo.js.
+let _ultimaReconcile = 0;
+function _revoCreds() {
+  const token = process.env.REVO_TOKEN;
+  if (!token) return null;
+  const isLegacy = token.length < 50;
+  const tenant = process.env.REVO_TENANT;
+  if (isLegacy && !tenant) return null;
+  const headers = { Authorization: 'Bearer ' + token, Accept: 'application/json' };
+  if (isLegacy) headers.tenant = tenant;
+  return {
+    base: isLegacy ? 'https://revoxef.works' : 'https://api.integrations.revoxef.works',
+    paths: isLegacy
+      ? ['/api/external/v3/reports/openOrders', '/api/external/v2/reports/openOrders']
+      : ['/classic/reports/v3/openOrders', '/classic/reports/openOrders'],
+    headers,
+  };
+}
+async function revoAbiertasReales() {
+  const c = _revoCreds();
+  if (!c) return { ok: false };
+  const now = Date.now();
+  const manana = new Date(now + 864e5).toISOString().slice(0, 10);
+  const atras = new Date(now - 400 * 864e5).toISOString().slice(0, 10);
+  const qs = `start_date=${atras}&end_date=${manana}`;
+  for (const p of c.paths) {
+    try {
+      const ctrl = new AbortController();
+      const to = setTimeout(() => ctrl.abort(), 4500);
+      const r = await fetch(`${c.base}${p}?${qs}`, { headers: c.headers, signal: ctrl.signal });
+      clearTimeout(to);
+      if (!r.ok) continue;
+      const j = await r.json().catch(() => null);
+      const lista = Array.isArray(j) ? j : (j && Array.isArray(j.data) ? j.data : null);
+      if (Array.isArray(lista)) return { ok: true, lista };
+    } catch (e) { /* probar siguiente ruta candidata */ }
+  }
+  return { ok: false };
+}
+
 // ── Autorización ─────────────────────────────────────────────────────────
 // Este endpoint expone ventas del día, mesas abiertas y nombres de personal:
 // nunca debe ser público. Acepta dos llaves:
@@ -138,6 +184,81 @@ module.exports = async (req, res) => {
     let mesasLocal = 0;
     try { if (rE && rE.ok) { const _e = await rE.json(); const _d = _e && _e[0] && _e[0].datos; if (_d && _d.__totalMesas__ > 0) mesasLocal = _d.__totalMesas__; } } catch (e) {}
 
+    // ── Reconciliación con Revo (cuadra revo_abiertas con la realidad) ──────
+    // Preguntamos a Revo su lista real de abiertas y dejamos revo_abiertas
+    // idéntica: borra zombis (cerradas en Revo cuyo cierre se perdió) y añade
+    // ausentes (abiertas en Revo cuya alta se perdió). Guardas: si Revo no
+    // contesta o no se entiende su respuesta, NO se toca nada (se sigue como
+    // hasta ahora). Los borrados y altas van en segundo plano; la respuesta de
+    // ESTE refresco ya sale cuadrada. Throttle: como mucho una vez cada 45 s.
+    let reconciliado = false;
+    try {
+      const _now = Date.now();
+      if (_now - _ultimaReconcile > 45000) {
+        const rr = await revoAbiertasReales();
+        if (rr.ok) {
+          const idOf = o => (o && o.id != null) ? o.id : (o && o.orden_id != null ? o.orden_id : null);
+          const revoMap = new Map();
+          for (const o of rr.lista) { const id = idOf(o); if (id != null) revoMap.set(String(id), o); }
+          // Si vinieron filas pero no supimos leer ni un id, no nos fiamos.
+          const fiable = rr.lista.length === 0 || revoMap.size > 0;
+          if (fiable) {
+            _ultimaReconcile = _now;
+            reconciliado = true;
+            const revoNoVacio = revoMap.size > 0;
+            const _esCtrl = (typeof esMesaControl === 'function') ? esMesaControl : () => false;
+            // (1) Zombis: en local pero ya NO abiertas en Revo → borrar. Si Revo
+            //     vino vacío (sospechoso en pleno servicio), solo se limpian las
+            //     de jornadas anteriores; nunca una mesa viva de hoy.
+            const zombis = abiertasFilas.filter(a => {
+              if (revoMap.has(String(a.orden_id))) return false;
+              if (revoNoVacio) return true;
+              const j = a.abierta_desde ? jornadaDe(String(a.abierta_desde)) : null;
+              return j && j !== fecha;
+            });
+            if (zombis.length) {
+              const zi = zombis.map(a => a.orden_id);
+              const zset = new Set(zi.map(String));
+              abiertasFilas = abiertasFilas.filter(a => !zset.has(String(a.orden_id)));
+              fetch(`${URL_SB}/rest/v1/revo_abiertas?orden_id=in.(${zi.join(',')})`, { method: 'DELETE', headers: sbHeaders(KEY_SB) })
+                .then(() => console.log('[hoy_live] reconcile -', zi.length, 'zombis:', zi.join(',')))
+                .catch(() => {});
+            }
+            // (2) Ausentes: abiertas en Revo que faltan en local → añadir. Se
+            //     omiten las de control (comodín/barra) para respetar la misma
+            //     política que el webhook, que no las registra.
+            const yaLocal = new Set(abiertasFilas.map(a => String(a.orden_id)));
+            const ausentes = [];
+            for (const [id, o] of revoMap) {
+              if (yaLocal.has(id)) continue;
+              const mesa = o.taula || o.table || o.mesa || null;
+              if (_esCtrl(mesa)) continue;
+              ausentes.push({
+                orden_id: /^\d+$/.test(id) ? Number(id) : id,
+                mesa,
+                comensales: Math.max(1, parseInt(o.comensals != null ? o.comensals : o.comensales, 10) || 1),
+                empleado: o.treballador || o.tenantUserName || o.employee || o.usuario || null,
+                total: parseFloat(o.total) || 0,
+                lineas: null,
+                // reports manda hora de Madrid: se guarda tal cual (no convertir).
+                abierta_desde: o.oberta ? String(o.oberta).replace('T', ' ').slice(0, 19) : null,
+                actualizada_en: new Date().toISOString(),
+              });
+            }
+            if (ausentes.length) {
+              abiertasFilas = abiertasFilas.concat(ausentes);
+              fetch(`${URL_SB}/rest/v1/revo_abiertas?on_conflict=orden_id`, {
+                method: 'POST',
+                headers: { ...sbHeaders(KEY_SB), Prefer: 'resolution=merge-duplicates,return=minimal' },
+                body: JSON.stringify(ausentes),
+              }).then(() => console.log('[hoy_live] reconcile +', ausentes.length, 'ausentes'))
+                .catch(() => {});
+            }
+          }
+        }
+      }
+    } catch (e) { console.warn('[hoy_live] reconcile fallo:', e && e.message); }
+
     // Autolimpieza de mesas fantasma cuyo evento de cierre/anulación nunca
     // llegó. Se excluyen del conteo y se borran en segundo plano (sin bloquear
     // la respuesta). Dos casos:
@@ -160,8 +281,8 @@ module.exports = async (req, res) => {
       if (tot > 0 && edadH >= 3 && jorn === fecha) return true;
       return false;
     };
-    const fantasmas = abiertasFilas.filter(esFantasma);
-    abiertasFilas = abiertasFilas.filter(a => !esFantasma(a));
+    const fantasmas = reconciliado ? [] : abiertasFilas.filter(esFantasma);
+    abiertasFilas = reconciliado ? abiertasFilas : abiertasFilas.filter(a => !esFantasma(a));
     if (fantasmas.length) {
       const idsF = fantasmas.map(a => a.orden_id);
       fetch(`${URL_SB}/rest/v1/revo_abiertas?orden_id=in.(${idsF.join(',')})`, { method: 'DELETE', headers: sbHeaders(KEY_SB) })
