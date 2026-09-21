@@ -1374,6 +1374,22 @@ function setNegocio(id){
 let HOY_LIVE=null;
 // Aforo del local. Lo declara el servidor (variable AFORO de cada despliegue),
 // así cada negocio del grupo trae el suyo. El 84 es el de Talabar por defecto.
+
+// Jornadas que el local DEBERÍA tener entre dos fechas. Un día de la semana
+// en que el local cierra (p. ej. domingos en La Canilla) no cuenta como "falta
+// de datos". Se detecta solo: si ese día de la semana ha salido 2+ veces en el
+// mes y nunca tuvo ventas, es día de cierre. Sirve igual para cualquier local.
+function jornadasEsperadas(desde,hasta){
+  const m=(HOY_LIVE&&HOY_LIVE.mes)||{};
+  const conDatos=new Set(m.jornadas||[]);
+  const veces=[0,0,0,0,0,0,0],conVenta=[0,0,0,0,0,0,0];
+  if(m.desde){for(let d=new Date(m.desde+'T12:00');d<=new Date(HOY_LIVE.fecha+'T12:00');d.setDate(d.getDate()+1)){
+    const w=d.getDay(),iso=d.toISOString().slice(0,10);veces[w]++;if(conDatos.has(iso))conVenta[w]++;}}
+  const cierra=w=>veces[w]>=2&&conVenta[w]===0;
+  let n=0;
+  for(let d=new Date(desde+'T12:00');d<=new Date(hasta+'T12:00');d.setDate(d.getDate()+1)){if(!cierra(d.getDay()))n++;}
+  return n;
+}
 let AFORO_LOCAL=84;
 let MESAS_LOCAL=20;
 async function refreshHoyLive(){
@@ -2033,7 +2049,7 @@ function renderHomeRevo(box,r,v,pub){
       if(S.n>0){const _tm=`<div style="font-size:12px;color:var(--tx3);margin-top:6px">${S.n} órdenes · ticket medio ${fmtE2(S.euros/S.n)}</div>`;heroExtra=_tm+heroExtra;}
       // Cobertura: jornadas esperadas (lunes→jornada actual) vs con datos
       const jAct=HOY_LIVE.fecha, jIni=S.desde;
-      const espera=Math.round((new Date(jAct+'T12:00')-new Date(jIni+'T12:00'))/86400000)+1;
+      const espera=jornadasEsperadas(jIni,jAct);
       const tiene=(S.jornadas||[]).length;
       if(tiene<espera){
         varAnual=null; // sin comparativa: sería engañosa con datos parciales
@@ -2108,7 +2124,7 @@ function renderHomeRevo(box,r,v,pub){
       if(M.comensales){comensales=M.comensales;perComensal=M.euros/M.comensales;}
       if(M.n>0){const _tm=`<div style="font-size:12px;color:var(--tx3);margin-top:6px">${M.n} órdenes · ticket medio ${fmtE2(M.euros/M.n)}</div>`;heroExtra=_tm+heroExtra;}
       const jAct=HOY_LIVE.fecha;
-      const espera=parseInt(jAct.slice(8),10); // días del mes hasta la jornada actual
+      const espera=jornadasEsperadas(jAct.slice(0,8)+'01',jAct); // días de apertura del mes hasta hoy
       const tiene=(M.jornadas||[]).length;
       if(tiene<espera){
         varAnual=null;
