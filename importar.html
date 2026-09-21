@@ -26,13 +26,13 @@
 <body>
 <div class="card">
   <h1>Importar órdenes de Revo</h1>
-  <p class="sub">Recupera días cuyos avisos de Revo no llegaron. En Revo, exporta para las mismas fechas <b>Órdenes</b> y <b>Productos</b>. Sube <b>primero Órdenes</b> (los tickets) y <b>después Productos</b> (qué se vendió en cada uno). Lo que RESTAID ya tiene no se toca.</p>
+  <p class="sub">Recupera días cuyos avisos de Revo no llegaron. En Revo, exporta para las mismas fechas <b>Órdenes</b> y <b>Productos</b>. Sube <b>primero Órdenes</b> (los tickets) y <b>después Productos</b> (qué se vendió en cada uno). Lo que RESTAID ya tiene no se toca.<br><br><b>¿Mesas colgadas que en Revo no existen?</b> Exporta en Revo <b>Órdenes abiertas</b> desde 2024 hasta hoy — como Revo solo deja 6 meses por vez, exporta varios tramos y <b>elígelos todos a la vez</b>: RESTAID quedará igual que Revo.</p>
 
   <label>Llave (RESTAID_TRADUCTOR_KEY)</label>
   <input type="password" id="key" autocomplete="off">
 
-  <label>Fichero de Revo: «Órdenes» o «Productos» (.csv)</label>
-  <input type="file" id="file" accept=".csv,text/csv">
+  <label>Fichero de Revo: «Órdenes», «Productos» u «Órdenes abiertas» (.csv)</label>
+  <input type="file" id="file" accept=".csv,text/csv" multiple>
 
   <div class="btns">
     <button id="ensayo">1 · Ensayo</button>
@@ -45,12 +45,21 @@ const $ = id => document.getElementById(id);
 const eur = n => (n||0).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
 let csvTexto = null;
 
+// Se pueden elegir VARIOS ficheros a la vez (Revo solo exporta de 6 en 6
+// meses): se unen en uno, con una sola cabecera.
 $('file').addEventListener('change', async e => {
   csvTexto = null; $('real').disabled = true; $('out').innerHTML = '';
-  const f = e.target.files[0]; if (!f) return;
-  const buf = await f.arrayBuffer();
-  try { csvTexto = new TextDecoder('utf-8', { fatal: true }).decode(buf); }
-  catch (_) { csvTexto = new TextDecoder('windows-1252').decode(buf); }
+  const fs = [...e.target.files]; if (!fs.length) return;
+  const textos = [];
+  for (const f of fs) {
+    const buf = await f.arrayBuffer();
+    let t; try { t = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (_) { t = new TextDecoder('windows-1252').decode(buf); }
+    textos.push(t.replace(/^\uFEFF/, '').split(/\r?\n/).filter(l => l.trim()));
+  }
+  const cab = textos[0][0];
+  if (textos.some(t => t[0] !== cab)) { $('out').innerHTML = '<span class="err">Los ficheros elegidos no son del mismo tipo.</span>'; return; }
+  csvTexto = [cab, ...textos.flatMap(t => t.slice(1))].join('\n');
+  if (fs.length > 1) $('out').innerHTML = `${fs.length} ficheros unidos (${textos.reduce((n, t) => n + t.length - 1, 0)} filas).`;
 });
 
 async function enviar(dry) {
@@ -70,12 +79,22 @@ async function enviar(dry) {
     const tabla = filas ? `<table><tr><th>Jornada</th><th class="n">Tickets</th><th class="n">Importe</th></tr>${filas}</table>` : '';
     if (dry) {
       const rg = j.rango ? `Del <b>${j.rango.desde}</b> al <b>${j.rango.hasta}</b>: ` : '';
+      const lst = a => (a||[]).map(x => `<tr><td>${x.mesa||'—'}</td><td>${x.desde}</td><td class="n">${eur(x.total)}</td></tr>`).join('');
+      if (j.tipo === 'abiertas') {
+        $('out').innerHTML = `<div><b>Informe de órdenes abiertas.</b> Revo tiene ${j.abiertas_en_revo} abiertas.</div>
+          <div style="margin-top:10px">Se quitarían de RESTAID <b>${j.se_borrarian.length}</b> colgadas que en Revo ya no existen:</div>
+          ${j.se_borrarian.length ? `<table><tr><th>Mesa</th><th>Desde</th><th class="n">Importe</th></tr>${lst(j.se_borrarian)}</table>` : ''}
+          <div style="margin-top:10px">Se añadirían <b>${j.se_anadirian.length}</b> abiertas que faltaban.</div>
+          ${j.se_anadirian.length ? `<table><tr><th>Mesa</th><th>Desde</th><th class="n">Importe</th></tr>${lst(j.se_anadirian)}</table>` : ''}`;
+        $('real').disabled = !(j.se_borrarian.length || j.se_anadirian.length);
+        $('ensayo').disabled = false; return;
+      }
       $('out').innerHTML = j.tipo === 'productos'
         ? `<div><b>Fichero de productos.</b> ${rg}se añadirían <b>${j.se_guardarian}</b> líneas. Tickets que ya tenían detalle: ${j.tickets_ya_con_detalle || 0}. Líneas sin ticket en RESTAID (se ignoran): ${j.sin_ticket_en_restaid || 0}${j.sin_ticket_en_restaid > 50 ? ' — <span class="err">¿has importado antes el de Órdenes?</span>' : ''}.</div>${tabla}`
         : `<div><b>Fichero de órdenes.</b> ${rg}se añadirían <b>${j.se_guardarian}</b> tickets. Ya estaban en RESTAID: ${j.ya_en_restaid || 0}. Sin cerrar (se ignoran): ${j.sin_cerrar || 0}.</div>${tabla}`;
       $('real').disabled = !(j.se_guardarian > 0);
     } else {
-      $('out').innerHTML = `<div class="ok">✓ Guardadas ${j.guardadas} ${j.tipo === 'productos' ? 'líneas de producto' : 'órdenes'}.</div><div>Recarga el Inicio para verlos.</div>${tabla}`;
+      $('out').innerHTML = `<div class="ok">✓ ${j.tipo === 'abiertas' ? `Mesas cuadradas con Revo: ${j.se_borrarian.length} quitadas, ${j.se_anadirian.length} añadidas.` : `Guardadas ${j.guardadas} ${j.tipo === 'productos' ? 'líneas de producto' : 'órdenes'}.`}</div><div>Recarga el Inicio para verlos.</div>${tabla}`;
     }
   } catch (e) {
     $('out').innerHTML = '<span class="err">No se pudo conectar: ' + e.message + '</span>';
