@@ -57,6 +57,26 @@ const { num, sbHeaders, jornadaDe, CORTE_JORNADA_H, horaInicioActividad } = CORE
 // y cuadramos revo_abiertas con ella en cada refresco (auto-curación, sin
 // depender de eventos ni de un barrido manual). Mismo dialecto catalán que
 // reports/orders (id, taula, comensals, oberta, total) y misma auth que revo.js.
+
+// Supabase (PostgREST) corta CUALQUIER consulta en 1000 filas aunque pidas
+// limit=10000. Por eso el Mes salía con "1000 órdenes" exactas y jornadas
+// perdidas. sbTodo pagina de 1000 en 1000 hasta traerlo todo y devuelve algo
+// con la misma forma que fetch (ok/status/json) para no tocar el resto.
+async function sbTodo(url, headers) {
+  const base = url.replace(/([?&])limit=\d+/, '$1').replace(/[?&]$/, '');
+  const sep = base.includes('?') ? '&' : '?';
+  let todas = [], off = 0;
+  for (let i = 0; i < 50; i++) {
+    const r = await fetch(`${base}${sep}limit=1000&offset=${off}`, { headers });
+    if (!r.ok) return { ok: false, status: r.status, json: async () => [] };
+    const lote = await r.json();
+    todas = todas.concat(lote);
+    if (lote.length < 1000) break;
+    off += 1000;
+  }
+  return { ok: true, status: 200, json: async () => todas };
+}
+
 let _ultimaReconcile = 0;
 function _revoCreds() {
   const token = process.env.REVO_TOKEN;
@@ -165,12 +185,12 @@ module.exports = async (req, res) => {
     const mesJ = fecha.slice(0, 7) + '-01';
     const diaSiguiente = (() => { const d = new Date(fecha + 'T12:00:00'); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })();
     const [rC, rA, rY, rS, rM, rL, rE] = await Promise.all([
-      fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=orden_id,total,comensales,cerrado&jornada=eq.${fecha}&limit=2000`, { headers: sbHeaders(KEY_SB) }),
+      sbTodo(`${URL_SB}/rest/v1/ventas_ordenes?select=orden_id,total,comensales,cerrado&jornada=eq.${fecha}&order=orden_id.asc`, sbHeaders(KEY_SB)),
       fetch(`${URL_SB}/rest/v1/revo_abiertas?select=orden_id,mesa,comensales,empleado,total,lineas,abierta_desde,actualizada_en&order=abierta_desde.asc&limit=200`, { headers: sbHeaders(KEY_SB) }),
-      fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales&jornada=eq.${ayerJ}&limit=2000`, { headers: sbHeaders(KEY_SB) }),
-      fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales,jornada&jornada=gte.${lunesJ}&jornada=lte.${fecha}&limit=5000`, { headers: sbHeaders(KEY_SB) }),
-      fetch(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales,jornada&jornada=gte.${mesJ}&jornada=lte.${fecha}&limit=10000`, { headers: sbHeaders(KEY_SB) }),
-      fetch(`${URL_SB}/rest/v1/ventas_lineas?select=producto,cantidad,total,orden_id&fecha=gte.${fecha}&fecha=lte.${diaSiguiente}&limit=5000`, { headers: sbHeaders(KEY_SB) }),
+      sbTodo(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales&jornada=eq.${ayerJ}&order=orden_id.asc`, sbHeaders(KEY_SB)),
+      sbTodo(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales,jornada&jornada=gte.${lunesJ}&jornada=lte.${fecha}&order=orden_id.asc`, sbHeaders(KEY_SB)),
+      sbTodo(`${URL_SB}/rest/v1/ventas_ordenes?select=total,comensales,jornada&jornada=gte.${mesJ}&jornada=lte.${fecha}&order=orden_id.asc`, sbHeaders(KEY_SB)),
+      sbTodo(`${URL_SB}/rest/v1/ventas_lineas?select=producto,cantidad,total,orden_id&fecha=gte.${fecha}&fecha=lte.${diaSiguiente}&order=linea_id.asc`, sbHeaders(KEY_SB)),
       // Total de mesas del local: lo configura el usuario en Ventas (⚙) y se
       // guarda en ventas_escandallo.datos.__totalMesas__. Va con los datos del
       // local, NO con el navegador, para que sea correcto sea cual sea el link.
