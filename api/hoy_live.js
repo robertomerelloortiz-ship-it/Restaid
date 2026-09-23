@@ -312,15 +312,30 @@ module.exports = async (req, res) => {
       return ms ? (AHORA - ms) / 3600000 : 999;
     };
     const cerradasHoy = new Set(cerradasFilas.map(o => String(o.orden_id)));
+    // Mesa ocupada DOS veces a la vez: imposible en Revo. Si la misma mesa
+    // tiene una orden más reciente, la vieja está cerrada seguro (su aviso de
+    // cierre se perdió). Prueba objetiva, sin esperas ni umbrales.
+    const masReciente = new Map();
+    for (const a of abiertasFilas) {
+      const k = String(a.mesa || '').trim();
+      const ms = msDe(a.abierta_desde) || 0;
+      if (!k) continue;
+      if (!masReciente.has(k) || ms > masReciente.get(k)) masReciente.set(k, ms);
+    }
     const esFantasma = a => {
       const edadH = edadHoras(a);
       const tot = num(a.total) || 0;
       if (tot === 0 && edadH >= 6) return true;
-      const jorn = a.abierta_desde ? jornadaDe(String(a.abierta_desde)) : null;
-      // Con dinero: SOLO se quita si su ticket ya consta cerrado hoy (prueba
-      // real). Antes bastaba con 3 h sin pedir nada y desaparecían las
-      // sobremesas largas, dejando RESTAID con menos mesas que Revo.
+      // (1) Su ticket ya consta cerrado hoy en el histórico: prueba directa.
       if (tot > 0 && cerradasHoy.has(String(a.orden_id))) return true;
+      // (2) La misma mesa tiene otra orden posterior abierta: la vieja sobra.
+      const k = String(a.mesa || '').trim();
+      const ms = msDe(a.abierta_desde) || 0;
+      if (k && masReciente.get(k) > ms) return true;
+      // (3) Con dinero y 6 h+ sin que le marquen NADA: no es una sobremesa,
+      //     es un cobro cuyo aviso se perdió. (Antes eran 3 h y se llevaba por
+      //     delante comidas largas de verdad.)
+      if (tot > 0 && edadH >= 6) return true;
       return false;
     };
     const fantasmas = reconciliado ? [] : abiertasFilas.filter(esFantasma);
