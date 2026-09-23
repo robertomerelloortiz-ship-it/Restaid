@@ -180,7 +180,52 @@ module.exports = async (req, res) => {
       'Content-Type': 'application/json', apikey: SUPABASE_KEY,
       Authorization: `Bearer ${SUPABASE_KEY}`,
     };
-    if (ABIERTA_UPSERT.has(evento.event) && d.id && d.status === 0 && !d.canceled && !esMesaControl(d.tableName)) {
+    // Rastro de cada aviso de mesa: permite comprobar en los logs de Vercel
+    // qué mandó Revo cuando una mesa no cuadra (evento, ticket, mesa, estado).
+    console.log('[revo_webhook] mesa:', evento.event, '| id:', d.id, '| mesa:', d.tableName,
+      '| status:', d.status, '| canceled:', !!d.canceled, '| total:', d.sum || d.total,
+      esMesaControl(d.tableName) ? '| CONTROL (no se muestra)' : '');
+    // Solo se da por terminada con status 1 (cerrada) o cancelada. Otros estados
+    // (p. ej. cuenta impresa) siguen siendo mesa abierta: antes se borraban y la
+    // mesa desaparecía del Inicio hasta cerrarse. Si alguna quedara colgada, la
+    // retira hoy_live al ver su ticket cerrado en ventas o a las 24 h.
+    // Escritura con reintento: antes, si Supabase fallaba un instante, la mesa
+    // se perdía en silencio (se respondía 200 a Revo y nadie volvía a
+    // intentarlo). Ahora se reintenta hasta 3 veces y, si aun así falla, queda
+    // un ERROR visible en los logs. No se devuelve error a Revo a propósito:
+    // si Revo recibe errores repetidos acaba desactivando el webhook.
+    const sbEscribir = async (url, opts, que) => {
+      for (let i = 1; i <= 3; i++) {
+        try {
+          const r = await fetch(url, opts);
+          if (r.ok) return true;
+          console.warn(`[revo_webhook] ${que} intento ${i}: HTTP ${r.status}`);
+        } catch (err) { console.warn(`[revo_webhook] ${que} intento ${i}:`, String(err).slice(0, 80)); }
+        await new Promise(res => setTimeout(res, 400 * i));
+      }
+      console.error(`[revo_webhook] ERROR ${que} tras 3 intentos · id ${d.id} · ${d.tableName}`);
+      return false;
+    };
+    const sigueAbierta = d.status !== 1 && !d.canceled;
+    // ── Guarda anti-resurrección ─────────────────────────────────────────
+    // Los avisos de Revo NO llegan siempre en orden (reintentos, y un último
+    // order.updated que suele venir junto al cobro). Si un updated llega
+    // DESPUÉS del closed, este upsert resucitaba una mesa ya cobrada, que
+    // como no recibe más avisos se quedaba colgada para siempre con su
+    // importe. Antes de guardar se comprueba si ese ticket ya está cerrado en
+    // el histórico: si lo está, no se resucita (y se borra cualquier resto).
+    let yaCerrada = false;
+    if (ABIERTA_UPSERT.has(evento.event) && d.id && sigueAbierta) {
+      try {
+        const rq = await fetch(`${SUPABASE_URL}/rest/v1/ventas_ordenes?select=orden_id&orden_id=eq.${d.id}&limit=1`, { headers: sb });
+        if (rq.ok) yaCerrada = (await rq.json()).length > 0;
+      } catch (_) { /* si no se puede comprobar, se sigue como antes */ }
+      if (yaCerrada) {
+        console.log('[revo_webhook] updated tardío de una orden YA CERRADA · id', d.id, '·', d.tableName, '— no se resucita');
+        await sbEscribir(`${SUPABASE_URL}/rest/v1/revo_abiertas?orden_id=eq.${d.id}`, { method: 'DELETE', headers: sb }, 'borrar resto de orden cerrada');
+      }
+    }
+    if (ABIERTA_UPSERT.has(evento.event) && d.id && sigueAbierta && !yaCerrada && !esMesaControl(d.tableName)) {
       const aMadrid = s => {
         if (!s) return null;
         const dt = new Date(String(s).replace(' ', 'T') + 'Z');
@@ -188,7 +233,7 @@ module.exports = async (req, res) => {
         return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(dt).replace(',', '');
       };
       const numV = v => { const n = parseFloat(String(v ?? 0).replace(',', '.')); return isNaN(n) ? 0 : n; };
-      await fetch(`${SUPABASE_URL}/rest/v1/revo_abiertas?on_conflict=orden_id`, {
+      await sbEscribir(`${SUPABASE_URL}/rest/v1/revo_abiertas?on_conflict=orden_id`, {
         method: 'POST',
         headers: { ...sb, Prefer: 'resolution=merge-duplicates,return=minimal' },
         body: JSON.stringify([{
@@ -204,19 +249,19 @@ module.exports = async (req, res) => {
           abierta_desde: aMadrid(d.opened || d.created_at),
           actualizada_en: new Date().toISOString(),
         }]),
-      });
-    } else if (ABIERTA_UPSERT.has(evento.event) && d.id) {
+      }, 'guardar mesa abierta');
+    } else if (ABIERTA_UPSERT.has(evento.event) && d.id && !sigueAbierta) {
       // Un created/updated con status ≠ 0 o cancelado significa que la orden
       // YA NO está abierta (cobro rápido, cierre que llega como updated).
       // Antes este caso no entraba en ninguna rama y la mesa quedaba
       // atascada para siempre con dinero (la autolimpieza solo barre 0 €).
-      await fetch(`${SUPABASE_URL}/rest/v1/revo_abiertas?orden_id=eq.${d.id}`, {
+      await sbEscribir(`${SUPABASE_URL}/rest/v1/revo_abiertas?orden_id=eq.${d.id}`, {
         method: 'DELETE', headers: sb,
-      });
+      }, 'quitar mesa (estado cerrado)');
     } else if (ABIERTA_BORRAR.has(evento.event) && d.id) {
-      await fetch(`${SUPABASE_URL}/rest/v1/revo_abiertas?orden_id=eq.${d.id}`, {
+      await sbEscribir(`${SUPABASE_URL}/rest/v1/revo_abiertas?orden_id=eq.${d.id}`, {
         method: 'DELETE', headers: sb,
-      });
+      }, 'quitar mesa cerrada');
     }
   } catch (e) {
     console.warn('[revo_webhook] gestión abiertas falló (no bloquea):', String(e).slice(0, 120));

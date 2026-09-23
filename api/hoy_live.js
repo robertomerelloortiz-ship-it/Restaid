@@ -295,10 +295,25 @@ module.exports = async (req, res) => {
     //       pisar el guardarraíl de jornada (las de días anteriores salen como
     //       "colgadas", que el dueño revisa y anula a mano).
     const AHORA = Date.now();
+    // Las marcas de tiempo vienen en dos formatos: actualizada_en en UTC (ISO,
+    // con Z) y abierta_desde en hora de Madrid SIN zona. Interpretar la segunda
+    // como UTC envejecía las mesas 1-2 h de más y adelantaba las limpiezas.
+    const msDe = v => {
+      if (!v) return null;
+      const s = String(v).replace(' ', 'T');
+      if (/[Zz]|[+-]\d{2}:?\d{2}$/.test(s)) return new Date(s).getTime();
+      const t = new Date(s + 'Z').getTime();          // provisional, como UTC
+      if (isNaN(t)) return null;
+      const off = new Date(t).toLocaleString('en-US', { timeZone: 'Europe/Madrid', timeZoneName: 'shortOffset' }).match(/GMT([+-]\d+)/);
+      return t - (off ? parseInt(off[1], 10) : 0) * 3600000;  // a UTC real
+    };
+    const edadHoras = a => {
+      const ms = msDe(a.actualizada_en) || msDe(a.abierta_desde);
+      return ms ? (AHORA - ms) / 3600000 : 999;
+    };
     const cerradasHoy = new Set(cerradasFilas.map(o => String(o.orden_id)));
     const esFantasma = a => {
-      const ref = a.actualizada_en || a.abierta_desde;
-      const edadH = ref ? (AHORA - new Date(ref).getTime()) / 3600000 : 999;
+      const edadH = edadHoras(a);
       const tot = num(a.total) || 0;
       if (tot === 0 && edadH >= 6) return true;
       const jorn = a.abierta_desde ? jornadaDe(String(a.abierta_desde)) : null;
@@ -363,10 +378,7 @@ module.exports = async (req, res) => {
     // el Inicio no se llene de fantasmas. (Si alguna siguiera abierta de verdad
     // en Revo, sería un olvido a anular allí; no afecta al servicio de hoy.)
     if (colgadasFilas.length) {
-      const caducadas = colgadasFilas.filter(a => {
-        const ref = a.actualizada_en || a.abierta_desde;
-        return ref && (Date.now() - new Date(String(ref).replace(' ', 'T')).getTime()) / 3600000 >= 24;
-      });
+      const caducadas = colgadasFilas.filter(a => edadHoras(a) >= 24);
       if (caducadas.length) {
         const idsK = new Set(caducadas.map(a => String(a.orden_id)));
         colgadasFilas = colgadasFilas.filter(a => !idsK.has(String(a.orden_id)));
